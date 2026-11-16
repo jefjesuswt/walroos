@@ -1,0 +1,2072 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head><script type="application/json" data-od-external-dependencies>["https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"]</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>walroos</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235CC8E6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6l4 9 5-6 5 6 4-9'/%3E%3Cpath d='M9.6 12.2 9 20M14.4 12.2 15 20'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* OD-LAYOUT-PRIMITIVES v1 — structure only: display, flex/grid, overflow, wrapping, ratio.
+   Put this @layer first; product CSS outside the layer always wins. */
+@layer od-layout {
+  :where(.od-stack,.od-row,.od-row-top,.od-cluster,.od-grid,.od-field,.od-stat,.od-cell,.od-tile) > :where(*) { min-width: 0; }
+  .od-stack   { display: flex; flex-direction: column; gap: var(--od-gap, 8px); }
+  .od-row     { display: flex; align-items: center; gap: var(--od-gap, 8px); }
+  .od-row-top { display: flex; align-items: flex-start; gap: var(--od-gap, 8px); }
+  .od-cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--od-gap, 8px); }
+  .od-fill    { flex: 1 1 0; min-width: 0; }
+  .od-fixed   { flex: none; }
+  .od-grid    { display: grid; gap: var(--od-gap, 12px); grid-template-columns: repeat(var(--od-cols, 3), minmax(0, 1fr)); }
+  .od-stat, .od-field, .od-cell { display: grid; gap: var(--od-gap, 2px); }
+  :where(.od-stat,.od-field,.od-cell) > :where(*) { display: block; }
+  .od-tile { display: grid; grid-template-rows: auto 1fr; }
+  :where(.od-tile) > :where(*) { display: block; }
+  .od-media { display: block; width: 100%; height: auto; aspect-ratio: var(--od-ratio, auto); }
+  .od-media-cover { object-fit: cover; }
+  .od-truncate { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .od-clamp-2, .od-clamp-3 { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  .od-clamp-2 { -webkit-line-clamp: 2; }
+  .od-clamp-3 { -webkit-line-clamp: 3; }
+  .od-lines-2 { min-height: calc(2 * 1.4em); }
+  .od-nowrap  { white-space: nowrap; }
+  .od-keep    { word-break: keep-all; overflow-wrap: anywhere; }
+  .od-screen { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; height: 100%; }
+  .od-scroll { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+  .od-rail { display: flex; gap: var(--od-gap, 8px); overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+             padding-inline: var(--od-rail-pad, 16px); scroll-padding-inline: var(--od-rail-pad, 16px); }
+  .od-rail::-webkit-scrollbar { display: none; }
+  :where(.od-rail) > :where(*) { flex: none; scroll-snap-align: start; }
+  :where(.od-rail) > :where(:last-child) { margin-inline-end: var(--od-rail-pad, 16px); }
+  .od-spacer { flex: none; visibility: hidden; pointer-events: none; }
+  .od-touch  { min-width: 44px; min-height: 44px; }
+}
+/* /OD-LAYOUT-PRIMITIVES v1 */
+</style>
+<style>
+/* walroos — arctic design tokens. All values live here; components reference variables only. */
+:root {
+  --bg: #0B0F14;
+  --s1: #111820;
+  --s2: #17202A;
+  --s3: #1D2834;
+  --bd: #1F2A36;
+  --bd2: #2B3948;
+  --tx: #E6EDF3;
+  --tx2: #8B98A5;
+  --ac: #5CC8E6;
+  --ac-hover: #7AD4EC;
+  --ac-tx: #06222B;
+  --ac-soft: rgba(92, 200, 230, .12);
+  --ok: #3FB950;
+  --busy: #D29922;
+  --bad: #F85149;
+  --idle: #8B98A5;
+  --ok-soft: rgba(63, 185, 80, .12);
+  --busy-soft: rgba(210, 153, 34, .14);
+  --bad-soft: rgba(248, 81, 73, .12);
+  --idle-soft: rgba(139, 152, 165, .14);
+  --scrim: rgba(3, 6, 10, .64);
+  --code-bg: #0E141B;
+  --focus: #5CC8E6;
+
+  --f-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-2xl: 28px;
+
+  --sp1: 4px;
+  --sp2: 8px;
+  --sp3: 12px;
+  --sp4: 16px;
+  --sp5: 20px;
+  --sp6: 24px;
+  --sp8: 32px;
+  --sp10: 40px;
+
+  --r1: 6px;
+  --r2: 8px;
+  --dur: 140ms;
+  --dur-out: 90ms;
+  --ease-out: cubic-bezier(.2, .7, .3, 1);
+  --ease-in: cubic-bezier(.5, 0, .8, .4);
+
+  --sb: 240px;
+  --sb-c: 56px;
+  --top: 48px;
+  --max: 1280px;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: #F6F8FA;
+  --s1: #FFFFFF;
+  --s2: #EEF2F5;
+  --s3: #E4E9EE;
+  --bd: #D8DEE4;
+  --bd2: #C2CBD4;
+  --tx: #0D1117;
+  --tx2: #57606A;
+  --ac: #0E7FA0;
+  --ac-hover: #0B6B88;
+  --ac-tx: #FFFFFF;
+  --ac-soft: rgba(14, 127, 160, .10);
+  --ok: #1A7F37;
+  --busy: #9A6700;
+  --bad: #CF222E;
+  --idle: #6E7781;
+  --ok-soft: rgba(26, 127, 55, .10);
+  --busy-soft: rgba(154, 103, 0, .12);
+  --bad-soft: rgba(207, 34, 46, .09);
+  --idle-soft: rgba(110, 119, 129, .12);
+  --scrim: rgba(13, 17, 23, .36);
+  --code-bg: #F2F5F8;
+  --focus: #0E7FA0;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--tx);
+  font: 400 var(--fs)/1.5 var(--f-ui);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+h1, h2, h3, h4, p { margin: 0; }
+h1 { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -.02em; line-height: 1.25; }
+h2 { font-size: var(--fs-md); font-weight: 600; letter-spacing: -.01em; line-height: 1.35; }
+h3 { font-size: var(--fs); font-weight: 600; line-height: 1.4; }
+code, .mono, pre, kbd { font-family: var(--f-mono); font-size: var(--fs-sm); }
+code { font-size: .92em; }
+.muted { color: var(--tx2); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: var(--sp2); top: -48px; z-index: 100; background: var(--ac); color: var(--ac-tx); padding: var(--sp2) var(--sp3); border-radius: var(--r1); }
+.skip:focus { top: var(--sp2); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--ac-soft); }
+
+.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.ic-lg { width: 24px; height: 24px; }
+.ico-t { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* ---------- shell ---------- */
+.app { display: grid; grid-template-columns: var(--sb) minmax(0, 1fr); min-height: 100vh; }
+body.sb-collapsed .app { grid-template-columns: var(--sb-c) minmax(0, 1fr); }
+
+.sidebar {
+  position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column; gap: var(--sp2);
+  padding: var(--sp3) var(--sp2);
+  background: var(--s1); border-right: 1px solid var(--bd);
+  overflow-y: auto; overflow-x: hidden;
+}
+.sb-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); padding: 0 var(--sp1) 0 var(--sp2); min-height: 36px; }
+.brand { display: flex; align-items: center; gap: var(--sp2); font-weight: 600; font-size: var(--fs-md); letter-spacing: -.02em; }
+.brand svg { width: 22px; height: 22px; color: var(--ac); }
+.sb-env select { width: 100%; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav a {
+  display: flex; align-items: center; gap: var(--sp3);
+  height: 32px; padding: 0 var(--sp3); border-radius: var(--r1);
+  color: var(--tx2); font-weight: 500;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+@media (hover: hover) { .nav a:hover { background: var(--s2); color: var(--tx); } }
+.nav a[aria-current="page"] { background: var(--s2); color: var(--tx); box-shadow: inset 2px 0 0 var(--ac); }
+.nav a[aria-current="page"] .ic { color: var(--ac); }
+.sb-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp2); padding: var(--sp3) var(--sp2) 0; border-top: 1px solid var(--bd); }
+.sb-user { display: flex; align-items: center; gap: var(--sp2); min-width: 0; }
+.sb-user-t { display: grid; min-width: 0; }
+.sb-user-t > * { display: block; }
+.avatar { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--s3); border: 1px solid var(--bd2); font-size: var(--fs-xs); font-weight: 600; }
+.conn { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--tx2); }
+.sb-meta { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); font-size: var(--fs-xs); color: var(--tx2); }
+body.sb-collapsed .lbl, body.sb-collapsed .sb-env { display: none; }
+body.sb-collapsed .sb-top { flex-direction: column; padding: 0; }
+body.sb-collapsed .nav a { justify-content: center; padding: 0; }
+body.sb-collapsed .sb-user, body.sb-collapsed .sb-meta { justify-content: center; }
+body.sb-collapsed .sb-foot { padding-inline: 0; align-items: center; }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  height: var(--top); display: flex; align-items: center; gap: var(--sp3);
+  padding: 0 var(--sp6);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--bd);
+}
+.crumbs { display: flex; align-items: center; gap: var(--sp2); min-width: 0; flex: 1 1 0; font-size: var(--fs-sm); color: var(--tx2); }
+.crumbs ol { display: flex; align-items: center; gap: var(--sp2); list-style: none; margin: 0; padding: 0; min-width: 0; }
+.crumbs li { display: flex; align-items: center; gap: var(--sp2); min-width: 0; white-space: nowrap; }
+.crumbs li + li::before { content: '/'; color: var(--bd2); }
+.crumbs li:last-child { color: var(--tx); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) { .crumbs a:hover { color: var(--tx); } }
+.search-btn {
+  display: flex; align-items: center; gap: var(--sp2);
+  height: 32px; width: 280px; padding: 0 var(--sp2) 0 var(--sp3);
+  background: var(--s1); border: 1px solid var(--bd); border-radius: var(--r1);
+  color: var(--tx2); cursor: pointer; text-align: left;
+}
+.search-btn span { flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+@media (hover: hover) { .search-btn:hover { border-color: var(--bd2); color: var(--tx); } }
+kbd { font-size: 11px; padding: 1px 6px; border: 1px solid var(--bd2); border-radius: 4px; color: var(--tx2); background: var(--s2); white-space: nowrap; }
+.menu-btn { display: none; }
+
+#view { outline: none; flex: 1 1 auto; }
+.content { width: 100%; max-width: var(--max); margin: 0 auto; padding: var(--sp5) var(--sp6) var(--sp8); display: flex; flex-direction: column; gap: var(--sp4); }
+
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp4); flex-wrap: wrap; }
+.ph-text { display: grid; gap: var(--sp1); min-width: 0; }
+.ph-text > * { display: block; }
+.ph-actions { display: flex; gap: var(--sp2); flex-wrap: wrap; }
+.ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp2) var(--sp4); color: var(--tx2); font-size: var(--fs-sm); }
+.ph-meta > * { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.title-row { display: flex; align-items: center; gap: var(--sp3); flex-wrap: wrap; }
+
+/* ---------- controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 var(--sp3);
+  background: var(--s2); border: 1px solid var(--bd2); border-radius: var(--r1);
+  font-weight: 500; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer;
+  transition: background var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+@media (hover: hover) { .btn:hover { background: var(--s3); border-color: var(--tx2); } }
+.btn-primary { background: var(--ac); border-color: var(--ac); color: var(--ac-tx); }
+@media (hover: hover) { .btn-primary:hover { background: var(--ac-hover); border-color: var(--ac-hover); } }
+.btn-danger { color: var(--bad); }
+@media (hover: hover) { .btn-danger:hover { border-color: var(--bad); background: var(--bad-soft); } }
+.btn-ghost { background: transparent; border-color: transparent; }
+@media (hover: hover) { .btn-ghost:hover { background: var(--s2); border-color: var(--bd); } }
+.btn-sm { height: 28px; padding: 0 var(--sp2); font-size: var(--fs-xs); }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; pointer-events: none; }
+.btn-icon {
+  display: inline-grid; place-items: center; flex: none;
+  width: 32px; height: 32px; border-radius: var(--r1);
+  background: transparent; border: 1px solid transparent; color: var(--tx2); cursor: pointer;
+  transition: background var(--dur) var(--ease-out), color var(--dur) var(--ease-out);
+}
+@media (hover: hover) { .btn-icon:hover { background: var(--s2); color: var(--tx); border-color: var(--bd); } }
+.btn-icon.copied { color: var(--ok); }
+.split { display: inline-flex; }
+.split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split > .menu > summary.btn { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: color-mix(in srgb, var(--ac-tx) 25%, var(--ac)); padding: 0 var(--sp2); }
+
+input[type=text], input[type=url], input[type=search], input[type=password], input:not([type]), select, textarea {
+  height: 32px; padding: 0 var(--sp3);
+  background: var(--s1); border: 1px solid var(--bd2); border-radius: var(--r1);
+  font-size: var(--fs-sm); min-width: 0;
+  transition: border-color var(--dur) var(--ease-out);
+}
+textarea { height: auto; padding: var(--sp2) var(--sp3); line-height: 1.5; resize: vertical; font-family: var(--f-mono); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ac); box-shadow: 0 0 0 3px var(--ac-soft); }
+input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--bad); }
+input::placeholder, textarea::placeholder { color: var(--tx2); opacity: .7; }
+input.mono, textarea.mono { font-family: var(--f-mono); }
+input[type=checkbox], input[type=radio] { accent-color: var(--ac); width: 16px; height: 16px; margin: 0; }
+.form { display: flex; flex-direction: column; gap: var(--sp4); }
+.field { display: grid; gap: 6px; min-width: 0; }
+.field > * { display: block; }
+.field > input, .field > select, .field > textarea { width: 100%; }
+.field label, .label { font-size: var(--fs-sm); font-weight: 500; }
+.req { color: var(--bad); }
+.help { font-size: var(--fs-xs); color: var(--tx2); }
+.err { font-size: var(--fs-xs); color: var(--bad); }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp3); }
+.check { display: flex; align-items: center; gap: var(--sp2); font-size: var(--fs-sm); cursor: pointer; }
+.disclosure { border: 1px solid var(--bd); border-radius: var(--r2); }
+.disclosure > summary { cursor: pointer; padding: var(--sp2) var(--sp3); font-size: var(--fs-sm); font-weight: 500; list-style: none; display: flex; align-items: center; gap: var(--sp2); }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid var(--tx2); border-bottom: 1.5px solid var(--tx2); transform: rotate(-45deg); transition: transform var(--dur) var(--ease-out); }
+.disclosure[open] > summary::before { transform: rotate(45deg); }
+.disclosure > div { padding: 0 var(--sp3) var(--sp3); }
+
+/* ---------- surfaces ---------- */
+.card { background: var(--s1); border: 1px solid var(--bd); border-radius: var(--r2); }
+.card-pad { padding: var(--sp3); }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp3); padding: var(--sp2) var(--sp3); border-bottom: 1px solid var(--bd); min-height: 40px; }
+.card-head h2 { font-size: var(--fs); }
+.card-head .muted { font-size: var(--fs-xs); }
+.card-head > div { display: grid; gap: 2px; min-width: 0; }
+.card-head > div > * { display: block; }
+.card-body { padding: var(--sp3); display: flex; flex-direction: column; gap: var(--sp2); }
+.section { display: flex; flex-direction: column; gap: var(--sp3); }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp3); }
+.cols-2 { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: var(--sp4); align-items: start; }
+.grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--sp3); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp3); }
+.span-2 { grid-column: 1 / -1; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 var(--sp2); border: 1px solid var(--bd2); border-radius: 4px; font-size: var(--fs-xs); color: var(--tx2); white-space: nowrap; background: var(--s2); }
+.chip .ic { width: 12px; height: 12px; }
+.chip-ac { color: var(--ac); border-color: color-mix(in srgb, var(--ac) 40%, transparent); background: var(--ac-soft); }
+.divider { height: 1px; background: var(--bd); border: 0; margin: 0; }
+
+/* status */
+.badge { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 var(--sp2); border-radius: 999px; font-size: var(--fs-xs); font-weight: 500; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: currentColor; }
+.s-ok { color: var(--ok); background: var(--ok-soft); }
+.s-busy { color: var(--busy); background: var(--busy-soft); }
+.s-bad { color: var(--bad); background: var(--bad-soft); }
+.s-idle { color: var(--idle); background: var(--idle-soft); }
+.dot.ok { color: var(--ok); } .dot.bad { color: var(--bad); } .dot.busy { color: var(--busy); } .dot.idle { color: var(--idle); }
+.s-busy .dot, .dot.busy { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tag-current { color: var(--ac); background: var(--ac-soft); border: 1px solid color-mix(in srgb, var(--ac) 35%, transparent); border-radius: 4px; font-size: 11px; font-weight: 600; padding: 0 6px; height: 20px; display: inline-flex; align-items: center; letter-spacing: .02em; }
+
+/* banner / alerts */
+.alert { display: flex; align-items: center; gap: var(--sp3); padding: var(--sp2) var(--sp3); border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); flex-wrap: wrap; }
+.alert > .ic { color: var(--tx2); }
+.alert-bad { border-color: color-mix(in srgb, var(--bad) 45%, var(--bd)); background: var(--bad-soft); }
+.alert-bad > .ic { color: var(--bad); }
+.alert-busy { border-color: color-mix(in srgb, var(--busy) 45%, var(--bd)); background: var(--busy-soft); }
+.alert-busy > .ic { color: var(--busy); }
+.alert-ok { border-color: color-mix(in srgb, var(--ok) 45%, var(--bd)); background: var(--ok-soft); }
+.alert-ok > .ic { color: var(--ok); }
+.alert-text { flex: 1 1 240px; display: grid; gap: 2px; min-width: 0; }
+.alert-text > * { display: block; }
+.alert-actions { display: flex; gap: var(--sp2); flex-wrap: wrap; }
+
+/* stat tiles */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp3); }
+.stat { padding: var(--sp3); display: grid; gap: 2px; }
+.stat-label { font-size: var(--fs-sm); color: var(--tx2); display: flex; align-items: center; gap: 6px; }
+.stat-num { font-size: clamp(20px, 1.8vw, 24px); font-weight: 600; letter-spacing: -.03em; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stat-num small { font-size: .55em; color: var(--tx2); font-weight: 500; letter-spacing: 0; }
+.stat-sub { font-size: var(--fs-xs); color: var(--tx2); }
+a.stat { transition: border-color var(--dur) var(--ease-out); }
+@media (hover: hover) { a.stat:hover { border-color: var(--bd2); } }
+
+/* meters */
+.meter { display: grid; gap: 4px; }
+.meter-h { display: flex; justify-content: space-between; gap: var(--sp2); font-size: var(--fs-xs); color: var(--tx2); }
+.bar { height: 6px; border-radius: 3px; background: var(--s3); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 3px; background: var(--ac); }
+.bar i.b-busy { background: var(--busy); } .bar i.b-bad { background: var(--bad); }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); }
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.tbl th { text-align: left; font-weight: 500; color: var(--tx2); font-size: var(--fs-xs); padding: var(--sp2) var(--sp3); border-bottom: 1px solid var(--bd); white-space: nowrap; background: var(--s1); }
+.tbl td { padding: 6px var(--sp3); border-bottom: 1px solid var(--bd); vertical-align: middle; height: 40px; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tbody tr { transition: background var(--dur) var(--ease-out); }
+@media (hover: hover) { .tbl tbody tr:hover { background: var(--s2); } }
+.tbl .ta-r { text-align: right; }
+.cell-title { display: block; font-weight: 500; color: var(--tx); }
+@media (hover: hover) { a.cell-title:hover { color: var(--ac); } }
+.cell-sub { display: block; font-size: var(--fs-xs); color: var(--tx2); }
+.cell-stack { display: grid; gap: 2px; min-width: 0; }
+.cell-stack > * { display: block; }
+.row-actions { display: inline-flex; gap: var(--sp1); align-items: center; justify-content: flex-end; opacity: 0; transition: opacity var(--dur) var(--ease-out); }
+.tbl tr:hover .row-actions, .tbl tr:focus-within .row-actions, .row-actions:has(details[open]) { opacity: 1; }
+@media (hover: none) { .row-actions { opacity: 1; } }
+.repo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 280px; color: var(--tx2); }
+.repo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.link { color: var(--ac); }
+@media (hover: hover) { a.link:hover { text-decoration: underline; } }
+
+/* menus */
+.menu { position: relative; display: inline-block; }
+.menu > summary { list-style: none; cursor: pointer; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu-pop {
+  position: fixed; z-index: 60; min-width: 200px;
+  display: flex; flex-direction: column; padding: var(--sp1);
+  background: var(--s2); border: 1px solid var(--bd2); border-radius: var(--r2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+}
+.menu-pop > button, .menu-pop > a { display: flex; align-items: center; gap: var(--sp2); height: 32px; padding: 0 var(--sp2); border: 0; background: none; border-radius: 4px; cursor: pointer; text-align: left; font-size: var(--fs-sm); white-space: nowrap; }
+@media (hover: hover) { .menu-pop > button:hover, .menu-pop > a:hover { background: var(--s3); } }
+.menu-pop .danger { color: var(--bad); }
+.menu-pop form { padding: var(--sp2); display: grid; gap: var(--sp2); width: 280px; }
+
+/* tabs */
+.tabs { display: flex; gap: var(--sp1); border-bottom: 1px solid var(--bd); overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs a { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 var(--sp3); color: var(--tx2); font-weight: 500; white-space: nowrap; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur) var(--ease-out); }
+@media (hover: hover) { .tabs a:hover { color: var(--tx); } }
+.tabs a[aria-current="page"] { color: var(--tx); border-bottom-color: var(--ac); }
+.seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--s2); border: 1px solid var(--bd); border-radius: var(--r1); }
+.seg a, .seg button { height: 26px; padding: 0 var(--sp3); border: 0; border-radius: 4px; background: none; color: var(--tx2); font-size: var(--fs-xs); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; }
+.seg [aria-current="page"], .seg [aria-pressed="true"] { background: var(--s1); color: var(--tx); box-shadow: 0 0 0 1px var(--bd2); }
+
+/* code */
+.cmd, .code { position: relative; display: flex; align-items: center; gap: var(--sp2); min-width: 0; background: var(--code-bg); border: 1px solid var(--bd); border-radius: var(--r1); }
+.cmd { padding: var(--sp1) var(--sp1) var(--sp1) var(--sp3); min-height: 40px; }
+.cmd code { flex: 1 1 0; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: var(--fs-sm); scrollbar-width: thin; padding: 6px 0; }
+.cmd .prompt { color: var(--tx2); font-family: var(--f-mono); user-select: none; }
+.code { align-items: flex-start; }
+.code pre { flex: 1 1 0; min-width: 0; margin: 0; padding: var(--sp3); overflow-x: auto; font-size: var(--fs-sm); line-height: 1.6; }
+.code .btn-icon { margin: var(--sp1); }
+
+/* timeline */
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl li + li { border-top: 1px solid var(--bd); }
+.tl-row { display: flex; align-items: center; gap: var(--sp3); padding: var(--sp2) var(--sp3); transition: background var(--dur) var(--ease-out); }
+@media (hover: hover) { .tl-row:hover { background: var(--s2); } }
+.tl-main { flex: 1 1 0; min-width: 0; display: grid; gap: 2px; }
+.tl-main > * { display: block; }
+.tl-top { display: flex !important; align-items: center; gap: var(--sp2); min-width: 0; flex-wrap: wrap; }
+.tl-msg { color: var(--tx2); font-size: var(--fs-sm); }
+.tl-meta { display: grid; justify-items: end; gap: 2px; flex: none; font-size: var(--fs-xs); color: var(--tx2); }
+.tl-meta > * { display: block; white-space: nowrap; }
+.sha { font-family: var(--f-mono); font-size: var(--fs-xs); color: var(--ac); }
+
+/* node cards */
+.node-cards { display: flex; flex-direction: column; gap: var(--sp2); padding: var(--sp2); }
+.node-card { display: grid; gap: var(--sp2); padding: var(--sp2) var(--sp3); border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); transition: border-color var(--dur) var(--ease-out); }
+@media (hover: hover) { .node-card:hover { border-color: var(--bd2); } }
+.node-card.offline { border-color: color-mix(in srgb, var(--bad) 50%, var(--bd)); background: var(--bad-soft); }
+.node-card-h { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); }
+.node-card-h > div { display: grid; min-width: 0; }
+.node-card-h > div > * { display: block; }
+
+/* apps */
+.app-card { display: flex; flex-direction: column; gap: var(--sp2); padding: var(--sp3); cursor: pointer; transition: border-color var(--dur) var(--ease-out); }
+@media (hover: hover) { .app-card:hover { border-color: var(--bd2); } }
+.ac-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); }
+.ac-head .cell-title { font-size: var(--fs-md); }
+.ac-domain { display: inline-flex; align-items: center; gap: 6px; color: var(--tx2); min-width: 0; max-width: 100%; align-self: flex-start; }
+@media (hover: hover) { .ac-domain:hover { color: var(--ac); } }
+.ac-last { display: grid; gap: 4px; padding-top: var(--sp2); border-top: 1px solid var(--bd); }
+.ac-last > * { display: block; }
+.ac-last .od-row { display: flex; }
+.ac-foot { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp2); font-size: var(--fs-xs); color: var(--tx2); }
+.spark { display: block; color: var(--ac); }
+
+/* states */
+.state { display: grid; justify-items: center; text-align: center; gap: var(--sp2); padding: var(--sp8) var(--sp4); border: 1px dashed var(--bd2); border-radius: var(--r2); }
+.state > * { display: block; }
+.state p { max-width: 44ch; }
+.state .btn { display: inline-flex; }
+.state-err { border-style: solid; border-color: color-mix(in srgb, var(--bad) 40%, var(--bd)); }
+.state-err > .ic { color: var(--bad); }
+.state code { color: var(--tx2); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.illus { width: 120px; height: 80px; color: var(--tx2); }
+.illus .a { stroke: var(--ac); }
+.skel-list { border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); }
+.skel-row { display: flex; gap: var(--sp4); align-items: center; padding: 0 var(--sp3); height: 40px; }
+.skel-row + .skel-row { border-top: 1px solid var(--bd); }
+.skel { display: block; height: 10px; border-radius: 4px; background: linear-gradient(90deg, var(--s2) 0%, var(--s3) 50%, var(--s2) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.w15 { width: 15%; } .w30 { width: 30%; } .w50 { width: 50%; }
+
+/* stepper */
+.stepper { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp2); list-style: none; margin: 0; padding: 0; }
+.step { display: grid; gap: 2px; padding: var(--sp2) var(--sp3); border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); position: relative; }
+.step > * { display: block; }
+.step-h { display: flex !important; align-items: center; gap: 6px; font-weight: 500; font-size: var(--fs-sm); }
+.step-d { font-family: var(--f-mono); font-size: var(--fs-xs); color: var(--tx2); }
+.step.ok .step-h .ic { color: var(--ok); }
+.step.run { border-color: color-mix(in srgb, var(--busy) 50%, var(--bd)); }
+.step.run .step-h .ic { color: var(--busy); }
+.step.bad { border-color: color-mix(in srgb, var(--bad) 55%, var(--bd)); background: var(--bad-soft); }
+.step.bad .step-h .ic { color: var(--bad); }
+.step.skip { opacity: .6; }
+.step::after { content: ''; position: absolute; top: 50%; right: -9px; width: 10px; height: 1px; background: var(--bd2); }
+.step:last-child::after { display: none; }
+
+/* logs */
+.log-tools { display: flex; align-items: center; gap: var(--sp2); flex-wrap: wrap; }
+.log-tools input[type=search] { flex: 1 1 200px; }
+.log { background: var(--code-bg); border: 1px solid var(--bd); border-radius: var(--r2); font-family: var(--f-mono); font-size: var(--fs-xs); line-height: 1.7; max-height: 62vh; overflow: auto; }
+.log-group > summary { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--sp2); padding: 6px var(--sp3); cursor: pointer; list-style: none; background: var(--s2); border-bottom: 1px solid var(--bd); font-family: var(--f-ui); font-size: var(--fs-sm); font-weight: 500; }
+.log-group > summary::-webkit-details-marker { display: none; }
+.log-group > summary .grow { flex: 1 1 0; }
+.log-group > summary .chev { transition: transform var(--dur) var(--ease-out); }
+.log-group[open] > summary .chev { transform: rotate(90deg); }
+.log-lines { padding: var(--sp2) 0; }
+.ln { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--sp3); padding: 0 var(--sp3); }
+.ln > * { display: block; }
+.ln .ts { color: var(--tx2); user-select: none; }
+.ln .t { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ln.err { background: var(--bad-soft); } .ln.err .t { color: var(--bad); }
+.ln.warn .t { color: var(--busy); }
+.ln.dim .t { color: var(--tx2); }
+.ln mark { background: color-mix(in srgb, var(--busy) 35%, transparent); color: inherit; border-radius: 2px; }
+.log-empty { padding: var(--sp4); color: var(--tx2); font-family: var(--f-ui); }
+
+/* terminal */
+.term { display: flex; flex-direction: column; min-height: calc(100vh - 300px); background: #070A0E; color: #D6DEE6; border: 1px solid var(--bd); border-radius: var(--r2); overflow: hidden; }
+.term:fullscreen { border-radius: 0; }
+.term-bar { display: flex; align-items: center; gap: var(--sp3); padding: var(--sp1) var(--sp1) var(--sp1) var(--sp3); border-bottom: 1px solid #1F2A36; font-size: var(--fs-xs); color: #8B98A5; }
+.term-bar .grow { flex: 1 1 0; }
+.term-bar .btn-icon { color: #8B98A5; }
+.term-out { flex: 1 1 auto; overflow: auto; padding: var(--sp3); font-family: var(--f-mono); font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 0; }
+.term-out .ps { color: #5CC8E6; }
+.term-out .ok { color: #3FB950; }
+.term-in { display: flex; align-items: center; gap: var(--sp2); padding: var(--sp2) var(--sp3); border-top: 1px solid #1F2A36; font-family: var(--f-mono); font-size: var(--fs-sm); }
+.term-in .ps { color: #5CC8E6; white-space: nowrap; }
+.term-in input { flex: 1 1 0; background: transparent; border: 0; height: 28px; padding: 0; color: #E6EDF3; font-family: var(--f-mono); }
+.term-in input:focus { box-shadow: none; }
+
+/* layers */
+.overlay { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; animation: fade var(--dur) var(--ease-out); }
+@keyframes fade { from { opacity: 0; } }
+.ov-modal { align-items: flex-start; justify-content: center; padding: 10vh var(--sp4) var(--sp4); overflow-y: auto; }
+.ov-panel { justify-content: flex-end; }
+.ov-palette { align-items: flex-start; justify-content: center; padding: 12vh var(--sp4) var(--sp4); }
+.modal { width: 100%; max-width: 560px; background: var(--s1); border: 1px solid var(--bd2); border-radius: var(--r2); box-shadow: 0 16px 48px rgba(0, 0, 0, .35); animation: rise var(--dur) var(--ease-out); }
+.modal.wide { max-width: 720px; }
+.panel { width: min(520px, 100%); height: 100%; overflow-y: auto; background: var(--s1); border-left: 1px solid var(--bd2); display: flex; flex-direction: column; animation: slide var(--dur) var(--ease-out); }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes slide { from { transform: translateX(24px); opacity: 0; } }
+.m-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp3); padding: var(--sp4) var(--sp4) var(--sp3); }
+.m-head > div { display: grid; gap: 2px; }
+.m-head > div > * { display: block; }
+.m-head p { font-size: var(--fs-sm); }
+.m-body { padding: 0 var(--sp4) var(--sp4); display: flex; flex-direction: column; gap: var(--sp4); }
+.panel .m-body { flex: 1 1 auto; }
+.m-foot { display: flex; justify-content: flex-end; gap: var(--sp2); padding: var(--sp3) var(--sp4); border-top: 1px solid var(--bd); background: var(--s1); }
+.panel .m-foot { position: sticky; bottom: 0; margin-top: auto; }
+.panel form > .m-foot { margin: auto calc(-1 * var(--sp4)) calc(-1 * var(--sp4)); }
+.config-box { padding: var(--sp3); border: 1px solid var(--bd); border-radius: var(--r1); background: var(--s2); font-size: var(--fs-sm); }
+.cfg { display: flex; align-items: center; gap: var(--sp2); flex-wrap: wrap; }
+.cfg.ok .ic { color: var(--ok); }
+
+.progress { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp1); }
+.progress li { display: flex; align-items: center; gap: var(--sp3); padding: var(--sp2) var(--sp3); border-radius: var(--r1); font-size: var(--fs-sm); color: var(--tx2); }
+.progress li .grow { flex: 1 1 0; }
+.progress li.ok { color: var(--tx); } .progress li.ok > .ic { color: var(--ok); }
+.progress li.run { color: var(--tx); background: var(--busy-soft); } .progress li.run > .ic { color: var(--busy); }
+.pending-ring { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--bd2); flex: none; }
+
+.palette { width: 100%; max-width: 620px; background: var(--s1); border: 1px solid var(--bd2); border-radius: var(--r2); box-shadow: 0 16px 48px rgba(0, 0, 0, .4); overflow: hidden; animation: rise var(--dur) var(--ease-out); }
+.pal-in { display: flex; align-items: center; gap: var(--sp2); padding: 0 var(--sp4); border-bottom: 1px solid var(--bd); }
+.pal-in input { flex: 1 1 0; height: 48px; border: 0; background: transparent; padding: 0; font-size: var(--fs-md); }
+.pal-in input:focus { box-shadow: none; }
+.pal-list { max-height: 52vh; overflow-y: auto; padding: var(--sp1); list-style: none; margin: 0; }
+.pal-group { padding: var(--sp2) var(--sp3) var(--sp1); font-size: var(--fs-xs); color: var(--tx2); font-weight: 500; }
+.pal-item { display: flex; align-items: center; gap: var(--sp3); height: 38px; padding: 0 var(--sp3); border-radius: var(--r1); cursor: pointer; color: var(--tx); }
+.pal-item .grow { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pal-item .hint { color: var(--tx2); font-size: var(--fs-xs); white-space: nowrap; }
+.pal-item[aria-selected="true"] { background: var(--s3); }
+.pal-item[aria-selected="true"] > .ic { color: var(--ac); }
+.pal-foot { display: flex; gap: var(--sp4); padding: var(--sp2) var(--sp4); border-top: 1px solid var(--bd); font-size: var(--fs-xs); color: var(--tx2); }
+.pal-empty { padding: var(--sp6); text-align: center; color: var(--tx2); }
+
+#toasts { position: fixed; right: var(--sp4); bottom: var(--sp4); z-index: 70; display: flex; flex-direction: column; gap: var(--sp2); pointer-events: none; }
+.toast { display: flex; align-items: center; gap: var(--sp2); padding: var(--sp2) var(--sp3); background: var(--s2); border: 1px solid var(--bd2); border-radius: var(--r2); font-size: var(--fs-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, .3); animation: rise var(--dur) var(--ease-out); max-width: 360px; pointer-events: auto; }
+.toast .ic { color: var(--ok); }
+.toast.bad .ic { color: var(--bad); }
+.toast.out { opacity: 0; transform: translateY(4px); transition: opacity var(--dur-out) var(--ease-in), transform var(--dur-out) var(--ease-in); }
+
+/* charts */
+.chart { width: 100%; height: auto; display: block; }
+.chart .grid { stroke: var(--bd); stroke-width: 1; }
+.chart .ax { fill: var(--tx2); font: 10px var(--f-mono); }
+.chart .ln-a { fill: none; stroke: var(--ac); stroke-width: 1.5; }
+.chart .ar-a { fill: var(--ac-soft); }
+.chart .gap { fill: var(--bad-soft); }
+
+/* integrations */
+.int-card { display: flex; flex-direction: column; gap: var(--sp3); padding: var(--sp3); }
+.int-h { display: flex; align-items: center; gap: var(--sp3); }
+.int-h .logo { width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--r1); background: var(--s2); border: 1px solid var(--bd); flex: none; }
+.int-h .logo .ic { width: 20px; height: 20px; }
+.int-h > div { display: grid; flex: 1 1 0; min-width: 0; }
+.int-h > div > * { display: block; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp1) var(--sp4); font-size: var(--fs-sm); margin: 0; }
+.kv dt { color: var(--tx2); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.setup-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp3); }
+.setup-step { display: flex; align-items: center; gap: var(--sp3); padding: var(--sp3); }
+.setup-step .num { width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--bd2); display: grid; place-items: center; flex: none; font-weight: 600; font-size: var(--fs-sm); color: var(--tx2); }
+.setup-step.done .num { background: var(--ok); border-color: var(--ok); color: var(--bg); }
+.setup-step > div { flex: 1 1 0; display: grid; gap: 2px; min-width: 0; }
+.setup-step > div > * { display: block; }
+.setup-step.done h3 { color: var(--tx2); text-decoration: line-through; }
+
+.radio-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp3); }
+.radio-card { display: grid; gap: var(--sp1); padding: var(--sp3); border: 1px solid var(--bd2); border-radius: var(--r2); cursor: pointer; background: var(--s1); }
+.radio-card > * { display: block; }
+.radio-card:has(input:checked) { border-color: var(--ac); background: var(--ac-soft); }
+.radio-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.radio-card .rc-h { display: flex; align-items: center; gap: var(--sp2); font-weight: 500; }
+.secret { letter-spacing: .1em; color: var(--tx2); }
+
+.scrim { display: none; }
+
+/* responsive */
+@media (max-width: 1100px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cols-2 { grid-template-columns: minmax(0, 1fr); }
+  .hide-md { display: none; }
+  .stepper { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .step::after { display: none; }
+}
+@media (max-width: 767px) {
+  .app, body.sb-collapsed .app { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: fixed; left: 0; top: 0; z-index: 40; width: 272px; transform: translateX(-100%); transition: transform var(--dur-out) var(--ease-in); }
+  body.drawer-open .sidebar { transform: none; transition: transform var(--dur) var(--ease-out); }
+  body.drawer-open .scrim { display: block; position: fixed; inset: 0; z-index: 35; background: var(--scrim); }
+  body.sb-collapsed .lbl { display: revert; }
+  body.sb-collapsed .sb-env { display: block; }
+  .sb-collapse { display: none !important; }
+  .menu-btn { display: inline-grid; }
+  .topbar { padding: 0 var(--sp3); }
+  .search-btn { width: 40px; padding: 0; justify-content: center; }
+  .search-btn span, .search-btn kbd { display: none; }
+  .content { padding: var(--sp3) var(--sp3) var(--sp6); gap: var(--sp3); }
+  .hide-sm { display: none; }
+  .grid-2, .grid2, .radio-cards { grid-template-columns: minmax(0, 1fr); }
+  .stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-cards { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: var(--fs-lg); }
+  .topbar .tb-primary .tb-label { display: none; }
+  .ln { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .ln .ts { display: none; }
+}
+@media (max-width: 420px) {
+  .stats { gap: var(--sp2); }
+  .stat { padding: var(--sp3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+/* cards size to their content instead of stretching to the tallest sibling */
+.grid-2 > .card, .grid-cards > .card { align-self: start; }
+
+
+/* ---- v3: chrome cleanup, accordions, sessions, profile ---- */
+.topbar .menu-btn { display: none; }
+.sidebar > .sb-user { margin-top: auto; display: flex; align-items: center; gap: var(--sp2); padding: var(--sp2); border-radius: var(--r1); border: 1px solid transparent; color: var(--tx); min-width: 0; transition: background var(--dur) var(--ease-out); }
+@media (hover: hover) { .sidebar > .sb-user:hover { background: var(--s2); border-color: var(--bd); } }
+.sidebar > .sb-user[aria-current="page"] { background: var(--s2); border-color: var(--bd2); }
+body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0; }
+.page-bar { min-height: 32px; }
+.page-sub { font-size: var(--fs-sm); }
+.card-head h2 .count { font-weight: 400; font-size: var(--fs-xs); color: var(--tx2); margin-left: var(--sp2); }
+.side-stack { display: flex; flex-direction: column; gap: var(--sp4); min-width: 0; }
+.avs { display: inline-flex; align-items: center; }
+.av { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: var(--s3); border: 2px solid var(--s1); color: var(--tx); flex: none; }
+.av + .av { margin-left: -6px; }
+.av-lg { width: 32px; height: 32px; font-size: var(--fs-xs); border-width: 1px; border-color: var(--bd2); }
+.sess { list-style: none; margin: 0; padding: 0; }
+.sess-row { display: flex; align-items: center; gap: var(--sp3); padding: var(--sp2) var(--sp3); }
+.sess-row + .sess-row { border-top: 1px solid var(--bd); }
+.sess-row .ta-r { text-align: right; justify-items: end; }
+.acc-group { border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); }
+.acc + .acc { border-top: 1px solid var(--bd); }
+.acc > summary { display: flex; align-items: center; gap: var(--sp3); min-height: 48px; padding: var(--sp2) var(--sp3); cursor: pointer; list-style: none; }
+.acc > summary::-webkit-details-marker { display: none; }
+@media (hover: hover) { .acc > summary:hover { background: var(--s2); } }
+.acc:first-child > summary { border-radius: var(--r2) var(--r2) 0 0; }
+.acc > summary .chev { color: var(--tx2); transition: transform var(--dur) var(--ease-out); }
+.acc[open] > summary .chev { transform: rotate(90deg); }
+.acc-t { font-weight: 500; display: flex; align-items: center; gap: var(--sp2); min-width: 0; white-space: nowrap; }
+.acc-s { margin-left: auto; display: flex; align-items: center; gap: var(--sp2); font-size: var(--fs-xs); min-width: 0; white-space: nowrap; overflow: hidden; }
+.acc-b { padding: 0 var(--sp3) var(--sp3) 40px; display: flex; flex-direction: column; gap: var(--sp3); }
+.acc-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); flex-wrap: wrap; font-size: var(--fs-sm); }
+.int-logo { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--r1); background: var(--s2); border: 1px solid var(--bd); flex: none; }
+.sec-head { display: flex; align-items: baseline; gap: var(--sp2); flex-wrap: wrap; }
+.sec-head h2 { font-size: var(--fs); }
+.sec-head p { font-size: var(--fs-xs); }
+.pref { display: flex; align-items: center; justify-content: space-between; gap: var(--sp3); flex-wrap: wrap; font-size: var(--fs-sm); }
+.profile { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: var(--sp4); align-items: start; }
+.id-card { padding: var(--sp4); display: grid; gap: var(--sp3); justify-items: start; }
+.id-card .avatar { width: 56px; height: 56px; font-size: var(--fs-lg); }
+.set-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--sp4); align-items: center; padding: var(--sp3); }
+.set-row + .set-row { border-top: 1px solid var(--bd); }
+.set-ctl > input, .set-ctl > select { width: 100%; }
+.card > .m-foot { border-radius: 0 0 var(--r2) var(--r2); }
+@media (max-width: 1100px) { .profile { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 767px) {
+  .topbar .menu-btn { display: inline-grid; }
+  .set-row { grid-template-columns: minmax(0, 1fr); gap: var(--sp2); }
+  .acc-b { padding-left: var(--sp3); }
+  .acc-s .badge ~ *, .acc-s > span:not(.badge) { display: none; }
+}
+</style>
+<script>
+  try {
+    var t = localStorage.getItem('walroos-theme');
+    if (t) document.documentElement.dataset.theme = t;
+    if (localStorage.getItem('walroos-sb') === '1') document.documentElement.classList.add('pre-collapsed');
+  } catch (e) {}
+</script>
+</head>
+<body>
+<a class="skip" href="#view">Skip to content</a>
+<div class="app">
+  <aside id="sidebar" class="sidebar" aria-label="Sidebar"></aside>
+  <div class="scrim" data-act="closeDrawer"></div>
+  <div class="main">
+    <header class="topbar">
+      <button class="btn-icon menu-btn" data-act="openDrawer" aria-label="Open navigation"></button>
+      <nav class="crumbs" aria-label="Breadcrumb"><ol id="crumbs"></ol></nav>
+      <button class="search-btn" data-act="palette" aria-label="Search or run a command" aria-keyshortcuts="Control+K Meta+K"></button>
+      <div class="tb-primary" id="tb-primary"></div>
+    </header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+<div id="layer"></div>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+/* walroos prototype — hash-routed, vanilla JS. Sample data mirrors the brief.
+   ponytail: one file, string templates + event delegation; move to React when exporting. */
+
+/* ---------- utils ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const IS_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent);
+const KBD = IS_MAC ? '⌘K' : 'Ctrl K';
+const HUB = 'walroos-hub.tail3f2a.ts.net';
+const JOIN_TOKEN = 'wlr_join_8f3kq2mz7xv1c9tp';
+const DEPLOY_TOKEN = 'wlr_dep_tienda_4h7Kp2xQ9mZ1rT';
+const hex7 = () => Math.random().toString(16).slice(2, 9).padEnd(7, '0');
+const pad = n => String(n).padStart(2, '0');
+const clock = d => `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+/* ---------- icons (one stroke family, 1.5px) ---------- */
+const P = {
+  overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  workspace: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  apps: '<path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/>',
+  deploy: '<circle cx="12" cy="12" r="9"/><path d="m8 12 4-4 4 4M12 8v8"/>',
+  nodes: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  plug: '<path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0V7ZM12 17v5"/>',
+  settings: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  chevDown: '<path d="m6 9 6 6 6-6"/>',
+  chevRight: '<path d="m9 6 6 6-6 6"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  play: '<path d="M7 5v14l11-7L7 5Z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+  refresh: '<path d="M20 11A8 8 0 0 0 5.6 6.6L3 9M3 4v5h5M4 13a8 8 0 0 0 14.4 4.4L21 15M21 20v-5h-5"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
+  maximize: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-6 4-12 8"/>',
+  rollback: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M14 9l2 2"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  terminal: '<path d="m5 7 5 5-5 5M12 17h7"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  cloud: '<path d="M7 18a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8H7Z"/>',
+  webhook: '<path d="M18 16.9A4 4 0 1 1 14 20H8"/><path d="M6 15.5a4 4 0 1 1 5.5-5.5L15 4"/><circle cx="15" cy="4" r="1"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  github: '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.1-1.3-.3-2.5-1-3.5.3-1.2.3-2.4 0-3.5 0 0-1 0-3 1.5a10.3 10.3 0 0 0-6 0C8 2 7 2 7 2c-.3 1.1-.3 2.3 0 3.5-.7 1-1.1 2.2-1 3.5 0 3.5 3 5.5 6 5.5-.4.5-.7 1-.8 1.6-.2.6-.2 1.2-.2 1.9v4"/><path d="M9 18c-4.5 2-5-2-7-2"/>',
+  gitlab: '<path d="m22 13.3-2.4-7.4c-.1-.4-.6-.5-.9-.2l-2.3 7.2H7.6L5.3 5.7c-.3-.3-.8-.2-.9.2L2 13.3c-.1.4 0 .8.3 1l9.7 7 9.7-7c.3-.2.4-.6.3-1Z"/>',
+  forgejo: '<circle cx="7" cy="5" r="2"/><circle cx="17" cy="5" r="2"/><circle cx="7" cy="19" r="2"/><path d="M7 7v10M7 13c0-4 3-6 8-7"/>',
+  activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  cpu: '<rect x="6" y="6" width="12" height="12" rx="1.5"/><path d="M10 10h4v4h-4zM9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+};
+const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[n] || ''}</svg>`;
+const LOGO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l4 9 5-6 5 6 4-9"/><path d="M9.6 12.2 9 20M14.4 12.2 15 20"/></svg>';
+const ILLUS_WS = `<svg class="illus" viewBox="0 0 120 80" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+  <rect x="10" y="12" width="64" height="46" rx="4"/><path d="M10 22h64"/><path class="a" d="m20 32 6 5-6 5M31 42h12"/>
+  <rect x="84" y="20" width="26" height="12" rx="2"/><rect x="84" y="38" width="26" height="12" rx="2"/><path d="M89 26h.01M89 44h.01"/>
+  <path class="a" d="M74 35h10" stroke-dasharray="2 3"/><path d="M26 66h32M42 58v8"/></svg>`;
+
+/* ---------- data ---------- */
+const nodes = [
+  { name: 'homelab-1', roles: ['dev', 'build'], status: 'online', cpu: 23, ram: 9.1, ramT: 32, disk: 214, diskT: 512, containers: 4, host: 'homelab-1.tail3f2a.ts.net', ip: '100.101.12.4', os: 'Debian 13', arch: 'amd64', podman: '5.4.1', walroos: '0.9.2', seen: 'just now', seed: 7 },
+  { name: 'homelab-2', roles: ['prod'], status: 'online', cpu: 41, ram: 5.4, ramT: 16, disk: 96, diskT: 256, containers: 3, host: 'homelab-2.tail3f2a.ts.net', ip: '100.101.12.7', os: 'Debian 13', arch: 'amd64', podman: '5.4.1', walroos: '0.9.2', seen: 'just now', seed: 13 },
+  { name: 'vps-fra', roles: ['prod'], status: 'offline', cpu: null, ram: null, ramT: 4, disk: null, diskT: 80, containers: null, host: 'vps-fra.tail3f2a.ts.net', ip: '100.88.40.2', os: 'Ubuntu 24.04', arch: 'arm64', podman: '5.2.3', walroos: '0.9.1', seen: '2h ago', seed: 21 },
+];
+const workspaces = [
+  { name: 'walroos', repo: 'github.com/jefjesuswt/walroos', branch: 'main', node: 'homelab-1', status: 'running', detail: 'Go 1.26 + Node 22', active: 'now', uptime: '3d 4h', config: 'devcontainer', ports: [[3000, 'go run ./cmd/hub'], [5173, 'vite --host']], cpu: 4, mem: 8, vol: ['1.8 GB', '640 MB'] },
+  { name: 'tienda-api', repo: 'forgejo.home/jef/tienda-api', branch: 'feat/pagos', node: 'homelab-1', status: 'running', detail: 'Bun 1.3', active: '8 min ago', uptime: '5h 12m', config: 'devcontainer', ports: [[3000, 'bun --watch src/index.ts']], cpu: 2, mem: 4, vol: ['412 MB', '1.1 GB'] },
+  { name: 'blog', repo: 'github.com/jefjesuswt/blog', branch: 'main', node: 'homelab-1', status: 'stopped', detail: 'Last active 3 days ago', active: '3 days ago', uptime: '—', config: 'base', ports: [], cpu: 2, mem: 4, vol: ['96 MB', '310 MB'] },
+];
+const apps = [
+  { name: 'tienda-api', repo: 'forgejo.home/jef/tienda-api', node: 'homelab-2', domain: 'api.tienda.walroos.com', trigger: 'on_ci', status: 'running', port: 3000, health: '/health', dockerfile: './Dockerfile', spark: [1, 0, 2, 1, 0, 0, 3, 1, 2, 0, 1, 2, 1, 4] },
+  { name: 'blog', repo: 'github.com/jefjesuswt/blog', node: 'homelab-2', domain: 'blog.walroos.com', trigger: 'on_push', status: 'running', port: 4321, health: '/', dockerfile: './Dockerfile', spark: [0, 1, 0, 0, 2, 0, 0, 1, 0, 0, 0, 1, 0, 0] },
+  { name: 'landing', repo: 'github.com/jefjesuswt/landing', node: 'vps-fra', domain: 'walroos.com', trigger: 'manual', status: 'failed', port: 3000, health: '/health', dockerfile: './Dockerfile', spark: [0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1] },
+];
+// newest first
+const deploys = [
+  { id: 'd-1047', app: 'tienda-api', sha: 'a1b2c3d', msg: 'fix: idempotencia en pagos', author: 'jefjesuswt', trigger: 'ci', status: 'succeeded', dur: '1m 48s', when: '12 min ago', start: '14:21:07', today: true, current: true },
+  { id: 'd-1046', app: 'tienda-api', sha: '7c9e2f1', msg: 'feat: reintentos con backoff en webhooks', author: 'jefjesuswt', trigger: 'ci', status: 'succeeded', dur: '1m 52s', when: '1h ago', start: '13:30:44', today: true },
+  { id: 'd-1045', app: 'landing', sha: '9f8e7d6', msg: 'feat: pricing section', author: 'jefjesuswt', trigger: 'manual', status: 'failed', failStep: 5, dur: '1m 21s', when: '2h ago', start: '12:28:10', today: true },
+  { id: 'd-1044', app: 'tienda-api', sha: '3d4e5f6', msg: 'chore: bump bun to 1.3.2', author: 'claude via MCP', trigger: 'mcp', status: 'succeeded', dur: '2m 03s', when: '4h ago', start: '10:12:31', today: true },
+  { id: 'd-1043', app: 'tienda-api', sha: 'b8a7c6d', msg: 'fix: total con IVA redondeado', author: 'jefjesuswt', trigger: 'manual', status: 'succeeded', dur: '1m 46s', when: '6h ago', start: '08:40:02', today: true },
+  { id: 'd-1042', app: 'blog', sha: '5e6f7a8', msg: 'post: podman rootless en el homelab', author: 'jefjesuswt', trigger: 'webhook', status: 'succeeded', dur: '48s', when: '2 days ago', start: '21:04:55', current: true },
+  { id: 'd-1041', app: 'landing', sha: '0a1b2c3', msg: 'copy: hero headline', author: 'jefjesuswt', trigger: 'manual', status: 'succeeded', dur: '1m 05s', when: '3 days ago', start: '18:15:20', current: true },
+  { id: 'd-1040', app: 'tienda-api', sha: 'f0e1d2c', msg: 'feat: endpoint de reembolsos', author: 'jefjesuswt', trigger: 'ci', status: 'failed', failStep: 2, dur: '41s', when: '3 days ago', start: '11:02:48' },
+  { id: 'd-1039', app: 'blog', sha: '2b3c4d5', msg: 'post: tailscale serve vs funnel', author: 'jefjesuswt', trigger: 'webhook', status: 'succeeded', dur: '51s', when: '5 days ago', start: '09:47:13' },
+  { id: 'd-1038', app: 'landing', sha: 'c1d2e3f', msg: 'chore: footer links', author: 'jefjesuswt', trigger: 'manual', status: 'succeeded', dur: '1m 02s', when: '9 days ago', start: '16:33:40' },
+];
+const HEADS = {
+  'tienda-api': { main: ['c4d5e6f', 'feat: estado de pedido en /v1/orders/:id'], 'feat/pagos': ['91ab3cd', 'wip: pagos con PSE'] },
+  blog: { main: ['6f7a8b9', 'post: notas sobre mise'] },
+  landing: { main: ['9f8e7d6', 'feat: pricing section'] },
+};
+const envs = {
+  'tienda-api': [['PORT', '3000', 0], ['NODE_ENV', 'production', 0], ['LOG_LEVEL', 'info', 0], ['DATABASE_URL', 'postgres://tienda:Xp9v2Lq@homelab-2.tail3f2a.ts.net:5432/tienda', 1], ['STRIPE_SECRET_KEY', 'sk_live_51NqA8vKd2Zt7Yw', 1], ['IDEMPOTENCY_TTL', '86400', 0]],
+  blog: [['PORT', '4321', 0], ['SITE_URL', 'https://blog.walroos.com', 0]],
+  landing: [['PORT', '3000', 0], ['PLAUSIBLE_DOMAIN', 'walroos.com', 0], ['RESEND_API_KEY', 're_8Hk2pQ4vT9', 1]],
+};
+const domains = {
+  'tienda-api': [['api.tienda.walroos.com', 'Cloudflare Tunnel', 'active'], ['tienda-api.homelab-2.tail3f2a.ts.net', 'Tailnet only', 'active']],
+  blog: [['blog.walroos.com', 'Cloudflare Tunnel', 'active']],
+  landing: [['walroos.com', 'Cloudflare Tunnel', 'active'], ['www.walroos.com', 'Cloudflare Tunnel', 'active']],
+};
+const SESSIONS = {
+  walroos: [
+    { user: 'jefjesuswt@github', init: 'J', client: 'Claude Code', via: 'ssh -t claude', from: 'macbook-air', ip: '100.101.12.9', since: '2h 14m', state: 'active' },
+    { user: 'jefjesuswt@github', init: 'J', client: 'VS Code', via: 'remote-ssh', from: 'macbook-air', ip: '100.101.12.9', since: '3h 02m', state: 'idle 4m' },
+    { user: 'dani@github', init: 'D', client: 'SSH', via: 'tmux attach -t review', from: 'dani-thinkpad', ip: '100.101.12.22', since: '26m', state: 'active' },
+  ],
+  'tienda-api': [
+    { user: 'jefjesuswt@github', init: 'J', client: 'SSH', via: 'zsh', from: 'thinkpad-x1', ip: '100.101.12.14', since: '41m', state: 'idle 8m' },
+  ],
+};
+const WS_USAGE = { walroos: { cpu: 38, ram: 3.1, git: 'main · 2 modified · ahead 1' }, 'tienda-api': { cpu: 12, ram: 1.1, git: 'feat/pagos · clean · ahead 3' } };
+const sess = w => w.status === 'running' ? (SESSIONS[w.name] || []) : [];
+function avatars(w) {
+  const u = [...new Map(sess(w).map(s => [s.user, s])).values()];
+  return u.length ? `<span class="avs" aria-label="Connected: ${u.map(s => esc(s.user)).join(', ')}">${u.map(s => `<span class="av" title="${esc(s.user)}">${s.init}</span>`).join('')}</span>` : '<span class="muted">—</span>';
+}
+const REPOS = ['github.com/jefjesuswt/walroos', 'github.com/jefjesuswt/blog', 'github.com/jefjesuswt/landing', 'github.com/jefjesuswt/dotfiles', 'forgejo.home/jef/tienda-api', 'forgejo.home/jef/infra'];
+const integrations = {
+  github: { name: 'GitHub', icon: 'github', connected: true, account: 'jefjesuswt', repos: 14, via: 'GitHub App' },
+  gitlab: { name: 'GitLab', icon: 'gitlab', connected: false },
+  forgejo: { name: 'Forgejo / Gitea', icon: 'forgejo', connected: true, account: 'jef', url: 'https://forgejo.home', repos: 6, via: 'Access token' },
+};
+const deliveries = [
+  ['14:21:02', 'push', 'forgejo.home/jef/tienda-api', 200, '84ms'],
+  ['13:30:39', 'push', 'forgejo.home/jef/tienda-api', 200, '91ms'],
+  ['11:58:17', 'pull_request', 'github.com/jefjesuswt/walroos', 200, '62ms'],
+  ['09:12:44', 'push', 'github.com/jefjesuswt/dotfiles', 204, '40ms'],
+  ['yesterday', 'push', 'github.com/jefjesuswt/landing', 401, '12ms'],
+  ['2 days ago', 'push', 'github.com/jefjesuswt/blog', 200, '77ms'],
+];
+const sshKeys = [
+  { name: 'macbook-air', type: 'ED25519', fp: 'SHA256:q3Zf8kP1vX2nR7tL0aB5cD9eF4gH6iJ', added: 'Sep 14, 2026', last: 'today' },
+  { name: 'thinkpad-x1', type: 'ED25519', fp: 'SHA256:Mn4Bv7Cx2Zl9Kj5Hg8Fd3Sa1Qw6Er0Ty', added: 'Jun 2, 2026', last: '3 days ago' },
+];
+const tokens = [
+  { name: 'ci-tienda-api', scopes: ['deploy:tienda-api'], last: '12 min ago', created: 'Oct 2, 2026' },
+  { name: 'claude-code-mcp', scopes: ['read', 'deploy', 'workspaces'], last: '4h ago', created: 'Oct 20, 2026' },
+  { name: 'laptop-cli', scopes: ['admin'], last: 'yesterday', created: 'Aug 11, 2026' },
+];
+
+const TRIG = { ci: 'CI', webhook: 'webhook', manual: 'manual', mcp: 'MCP' };
+const APP_TRIG = { on_push: 'on push', on_ci: 'on CI', manual: 'manual' };
+const STEPS = ['Queued', 'Clone', 'Build', 'Release', 'Route', 'Healthcheck'];
+const ST = { running: 'ok', succeeded: 'ok', online: 'ok', healthy: 'ok', active: 'ok', connected: 'ok', building: 'busy', deploying: 'busy', starting: 'busy', stopping: 'busy', pending: 'busy', failed: 'bad', offline: 'bad', error: 'bad', down: 'bad', stopped: 'idle', queued: 'idle', skipped: 'idle', 'not connected': 'idle' };
+
+/* ---------- state ---------- */
+const S = {
+  nodeFilter: '', banner: true, loaded: {}, timers: [], layerTimers: [], lastFocus: null,
+  view: {}, revealed: new Set(), rt: {}, rtPaused: false, rtFilter: '', rtLevel: 'all',
+  logQuery: '', autoscroll: true, collapsed: {}, term: {}, depFilter: { app: '', status: '' },
+  setup: { node: false, git: false, ws: false }, seq: 1047,
+};
+S.acc = new Set();
+S.profile = { name: 'Jef', handle: 'jefjesuswt@github', tz: 'America/Caracas', node: 'homelab-1' };
+const later = (fn, ms) => S.timers.push(setTimeout(fn, ms));
+const every = (fn, ms) => S.timers.push(setInterval(fn, ms));
+function clearTimers() { S.timers.forEach(t => { clearTimeout(t); clearInterval(t); }); S.timers = []; }
+const layerLater = (fn, ms) => S.layerTimers.push(setTimeout(fn, ms));
+
+const wsBy = n => workspaces.find(w => w.name === n);
+const appBy = n => apps.find(a => a.name === n);
+const nodeBy = n => nodes.find(x => x.name === n);
+const depBy = id => deploys.find(d => d.id === id);
+const filtered = arr => S.nodeFilter ? arr.filter(x => (x.node || x.name) === S.nodeFilter) : arr;
+const lastDeploy = a => deploys.find(d => d.app === a.name);
+
+/* ---------- small components ---------- */
+const badge = (s, label = s) => `<span class="badge s-${ST[s] || 'idle'}"><span class="dot" aria-hidden="true"></span>${esc(label)}</span>`;
+const copyBtn = (text, label = 'Copy') => `<button type="button" class="btn-icon" data-copy="${esc(text)}" aria-label="${esc(label)}" title="${esc(label)}">${icon('copy')}</button>`;
+const cmd = (text, prompt = '$') => `<div class="cmd">${prompt ? `<span class="prompt" aria-hidden="true">${prompt}</span>` : ''}<code>${esc(text)}</code>${copyBtn(text, 'Copy command')}</div>`;
+const codeBlock = text => `<div class="code"><pre><code>${esc(text)}</code></pre>${copyBtn(text, 'Copy snippet')}</div>`;
+const repoIcon = r => r.includes('github.com') ? 'github' : r.includes('gitlab') ? 'gitlab' : 'forgejo';
+const repoCell = r => `<span class="repo">${icon(repoIcon(r))}<span class="mono">${esc(r)}</span></span>`;
+const chip = (t, cls = '') => `<span class="chip ${cls}">${t}</span>`;
+const modalHead = (title, sub) => `<div class="m-head"><div><h2 id="m-title">${title}</h2>${sub ? `<p class="muted">${sub}</p>` : ''}</div><button type="button" class="btn-icon" data-act="closeLayer" aria-label="Close">${icon('x')}</button></div>`;
+const pageHead = (title, sub, actions = '') => `<h1 class="sr-only">${title}</h1>${sub || actions ? `<div class="page-head page-bar">${sub ? `<p class="muted page-sub">${sub}</p>` : '<span></span>'}${actions ? `<div class="ph-actions">${actions}</div>` : ''}</div>` : ''}`;
+function accItem(k, title, sum, body, force) {
+  return `<details class="acc" data-acc="${k}" ${force || S.acc.has(k) ? 'open' : ''}><summary>${icon('chevRight', 'chev')}<span class="acc-t">${title}</span><span class="acc-s muted">${sum}</span></summary><div class="acc-b">${body}</div></details>`;
+}
+const tabsNav = (base, tabs, cur) => `<nav class="tabs" aria-label="Sections">${tabs.map(([k, l]) => `<a href="${base}/${k}" ${k === cur ? 'aria-current="page"' : ''}>${l}</a>`).join('')}</nav>`;
+function meter(label, pct, text) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  const lvl = p >= 85 ? 'b-bad' : p >= 70 ? 'b-busy' : '';
+  return `<div class="meter"><div class="meter-h"><span>${label}</span><span class="mono od-nowrap">${text}</span></div><div class="bar" role="meter" aria-label="${label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"><i class="${lvl}" style="width:${p}%"></i></div></div>`;
+}
+function menu(label, items) {
+  return `<details class="menu"><summary class="btn-icon" aria-label="${esc(label)}">${icon('more')}</summary><div class="menu-pop" role="menu">${items}</div></details>`;
+}
+function skeleton(rows = 4) {
+  return `<div class="skel-list" aria-busy="true" aria-label="Loading">${Array.from({ length: rows }, () => '<div class="skel-row"><i class="skel w30"></i><i class="skel w50"></i><i class="skel w15"></i></div>').join('')}</div>`;
+}
+const emptyBox = (art, title, text, action = '') => `<div class="state">${art}<h3>${title}</h3><p class="muted">${text}</p>${action}</div>`;
+const errorBox = (what, key) => `<div class="state state-err" role="alert">${icon('alert', 'ic-lg')}<h3>Couldn't load ${what}</h3><p class="muted">The hub didn't answer over the tailnet. Check that walroos-hub is up, then retry.</p><code>GET https://${HUB}/api/${key} → 502 Bad Gateway</code><a class="btn" href="#/${key}">${icon('refresh')}Retry</a></div>`;
+/** list states: ?state=empty|loading|error; first visit shows a short skeleton */
+function listView(key, q, o) {
+  const st = q.get('state');
+  if (st === 'loading') return skeleton(o.rows);
+  if (!S.loaded[key] && !st) { S.loaded[key] = true; later(route, 420); return skeleton(o.rows); }
+  if (st === 'error') return errorBox(o.what, key);
+  if (st === 'empty' || o.isEmpty) return o.empty;
+  return o.data();
+}
+function spark(arr) {
+  const max = Math.max(1, ...arr), W = 112, H = 28, bw = 6, gap = 2;
+  const total = arr.reduce((a, b) => a + b, 0);
+  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${total} deploys in the last 14 days">${arr.map((v, i) => {
+    const h = v ? Math.max(4, v / max * H) : 2;
+    return `<rect x="${i * (bw + gap)}" y="${H - h}" width="${bw}" height="${h}" rx="1" fill="${v ? 'currentColor' : 'var(--bd2)'}"/>`;
+  }).join('')}</svg>`;
+}
+function series(seed, n, base, amp) {
+  let x = seed * 7919; const out = [];
+  for (let i = 0; i < n; i++) {
+    x = (x * 9301 + 49297) % 233280;
+    const r = x / 233280;
+    out.push(Math.max(2, Math.min(98, base + Math.sin(i / n * Math.PI * 4 + seed) * amp * .6 + (r - .5) * amp)));
+  }
+  return out;
+}
+function chart(label, data, fmt) {
+  const W = 600, H = 170, L = 40, R = 8, T = 10, B = 24, iw = W - L - R, ih = H - T - B;
+  const pts = data.map((v, i) => v == null ? null : [L + i / (data.length - 1) * iw, T + ih - v / 100 * ih]);
+  const valid = pts.filter(Boolean);
+  const line = valid.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const area = valid.length ? `M${valid[0][0].toFixed(1)},${T + ih} L${line.split(' ').join(' L')} L${valid[valid.length - 1][0].toFixed(1)},${T + ih} Z` : '';
+  const vals = data.filter(v => v != null);
+  const peak = vals.length ? Math.max(...vals) : 0, avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+  const gapStart = data.findIndex(v => v == null);
+  const gapX = gapStart >= 0 ? L + gapStart / (data.length - 1) * iw : null;
+  const grid = [0, 25, 50, 75, 100].map(g => { const y = T + ih - g / 100 * ih; return `<line class="grid" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="ax" x="${L - 6}" y="${y + 3}" text-anchor="end">${g}%</text>`; }).join('');
+  const xs = ['-24h', '-18h', '-12h', '-6h', 'now'].map((t, i) => `<text class="ax" x="${L + i / 4 * iw}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === 4 ? 'end' : 'middle'}">${t}</text>`).join('');
+  return `<div class="card"><div class="card-head"><div><h3>${label}</h3><span class="muted mono" style="font-size:var(--fs-xs)">peak ${fmt(peak)} · avg ${fmt(avg)}</span></div></div>
+  <div class="card-body"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${label} over the last 24 hours, peak ${fmt(peak)}, average ${fmt(avg)}${gapX ? ', no data since node went offline' : ''}">${grid}${xs}
+  ${gapX ? `<rect class="gap" x="${gapX}" y="${T}" width="${W - R - gapX}" height="${ih}"/><text class="ax" x="${(gapX + W - R) / 2}" y="${T + 14}" text-anchor="middle">offline</text>` : ''}
+  <path class="ar-a" d="${area}"/><polyline class="ln-a" points="${line}"/></svg></div></div>`;
+}
+
+/* ---------- derived state ---------- */
+function appState(a) {
+  const n = nodeBy(a.node);
+  const live = deploys.find(d => d.app === a.name && d.live);
+  if (live) return { s: depStatus(live), l: depStatus(live) };
+  if (n && n.status === 'offline') return { s: 'offline', l: 'node offline' };
+  if (a.status === 'failed') return { s: 'failed', l: 'deploy failed' };
+  return { s: 'running', l: 'running' };
+}
+const appHealthy = a => appState(a).s === 'running';
+const toSec = s => { if (!s) return 0; const m = /(?:(\d+)m)?\s*(?:(\d+)s)?/.exec(s); return (+(m[1] || 0)) * 60 + (+(m[2] || 0)); };
+const fmtDur = s => s >= 60 ? `${Math.floor(s / 60)}m ${pad(s % 60)}s` : `${s}s`;
+
+/* ---------- deployment logs ---------- */
+function buildSteps(d) {
+  if (d._steps) return d._steps;
+  const a = appBy(d.app) || { repo: `github.com/jefjesuswt/${d.app}`, node: 'homelab-2', port: 3000, health: '/health', domain: `${d.app}.walroos.com`, dockerfile: './Dockerfile' };
+  const img = `walroos/${d.app}:${d.sha}`;
+  const bun = d.app === 'tienda-api';
+  const prev = deploys.slice(deploys.indexOf(d) + 1).find(x => x.app === d.app && x.status === 'succeeded');
+  const prevSha = prev ? prev.sha : 'previous';
+  const total = toSec(d.dur) || 100;
+  const durs = d.failStep === 5 ? [2, 3, 41, 4, 1, 30] : d.failStep === 2 ? [1, 3, 37, 0, 0, 0] : [1, 3, Math.max(20, total - 14), 6, 1, 3];
+  const L = [
+    [`deployment ${d.id} queued (trigger: ${TRIG[d.trigger]}, by ${d.author})`, 'waiting for a build slot on homelab-1 (role: build)', 'build slot acquired'],
+    [`git clone --depth 1 --branch main https://${a.repo} /build/${d.app}`, `Cloning into '/build/${d.app}'...`, `HEAD is now at ${d.sha} ${d.msg}`],
+    [`podman build -f ${a.dockerfile} -t ${img} .`, `STEP 1/7: FROM ${bun ? 'oven/bun:1.3-slim' : 'node:22-alpine'}`, 'STEP 2/7: WORKDIR /app', `STEP 3/7: COPY package.json ${bun ? 'bun.lock' : 'package-lock.json'} ./`, `STEP 4/7: RUN ${bun ? 'bun install --frozen-lockfile' : 'npm ci --omit=dev'}`, `${bun ? '214 packages installed [3.82s]' : 'added 312 packages in 6s'}`, 'STEP 5/7: COPY . .', `STEP 6/7: RUN ${bun ? 'bun run build' : 'npm run build'}`],
+    [`pushing ${img} → homelab-1:5000`, `pulling ${img} on ${a.node}`, `starting container ${d.app}-${d.sha} (port ${a.port})`, 'container started'],
+    [`ingress: ${a.domain} → http://${d.app}-${d.sha}:${a.port} (Cloudflare Tunnel)`, 'route staged, waiting for healthcheck'],
+    [],
+  ];
+  if (d.failStep === 2) {
+    L[2].push(`src/routes/refunds.ts:42:18 - error TS2339: Property 'refundId' does not exist on type 'Payment'.`, '!error: script "build" exited with code 2', '!Build failed: podman build exited with status 1');
+    L[3] = []; L[4] = [];
+  } else {
+    L[2].push(bun ? 'Bundled 128 modules in 412ms → dist/index.js' : 'built 46 pages in 3.1s', `STEP 7/7: CMD ["${bun ? 'bun' : 'node'}", "${bun ? 'dist/index.js' : 'server.js'}"]`, `COMMIT ${img}`, `Successfully tagged localhost/${img}`);
+  }
+  if (d.failStep === 5) {
+    L[5] = [`GET :${a.port}${a.health} … no response (attempt 1/3)`, `~GET :${a.port}${a.health} … no response (attempt 2/3)`, `~GET :${a.port}${a.health} … no response (attempt 3/3)`, `!Healthcheck failed: GET :${a.port}${a.health} timed out after 30s`, `rollback: keeping ${prevSha} serving; stopped ${d.app}-${d.sha}`];
+  } else if (d.failStep !== 2) {
+    L[5] = [`GET :${a.port}${a.health} → 200 OK (31ms)`, `traffic switched to ${d.sha}`, `stopped previous container ${d.app}-${prevSha}`, `deployment ${d.id} succeeded`];
+  }
+  const [hh, mm, ss] = (d.start || '12:00:00').split(':').map(Number);
+  let t = new Date(2026, 10, 16, hh, mm, ss).getTime();
+  d._steps = STEPS.map((name, i) => {
+    const lines = L[i].map(raw => {
+      const lv = raw[0] === '!' ? 'err' : raw[0] === '~' ? 'warn' : '';
+      const txt = lv ? raw.slice(1) : raw;
+      const ln = { ts: clock(new Date(t)), lv, t: txt };
+      t += (durs[i] * 1000) / Math.max(1, L[i].length);
+      return ln;
+    });
+    let st = 'ok';
+    if (d.failStep != null) st = i < d.failStep ? 'ok' : i === d.failStep ? 'bad' : 'skip';
+    return { name, lines, sec: durs[i], st };
+  });
+  d._total = d._steps.reduce((n, s) => n + s.lines.length, 0);
+  return d._steps;
+}
+function liveStepIdx(d) {
+  const steps = buildSteps(d); let n = d.pos || 0;
+  for (let i = 0; i < steps.length; i++) { if (n < steps[i].lines.length) return i; n -= steps[i].lines.length; }
+  return steps.length;
+}
+function depStatus(d) {
+  if (!d.live) return d.status;
+  const i = liveStepIdx(d);
+  return i === 0 ? 'queued' : i <= 2 ? 'building' : 'deploying';
+}
+
+/* ---------- live simulation ---------- */
+setInterval(() => {
+  const live = deploys.filter(d => d.live);
+  if (!live.length) return;
+  live.forEach(d => {
+    buildSteps(d);
+    d.pos = (d.pos || 0) + 1;
+    if (d.pos >= d._total) {
+      d.live = false; d.status = 'succeeded'; d.when = 'just now';
+      deploys.forEach(x => { if (x.app === d.app) x.current = false; });
+      d.current = true;
+      const a = appBy(d.app); if (a) a.status = 'running';
+      toast(`${d.app} deployed · ${d.sha}`);
+      if (S.view.sec !== 'deployments' || S.view.id !== d.id) refresh(['overview', 'apps', 'deployments']);
+    }
+    if (S.view.sec === 'deployments' && S.view.id === d.id) paintDeploy(d);
+  });
+}, 260);
+
+function startDeploy(appName, ref = 'main', trigger = 'manual') {
+  const a = appBy(appName); if (!a) return null;
+  const n = nodeBy(a.node);
+  if (n && n.status === 'offline') { toast(`${a.node} is offline — can't deploy ${appName}. Bring the node back or move the app.`, 'bad'); return null; }
+  const head = (HEADS[appName] || {})[ref];
+  const isSha = /^[0-9a-f]{7,40}$/i.test(ref);
+  const sha = isSha ? ref.slice(0, 7) : head ? head[0] : hex7();
+  const msg = isSha ? (deploys.find(x => x.sha === sha) || {}).msg || `redeploy ${sha}` : head ? head[1] : `deploy ${ref}`;
+  const now = new Date();
+  const d = { id: `d-${++S.seq}`, app: appName, sha, msg, author: trigger === 'mcp' ? 'claude via MCP' : 'jefjesuswt', trigger, status: 'queued', dur: '1m 40s', when: 'just now', start: clock(now), today: true, live: true, pos: 0 };
+  deploys.unshift(d);
+  a.spark[a.spark.length - 1]++;
+  return d;
+}
+function deployAndOpen(appName, ref) {
+  const d = startDeploy(appName, ref);
+  if (d) { toast(`Deploying ${appName} @ ${d.sha}`); go(`#/deployments/${d.id}`); }
+}
+
+/* ---------- views ---------- */
+function vOverview(q) {
+  const failedApp = apps.find(a => a.status === 'failed');
+  const failedDep = failedApp && deploys.find(d => d.app === failedApp.name && d.status === 'failed');
+  const banner = S.banner && failedDep ? `<div class="alert alert-bad" role="alert">${icon('alert')}
+    <div class="alert-text"><strong>${failedApp.name} deploy failed — healthcheck timeout</strong><span class="muted"><span class="sha">${failedDep.sha}</span> · ${esc(failedDep.msg)} · ${failedDep.when}. Previous version still serving.</span></div>
+    <div class="alert-actions"><a class="btn btn-sm" href="#/deployments/${failedDep.id}">View logs</a><button class="btn btn-sm" data-act="rollbackApp" data-app="${failedApp.name}">${icon('rollback')}Rollback</button><button class="btn-icon" data-act="dismissBanner" aria-label="Dismiss">${icon('x')}</button></div></div>` : '';
+  const st = q.get('state'), firstLoad = !S.loaded.overview;
+  const wrap = x => x.startsWith('<div class="skel') || x.startsWith('<div class="state') ? `<div class="card-body">${x}</div>` : x;
+  const recent = listView('overview', q, {
+    what: 'recent deployments', rows: 6, isEmpty: !deploys.length,
+    empty: emptyBox(icon('deploy', 'ic-lg'), 'No deployments yet', 'Push to a connected repo or hit Deploy now on an app.'),
+    data: () => `<ul class="tl">${deploys.slice(0, 8).map(tlRow).join('')}</ul>`,
+  });
+  const busy = st === 'loading' || st === 'error' || firstLoad;
+  const nodesHtml = st === 'empty' ? emptyBox(icon('nodes', 'ic-lg'), 'No nodes', 'Add a machine to your tailnet to run workspaces and apps.', `<button class="btn btn-primary" data-act="addNode">${icon('plus')}Add node</button>`)
+    : busy ? skeleton(3) : `<div class="node-cards">${nodes.map(nodeCard).join('')}</div>`;
+  const active = workspaces.filter(w => w.status !== 'stopped');
+  const people = new Set(active.flatMap(w => sess(w).map(s => s.user))).size;
+  const wsHtml = busy ? skeleton(2) : active.length ? `<ul class="tl">${active.map(wsMini).join('')}</ul>`
+    : emptyBox(icon('workspace', 'ic-lg'), 'No running workspaces', 'Start one to see who is connected.', '<a class="btn" href="#/workspaces">Open workspaces</a>');
+  const today = deploys.filter(d => d.today).length;
+  const online = nodes.filter(n => n.status === 'online').length;
+  return {
+    title: 'Overview', crumbs: [['Overview']], primary: { label: 'New workspace', act: 'newWorkspace', icon: 'plus' },
+    html: `<h1 class="sr-only">Overview</h1>${banner}
+    <div class="cols-2">
+      <section class="card" aria-labelledby="h-recent"><div class="card-head"><h2 id="h-recent">Recent deployments<span class="count">${today} today</span></h2><a class="btn btn-sm btn-ghost" href="#/deployments">View all</a></div>${wrap(recent)}</section>
+      <div class="side-stack">
+        <section class="card" aria-labelledby="h-nodes"><div class="card-head"><h2 id="h-nodes">Nodes<span class="count">${online}/${nodes.length} online</span></h2><button class="btn btn-sm btn-ghost" data-act="addNode">${icon('plus')}Add</button></div>${wrap(nodesHtml)}</section>
+        <section class="card" aria-labelledby="h-ws"><div class="card-head"><h2 id="h-ws">Active workspaces<span class="count">${people} ${people === 1 ? 'person' : 'people'} connected</span></h2><a class="btn btn-sm btn-ghost" href="#/workspaces">All</a></div>${wrap(wsHtml)}</section>
+      </div>
+    </div>`,
+  };
+}
+function wsMini(w) {
+  const n = sess(w).length;
+  return `<li><a class="tl-row" href="#/workspaces/${w.name}"><span class="tl-main"><span class="tl-top"><strong class="mono">${w.name}</strong>${badge(w.status)}</span><span class="tl-msg od-truncate mono">${w.node} · ${esc(w.branch)}</span></span><span class="tl-meta">${avatars(w)}<span>${n ? `${n} session${n === 1 ? '' : 's'}` : 'no sessions'}</span></span></a></li>`;
+}
+function wsLive(w) {
+  if (w.status !== 'running') return '';
+  const ss = sess(w), u = WS_USAGE[w.name] || { cpu: 3, ram: 0.4, git: `${w.branch} · clean` };
+  return `<div class="cols-2">
+    <section class="card"><div class="card-head"><h2>Connected now<span class="count">${ss.length} session${ss.length === 1 ? '' : 's'}</span></h2></div>
+    ${ss.length ? `<ul class="sess">${ss.map((s, i) => `<li class="sess-row"><span class="av av-lg" aria-hidden="true">${s.init}</span>
+      <div class="cell-stack od-fill"><span class="od-row"><strong class="mono">${esc(s.user)}</strong>${chip(esc(s.client))}</span><span class="cell-sub mono od-truncate">${esc(s.from)} · ${s.ip} · ${esc(s.via)}</span></div>
+      <div class="cell-stack ta-r hide-sm"><span class="od-nowrap">${s.state === 'active' ? badge('running', 'active') : `<span class="muted">${esc(s.state)}</span>`}</span><span class="cell-sub od-nowrap">since ${s.since}</span></div>
+      <button class="btn btn-sm btn-ghost btn-danger" data-act="kickSession" data-ws="${w.name}" data-i="${i}" aria-label="Disconnect ${esc(s.user)} (${esc(s.client)})">Disconnect</button></li>`).join('')}</ul>`
+      : '<div class="card-body"><p class="muted" style="font-size:var(--fs-sm)">Nobody is connected. Pick a method below.</p></div>'}</section>
+    <section class="card"><div class="card-head"><h2>Usage</h2></div><div class="card-body">${meter('CPU', u.cpu, `${u.cpu}% of ${w.cpu} vCPU`)}${meter('RAM', u.ram / w.mem * 100, `${u.ram} / ${w.mem} GB`)}
+      <dl class="kv"><dt>Git</dt><dd class="mono">${esc(u.git)}</dd><dt>Volumes</dt><dd class="mono">src ${w.vol[0]} · home ${w.vol[1]}</dd><dt>Image</dt><dd class="mono">walroos/ws-${w.name}:${w.config === 'base' ? 'base' : 'dev'}</dd></dl></div></section>
+  </div>`;
+}
+function tlRow(d) {
+  const s = depStatus(d);
+  return `<li><a class="tl-row" href="#/deployments/${d.id}">
+    <span class="tl-main"><span class="tl-top"><strong>${d.app}</strong><span class="sha">${d.sha}</span>${chip(TRIG[d.trigger])}</span><span class="tl-msg od-truncate">${esc(d.msg)}</span></span>
+    <span class="tl-meta">${badge(s)}<span class="mono">${d.live ? 'running…' : d.dur} · ${d.when}</span></span></a></li>`;
+}
+function nodeCard(n) {
+  const off = n.status === 'offline';
+  return `<a class="node-card ${off ? 'offline' : ''}" href="#/nodes/${n.name}">
+    <div class="node-card-h"><div><strong class="mono">${n.name}</strong><span class="muted" style="font-size:var(--fs-xs)">${n.roles.join(' · ')}</span></div>${badge(n.status, off ? `offline · last seen ${n.seen}` : 'online')}</div>
+    ${off ? `<p class="muted" style="font-size:var(--fs-sm)">No heartbeat from <span class="mono">${n.host}</span>. Apps on this node can't be deployed.</p>` :
+      `${meter('CPU', n.cpu, `${n.cpu}%`)}${meter('RAM', n.ram / n.ramT * 100, `${n.ram} / ${n.ramT} GB`)}`}
+  </a>`;
+}
+
+function vWorkspaces(q) {
+  const list = filtered(workspaces);
+  const body = listView('workspaces', q, {
+    what: 'workspaces', rows: 3, isEmpty: !list.length,
+    empty: emptyBox(ILLUS_WS, S.nodeFilter && workspaces.length ? `No workspaces on ${S.nodeFilter}` : 'No workspaces yet', 'Run your dev environment on your own hardware. No local installs.', `<button class="btn btn-primary" data-act="newWorkspace">${icon('plus')}New workspace</button>`),
+    data: () => `<div class="table-wrap"><table class="tbl"><thead><tr><th>Name</th><th class="hide-sm">Repository</th><th class="hide-md">Branch</th><th class="hide-sm">Node</th><th>Status</th><th class="hide-sm">Connected</th><th class="hide-md">Last active</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>${list.map(wsRow).join('')}</tbody></table></div>`,
+  });
+  const run = list.filter(w => w.status === 'running').length;
+  return { title: 'Workspaces', crumbs: [['Workspaces']], primary: { label: 'New workspace', act: 'newWorkspace', icon: 'plus' }, html: pageHead('Workspaces', `${run} running · ${list.length} total${S.nodeFilter ? ` on ${S.nodeFilter}` : ''}`) + body };
+}
+function wsRow(w) {
+  const running = w.status === 'running', busy = w.status === 'starting' || w.status === 'stopping';
+  return `<tr>
+    <td><div class="cell-stack"><a class="cell-title" href="#/workspaces/${w.name}">${w.name}</a><span class="cell-sub od-truncate">${esc(w.detail)}</span></div></td>
+    <td class="hide-sm">${repoCell(w.repo)}</td>
+    <td class="hide-md"><span class="ico-t mono">${icon('branch')}${esc(w.branch)}</span></td>
+    <td class="hide-sm"><a class="mono link" href="#/nodes/${w.node}">${w.node}</a></td>
+    <td>${badge(w.status)}</td>
+    <td class="hide-sm">${avatars(w)}</td>
+    <td class="hide-md muted od-nowrap">${w.active}</td>
+    <td class="ta-r"><div class="row-actions">
+      <a class="btn btn-sm" href="#/workspaces/${w.name}/connect">${icon('terminal')}Connect</a>
+      <button class="btn btn-sm" data-act="toggleWs" data-name="${w.name}" ${busy ? 'disabled' : ''} aria-label="${running ? 'Stop' : 'Start'} ${w.name}">${running || w.status === 'stopping' ? `${icon('stop')}Stop` : `${icon('play')}Start`}</button>
+      ${menu(`More actions for ${w.name}`, `<button role="menuitem" data-act="rebuildWs" data-name="${w.name}">${icon('refresh')}Rebuild</button><button role="menuitem" class="danger" data-act="deleteWs" data-name="${w.name}">${icon('trash')}Delete…</button>`)}
+    </div></td></tr>`;
+}
+
+function vWorkspace(name, tab) {
+  const w = wsBy(name); if (!w) return vNotFound();
+  const host = `${w.name}.walroos`;
+  const running = w.status === 'running';
+  const tabs = [['connect', 'Connect'], ['terminal', 'Terminal'], ['ports', 'Ports'], ['logs', 'Logs'], ['settings', 'Settings']];
+  if (!tabs.some(t => t[0] === tab)) tab = 'connect';
+  const head = `<div class="page-head"><div class="ph-text"><div class="title-row"><h1 class="mono">${w.name}</h1>${badge(w.status)}</div>
+    <div class="ph-meta"><span>${icon('nodes')}<a class="mono link" href="#/nodes/${w.node}">${w.node}</a></span><span>${icon(repoIcon(w.repo))}<span class="mono od-truncate">${esc(w.repo)}@${esc(w.branch)}</span></span><span>${icon('clock')}uptime <span class="mono">${w.uptime}</span></span><span>${icon('user')}${sess(w).length} connected</span><span>${esc(w.detail)}</span></div></div>
+    <div class="ph-actions"><button class="btn" data-act="toggleWs" data-name="${w.name}" ${w.status === 'starting' || w.status === 'stopping' ? 'disabled' : ''}>${running ? `${icon('stop')}Stop` : `${icon('play')}Start`}</button><button class="btn" data-act="rebuildWs" data-name="${w.name}">${icon('refresh')}Rebuild</button><button class="btn btn-danger" data-act="deleteWs" data-name="${w.name}">${icon('trash')}Delete</button></div></div>`;
+  const stoppedNote = !running ? `<div class="alert alert-busy">${icon('info')}<div class="alert-text"><strong>${w.name} is ${w.status}</strong><span class="muted">Start it to connect. Your files in the src and home volumes are kept.</span></div><div class="alert-actions"><button class="btn btn-sm btn-primary" data-act="toggleWs" data-name="${w.name}" ${w.status !== 'stopped' ? 'disabled' : ''}>${icon('play')}Start</button></div></div>` : '';
+  let body = '', mount;
+  if (tab === 'connect') {
+    const cfg = `Host ${host}\n  HostName ${nodeBy(w.node).host}\n  Port 2222\n  User ${w.name}\n  ForwardAgent yes\n  StrictHostKeyChecking accept-new`;
+    body = `${stoppedNote}${wsLive(w)}<div class="grid-2">
+      <section class="card"><div class="card-head"><div><h2>${icon('terminal')} SSH</h2><span class="muted">From any machine on your tailnet.</span></div></div><div class="card-body">${cmd(`ssh ${host}`)}</div></section>
+      <section class="card"><div class="card-head"><div><h2>VS Code</h2><span class="muted">Needs the Remote - SSH extension.</span></div></div><div class="card-body"><a class="btn btn-primary" style="align-self:flex-start" href="vscode://vscode-remote/ssh-remote+${host}/workspaces/${w.name}">${icon('external')}Open in VS Code</a>${cmd(`code --remote ssh-remote+${host} /workspaces/${w.name}`)}</div></section>
+      <section class="card"><div class="card-head"><div><h2>Claude Code</h2><span class="muted">Desktop: Add SSH connection → <code>${host}</code></span></div></div><div class="card-body"><p class="muted" style="font-size:var(--fs-sm)">Or start it straight inside the workspace:</p>${cmd(`ssh ${host} -t claude`)}</div></section>
+      <section class="card"><div class="card-head"><div><h2>SSH config</h2><span class="muted">Let the CLI append it, or paste the block below.</span></div></div><div class="card-body">${cmd('walroos ssh-config >> ~/.ssh/config')}</div></section>
+      <section class="card span-2"><div class="card-head"><div><h2>~/.ssh/config</h2><span class="muted">Port 2222 is the node's SSH gateway, reachable only over the tailnet. The SSH user picks the workspace.</span></div></div><div class="card-body">${codeBlock(cfg)}</div></section></div>`;
+  } else if (tab === 'terminal') {
+    const ps = `jef@${w.name}:/workspaces/${w.name}$`;
+    if (!S.term[w.name]) S.term[w.name] = [`Last login: Mon Nov 16 09:12:44 2026 from 100.101.12.9 (macbook-air)`, `<span class="ok">walroos</span> workspace · ${esc(w.detail)} · type <b>help</b>`];
+    body = running ? `<div class="term" id="term"><div class="term-bar"><span class="mono">${host}</span><span class="grow"></span><span>xterm-256color</span><button class="btn-icon" data-act="termFull" aria-label="Full screen">${icon('maximize')}</button></div>
+      <div class="term-out" id="term-out" role="log" aria-label="Terminal output">${S.term[w.name].join('\n')}</div>
+      <form class="term-in" data-form="term" data-name="${w.name}"><label class="ps" for="term-cmd">${ps}</label><input id="term-cmd" autocomplete="off" spellcheck="false" autocapitalize="off"></form></div>`
+      : stoppedNote;
+    mount = () => { const o = $('#term-out'); if (o) o.scrollTop = o.scrollHeight; const i = $('#term-cmd'); if (i) i.focus({ preventScroll: true }); };
+  } else if (tab === 'ports') {
+    body = w.ports.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Port</th><th class="hide-sm">Process</th><th>Forward to your laptop</th></tr></thead><tbody>${w.ports.map(([p, proc]) => `<tr><td><span class="mono">${p}</span>${badge('running', 'listening')}</td><td class="hide-sm mono muted">${esc(proc)}</td><td style="min-width:260px">${cmd(`ssh -N -L ${p}:localhost:${p} ${host}`)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted" style="font-size:var(--fs-sm)">Ports are detected from listening sockets inside the container. Then open <span class="mono">http://localhost:&lt;port&gt;</span>.</p>`
+      : emptyBox(icon('globe', 'ic-lg'), 'No ports detected', running ? 'Start a dev server inside the workspace and it shows up here.' : 'The workspace is stopped.');
+  } else if (tab === 'logs') {
+    const lines = [['09:12:40', 'podman: container ws-' + w.name + ' started'], ['09:12:41', 'sshd: listening on 0.0.0.0 port 2222'], ['09:12:41', 'mise: activated ' + (w.name === 'tienda-api' ? 'bun@1.3.2' : 'go@1.26.0 node@22.11.0')], ['09:12:44', 'sshd: Accepted publickey for jef from 100.101.12.9 (ED25519 SHA256:q3Zf8k…)'], ['11:40:02', 'ports: detected :3000 (' + (w.ports[0] ? w.ports[0][1] : '—') + ')'], ['13:58:19', 'sshd: Accepted publickey for jef from 100.101.12.9'], ['14:02:51', 'claude: session started (tty)']];
+    body = `<div class="log" aria-label="Workspace logs"><div class="log-lines">${lines.map(([t, x]) => `<div class="ln"><span class="ts">${t}</span><span class="t">${esc(x)}</span></div>`).join('')}</div></div>`;
+  } else {
+    const env = [['EDITOR', 'nvim'], ['GOFLAGS', '-buildvcs=false'], ['WALROOS_WORKSPACE', w.name]];
+    body = `<div class="grid-2">
+      <section class="card"><div class="card-head"><div><h2>Environment variables</h2><span class="muted">Injected into every shell.</span></div></div><div class="table-wrap" style="border:0;border-radius:0"><table class="tbl"><tbody>${env.map(([k, v]) => `<tr><td class="mono">${k}</td><td class="mono muted">${v}</td></tr>`).join('')}</tbody></table></div></section>
+      <section class="card"><div class="card-head"><div><h2>Resources</h2><span class="muted">Applied on next restart.</span></div></div><form class="card-body form" data-form="wsRes" data-name="${w.name}">
+        <div class="grid2"><div class="field"><label for="r-cpu">CPU limit</label><select id="r-cpu" name="cpu">${[1, 2, 4, 8].map(c => `<option value="${c}" ${c === w.cpu ? 'selected' : ''}>${c} vCPU</option>`).join('')}</select></div>
+        <div class="field"><label for="r-mem">RAM limit</label><select id="r-mem" name="mem">${[2, 4, 8, 16].map(c => `<option value="${c}" ${c === w.mem ? 'selected' : ''}>${c} GB</option>`).join('')}</select></div></div>
+        <button class="btn" style="align-self:flex-start" type="submit">Save resources</button></form></section>
+      <section class="card span-2"><div class="card-head"><div><h2>Volumes</h2><span class="muted">Persist across rebuilds.</span></div></div><div class="table-wrap" style="border:0;border-radius:0"><table class="tbl"><thead><tr><th>Name</th><th>Mount</th><th>Size</th></tr></thead><tbody>
+        <tr><td class="mono">src</td><td class="mono muted">/workspaces/${w.name}</td><td class="mono">${w.vol[0]}</td></tr><tr><td class="mono">home</td><td class="mono muted">/home/jef</td><td class="mono">${w.vol[1]}</td></tr></tbody></table></div></section></div>`;
+  }
+  return {
+    title: w.name, crumbs: [['Workspaces', '#/workspaces'], [w.name]],
+    primary: running ? { label: 'Copy SSH', copy: `ssh ${host}`, icon: 'copy' } : { label: 'Start', act: 'toggleWs', name: w.name, icon: 'play' },
+    html: head + tabsNav(`#/workspaces/${w.name}`, tabs, tab) + body, mount,
+  };
+}
+
+function vApps(q) {
+  const list = filtered(apps);
+  const body = listView('apps', q, {
+    what: 'apps', rows: 3, isEmpty: !list.length,
+    empty: emptyBox(icon('apps', 'ic-lg'), 'No apps yet', 'Deploy a Git repo to your own nodes. Merges to main ship automatically.', `<button class="btn btn-primary" data-act="newApp">${icon('plus')}New app</button>`),
+    data: () => `<div class="grid-cards">${list.map(appCard).join('')}</div>`,
+  });
+  return { title: 'Apps', crumbs: [['Apps']], primary: { label: 'New app', act: 'newApp', icon: 'plus' }, html: pageHead('Apps', `${list.filter(appHealthy).length} healthy · ${list.length} total`) + body };
+}
+function appCard(a) {
+  const st = appState(a), d = lastDeploy(a);
+  return `<article class="card app-card" data-href="#/apps/${a.name}">
+    <div class="ac-head"><a class="cell-title" href="#/apps/${a.name}">${a.name}</a>${badge(st.s, st.l)}</div>
+    <a class="ac-domain mono" href="https://${a.domain}" target="_blank" rel="noopener">${icon('lock')}<span class="od-truncate">${a.domain}</span></a>
+    <div class="od-cluster">${chip(`${icon('nodes')}<span class="mono">${a.node}</span>`)}${chip(APP_TRIG[a.trigger], 'chip-ac')}</div>
+    ${d ? `<div class="ac-last"><div class="od-row">${badge(depStatus(d))}<span class="sha">${d.sha}</span><span class="od-fill"></span><span class="muted od-nowrap" style="font-size:var(--fs-xs)">${d.when}</span></div><span class="od-truncate muted" style="font-size:var(--fs-sm)">${esc(d.msg)}</span></div>` : ''}
+    <div class="ac-foot"><span>Deploys · 14 days</span>${spark(a.spark)}</div>
+  </article>`;
+}
+
+function vApp(name, tab) {
+  const a = appBy(name); if (!a) return vNotFound();
+  const st = appState(a);
+  const tabs = [['deployments', 'Deployments'], ['logs', 'Logs'], ['environment', 'Environment'], ['domains', 'Domains'], ['build', 'Build'], ['triggers', 'Triggers']];
+  if (!tabs.some(t => t[0] === tab)) tab = 'deployments';
+  const refs = Object.keys(HEADS[name] || { main: 1 });
+  const target = rollbackTarget(a);
+  const head = `<div class="page-head"><div class="ph-text"><div class="title-row"><h1 class="mono">${a.name}</h1>${badge(st.s, st.l)}</div>
+    <div class="ph-meta"><a class="ico-t link mono" href="https://${a.domain}" target="_blank" rel="noopener" aria-label="${a.domain} (TLS, opens in new tab)">${icon('lock')}${a.domain}</a><span>${icon('nodes')}<a class="mono link" href="#/nodes/${a.node}">${a.node}</a></span><span>${icon(repoIcon(a.repo))}<span class="mono od-truncate">${a.repo}</span></span></div></div>
+    <div class="ph-actions"><div class="split"><button class="btn btn-primary" data-act="deployNow" data-app="${a.name}" data-ref="main">${icon('deploy')}Deploy now</button>
+      <details class="menu"><summary class="btn btn-primary" aria-label="Choose branch or commit">${icon('chevDown')}</summary><div class="menu-pop"><form data-form="deployRef" data-app="${a.name}"><div class="field"><label for="dep-ref">Branch or commit SHA</label><input id="dep-ref" name="ref" class="mono" list="dep-refs" value="main" autocomplete="off"><datalist id="dep-refs">${refs.map(r => `<option value="${r}">`).join('')}${deploys.filter(d => d.app === name).slice(0, 4).map(d => `<option value="${d.sha}">${esc(d.msg)}</option>`).join('')}</datalist></div><button class="btn btn-primary" type="submit">${icon('deploy')}Deploy ref</button></form></div></details></div>
+      <button class="btn" data-act="rollbackApp" data-app="${a.name}" ${target ? '' : 'disabled'}>${icon('rollback')}Rollback</button></div></div>`;
+  let body = '', mount;
+  if (tab === 'deployments') {
+    const list = deploys.filter(d => d.app === name);
+    body = `<div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>Commit</th><th class="hide-md">Author</th><th class="hide-sm">Trigger</th><th class="hide-sm">Duration</th><th class="hide-md">Image</th><th class="hide-sm">When</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>
+      ${list.map(d => `<tr><td>${badge(depStatus(d))}</td><td><div class="cell-stack"><span class="od-row"><a class="sha" href="#/deployments/${d.id}">${d.sha}</a>${d.current ? '<span class="tag-current">current</span>' : ''}</span><a class="cell-sub od-truncate" style="max-width:320px" href="#/deployments/${d.id}">${esc(d.msg)}</a></div></td>
+        <td class="hide-md muted">${esc(d.author)}</td><td class="hide-sm">${chip(TRIG[d.trigger])}</td><td class="hide-sm mono">${d.live ? '…' : d.dur}</td><td class="hide-md mono muted">walroos/${d.app}:${d.sha}</td><td class="hide-sm muted od-nowrap">${d.when}</td>
+        <td class="ta-r"><div class="row-actions">${d.status === 'succeeded' && !d.current && !d.live ? `<button class="btn btn-sm" data-act="rollbackTo" data-id="${d.id}">${icon('rollback')}Rollback to this</button>` : ''}<a class="btn btn-sm btn-ghost" href="#/deployments/${d.id}">Logs</a></div></td></tr>`).join('')}
+    </tbody></table></div>`;
+  } else if (tab === 'logs') {
+    const off = nodeBy(a.node).status === 'offline';
+    if (!S.rt[name]) S.rt[name] = seedRuntime(a);
+    body = `<div class="log-tools"><label class="sr-only" for="rt-q">Filter logs</label><input type="search" id="rt-q" placeholder="Filter logs (e.g. POST, 500, stripe)" value="${esc(S.rtFilter)}" class="mono">
+      <label class="sr-only" for="rt-lv">Level</label><select id="rt-lv">${['all', 'info', 'warn', 'error'].map(l => `<option ${S.rtLevel === l ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <button class="btn" data-act="rtPause" aria-pressed="${S.rtPaused}">${S.rtPaused ? `${icon('play')}Resume` : `${icon('pause')}Pause`}</button>
+      ${off ? badge('offline', 'stream offline') : S.rtPaused ? badge('stopped', 'paused') : badge('running', 'live')}</div>
+      ${off ? `<div class="alert alert-bad">${icon('alert')}<div class="alert-text"><strong>${a.node} is offline</strong><span class="muted">Showing the last lines received ${nodeBy(a.node).seen}.</span></div></div>` : ''}
+      <div class="log" id="rt-log" role="log" aria-label="Runtime logs"></div>`;
+    mount = () => { paintRuntime(name); if (!off) every(() => { if (S.rtPaused) return; S.rt[name].push(runtimeLine(a)); if (S.rt[name].length > 300) S.rt[name].shift(); paintRuntime(name); }, 900); };
+  } else if (tab === 'environment') {
+    const rows = envs[name] || [];
+    body = `<div class="section"><div class="section-head"><p class="muted">${rows.length} variables · secrets are encrypted at rest and masked here.</p><div class="ph-actions"><button class="btn" data-act="importEnv" data-app="${name}">${icon('upload')}Import .env</button></div></div>
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Key</th><th>Value</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows.map(([k, v, s]) => {
+        const id = `${name}:${k}`, shown = !s || S.revealed.has(id);
+        return `<tr><td class="mono"><span class="od-row">${k}${s ? chip(`${icon('lock')}secret`) : ''}</span></td><td class="mono" style="max-width:420px"><span class="od-truncate ${shown ? '' : 'secret'}">${shown ? esc(v) : '••••••••••••••'}</span></td>
+        <td class="ta-r od-nowrap">${s ? `<button class="btn-icon" data-act="reveal" data-id="${esc(id)}" aria-label="${shown ? 'Hide' : 'Reveal'} ${k}" aria-pressed="${shown}">${icon(shown ? 'eyeOff' : 'eye')}</button>` : ''}${copyBtn(v, `Copy value of ${k}`)}<button class="btn-icon" data-act="delEnv" data-app="${name}" data-key="${k}" aria-label="Delete ${k}">${icon('trash')}</button></td></tr>`;
+      }).join('')}</tbody></table></div>
+      <form class="card card-pad form" data-form="addEnv" data-app="${name}" novalidate><h3>Add variable</h3><div class="grid2"><div class="field"><label for="env-k">Key</label><input id="env-k" name="k" class="mono" placeholder="API_URL" autocomplete="off" required></div><div class="field"><label for="env-v">Value</label><input id="env-v" name="v" class="mono" autocomplete="off" required></div></div>
+      <div class="od-row" style="justify-content:space-between;flex-wrap:wrap"><label class="check"><input type="checkbox" name="s">Secret (mask after saving)</label><button class="btn" type="submit">${icon('plus')}Add variable</button></div><p class="err" id="env-err" hidden></p></form></div>`;
+  } else if (tab === 'domains') {
+    const rows = domains[name] || [];
+    const off = nodeBy(a.node).status === 'offline';
+    body = `<div class="table-wrap"><table class="tbl"><thead><tr><th>Domain</th><th>Ingress</th><th>DNS</th><th class="hide-sm">TLS</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>${rows.map(([dm, ing, dns]) => `<tr><td><a class="mono link" href="https://${dm}" target="_blank" rel="noopener">${dm}</a></td><td>${chip(ing === 'Tailnet only' ? `${icon('lock')}Tailnet only` : `${icon('cloud')}Cloudflare Tunnel`)}${off && ing !== 'Tailnet only' ? ` ${badge('down', 'tunnel down')}` : ''}</td><td>${badge(dns)}</td><td class="hide-sm">${ing === 'Tailnet only' ? '<span class="muted">tailnet cert</span>' : '<span class="ico-t">' + icon('lock') + 'Cloudflare edge</span>'}</td><td class="ta-r"><button class="btn-icon" data-act="delDomain" data-app="${name}" data-d="${dm}" aria-label="Remove ${dm}">${icon('trash')}</button></td></tr>`).join('')}</tbody></table></div>
+      <form class="card card-pad form" data-form="addDomain" data-app="${name}" novalidate><h3>Add domain</h3><div class="grid2"><div class="field"><label for="dm-d">Domain</label><input id="dm-d" name="d" class="mono" placeholder="status.walroos.com" required autocomplete="off"></div><div class="field"><label for="dm-i">Ingress</label><select id="dm-i" name="i"><option>Cloudflare Tunnel</option><option>Tailnet only</option></select></div></div><p class="err" id="dm-err" hidden></p><button class="btn" style="align-self:flex-start" type="submit">${icon('plus')}Add domain</button></form>`;
+  } else if (tab === 'build') {
+    body = `<form class="card card-pad form" data-form="build" data-app="${name}" style="max-width:640px" novalidate>
+      <div class="field"><label for="b-df">Dockerfile path</label><input id="b-df" name="dockerfile" class="mono" value="${esc(a.dockerfile)}"><p class="help">Relative to the repo root. Built with Podman on a build node.</p></div>
+      <div class="grid2"><div class="field"><label for="b-port">Internal port</label><input id="b-port" name="port" class="mono" inputmode="numeric" value="${a.port}"></div>
+      <div class="field"><label for="b-hc">Healthcheck path</label><input id="b-hc" name="health" class="mono" value="${esc(a.health)}"><p class="help">Must return 2xx within 30s.</p></div></div>
+      <p class="err" id="b-err" hidden></p><button class="btn btn-primary" style="align-self:flex-start" type="submit">Save build settings</button></form>`;
+  } else {
+    const opt = (v, t, d) => `<label class="radio-card"><span class="rc-h"><input type="radio" name="trigger" value="${v}" data-app="${name}" ${a.trigger === v ? 'checked' : ''}>${t}</span><span class="muted" style="font-size:var(--fs-sm)">${d}</span></label>`;
+    let extra = '';
+    if (a.trigger === 'on_ci') {
+      const yml = ['# .github/workflows/deploy.yml  (also works as .forgejo/workflows/)', 'name: deploy', 'on:', '  push:', '    branches: [main]', 'jobs:', '  test:', '    runs-on: ubuntu-latest', '    steps:', '      - uses: actions/checkout@v4', '      - uses: oven-sh/setup-bun@v2', '      - run: bun install && bun test', '  deploy:', '    needs: test', '    runs-on: ubuntu-latest', '    steps:', '      - name: Deploy to walroos', '        run: |', '          curl -fsS -X POST https://' + HUB + '/hooks/deploy/' + name + ' \\', '            -H "Authorization: Bearer ${{ secrets.WALROOS_DEPLOY_TOKEN }}" \\', '            -d \'{"sha":"${{ github.sha }}"}\''].join('\n');
+      extra = `<section class="card"><div class="card-head"><div><h2>GitHub Actions</h2><span class="muted">Deploys only after your tests pass. Save the token as <code>WALROOS_DEPLOY_TOKEN</code>.</span></div></div><div class="card-body">
+        <div class="field"><span class="label">Deploy token · scope deploy:${name}</span>${cmd(DEPLOY_TOKEN, '')}</div>${codeBlock(yml)}</div></section>`;
+    } else if (a.trigger === 'on_push') {
+      extra = `<section class="card"><div class="card-head"><div><h2>Webhook</h2><span class="muted">Already registered on the repo. Every push to main deploys.</span></div></div><div class="card-body">${cmd(`https://${HUB}/hooks/${repoIcon(a.repo)}`, '')}</div></section>`;
+    } else {
+      extra = `<section class="card"><div class="card-head"><div><h2>Manual deploys</h2><span class="muted">From the dashboard, the CLI or Claude Code over MCP.</span></div></div><div class="card-body">${cmd(`walroos deploy ${name} --ref main`)}</div></section>`;
+    }
+    body = `<fieldset style="border:0;padding:0;margin:0"><legend class="sr-only">Deploy trigger</legend><div class="radio-cards">${opt('on_push', 'On push', 'Every push to main deploys via webhook.')}${opt('on_ci', 'On CI', 'Your CI calls walroos after tests pass.')}${opt('manual', 'Manual', 'Only when you hit Deploy now.')}</div></fieldset>${extra}`;
+  }
+  return { title: a.name, crumbs: [['Apps', '#/apps'], [a.name]], primary: null, html: head + tabsNav(`#/apps/${a.name}`, tabs, tab) + body, mount };
+}
+function seedRuntime(a) { const out = []; const base = Date.now() - 60000; for (let i = 0; i < 28; i++) out.push(runtimeLine(a, new Date(base + i * 2100))); return out; }
+const RT = {
+  'tienda-api': [['info', () => `GET /v1/orders/${1000 + rnd(900)} 200 ${rnd(30) + 4}ms`], ['info', () => `POST /v1/payments 201 ${rnd(60) + 30}ms idempotency-key=pay_${hex7()}`], ['info', () => `POST /v1/payments 200 ${rnd(8) + 2}ms idempotent replay (key seen)`], ['info', () => `stripe: webhook evt_${hex7()} payment_intent.succeeded processed`], ['warn', () => `slow query: SELECT * FROM orders WHERE customer_id=$1 (${rnd(300) + 220}ms)`], ['info', () => `GET /health 200 1ms`], ['error', () => `POST /v1/refunds 500 ${rnd(40) + 10}ms: stripe: card_declined`]],
+  blog: [['info', () => `GET /posts/podman-rootless 200 ${rnd(10) + 2}ms`], ['info', () => `GET / 200 ${rnd(8) + 1}ms`], ['info', () => `GET /rss.xml 200 ${rnd(6) + 1}ms`], ['warn', () => `GET /wp-login.php 404 1ms`]],
+  landing: [['info', () => 'GET / 200 3ms'], ['info', () => 'GET /pricing 200 4ms'], ['error', () => 'connection to vps-fra lost']],
+};
+const rnd = n => Math.floor(Math.random() * n);
+function runtimeLine(a, at = new Date()) {
+  const T = RT[a.name] || RT.blog;
+  const w = Math.random(); const pick = w > .93 ? T[T.length - 1] : T[rnd(T.length - 1)];
+  return { ts: clock(at), lv: pick[0], t: pick[1]() };
+}
+function paintRuntime(name) {
+  const el = $('#rt-log'); if (!el) return;
+  const q = S.rtFilter.toLowerCase();
+  const rows = S.rt[name].filter(l => (S.rtLevel === 'all' || l.lv === S.rtLevel) && (!q || l.t.toLowerCase().includes(q)));
+  el.innerHTML = rows.length ? `<div class="log-lines">${rows.map(l => `<div class="ln ${l.lv === 'error' ? 'err' : l.lv === 'warn' ? 'warn' : ''}"><span class="ts">${l.ts}</span><span class="t">${hl(l.t, q)}</span></div>`).join('')}</div>` : '<div class="log-empty">No lines match this filter.</div>';
+  if (!S.rtPaused) el.scrollTop = el.scrollHeight;
+}
+function hl(text, q) {
+  const e = esc(text); if (!q) return e;
+  const i = text.toLowerCase().indexOf(q); if (i < 0) return e;
+  return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
+}
+
+function vDeployments(q) {
+  let list = filtered(deploys.map(d => ({ ...d, node: (appBy(d.app) || {}).node, ref: d })));
+  if (S.depFilter.app) list = list.filter(d => d.app === S.depFilter.app);
+  if (S.depFilter.status) list = list.filter(d => depStatus(d.ref) === S.depFilter.status);
+  const filters = `<div class="log-tools"><label class="sr-only" for="df-app">App</label><select id="df-app" data-filter="app"><option value="">All apps</option>${apps.map(a => `<option ${S.depFilter.app === a.name ? 'selected' : ''}>${a.name}</option>`).join('')}</select>
+    <label class="sr-only" for="df-st">Status</label><select id="df-st" data-filter="status"><option value="">Any status</option>${['succeeded', 'failed', 'building', 'deploying', 'queued'].map(s => `<option ${S.depFilter.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>`;
+  const body = listView('deployments', q, {
+    what: 'deployments', rows: 6, isEmpty: !list.length,
+    empty: emptyBox(icon('deploy', 'ic-lg'), 'No deployments match', 'Change the filters, or deploy an app.', `<a class="btn" href="#/apps">Go to apps</a>`),
+    data: () => `<div class="table-wrap"><table class="tbl"><thead><tr><th>Status</th><th>App</th><th>Commit</th><th class="hide-sm">Trigger</th><th class="hide-md">Duration</th><th class="hide-sm">When</th></tr></thead><tbody>${list.map(x => { const d = x.ref; return `<tr data-href="#/deployments/${d.id}" style="cursor:pointer"><td>${badge(depStatus(d))}</td><td><a class="cell-title mono" href="#/deployments/${d.id}">${d.app}</a></td><td><div class="cell-stack"><span class="od-row"><span class="sha">${d.sha}</span>${d.current ? '<span class="tag-current">current</span>' : ''}</span><span class="cell-sub od-truncate" style="max-width:360px">${esc(d.msg)}</span></div></td><td class="hide-sm">${chip(TRIG[d.trigger])}</td><td class="hide-md mono">${d.live ? '…' : d.dur}</td><td class="hide-sm muted od-nowrap">${d.when}</td></tr>`; }).join('')}</tbody></table></div>`,
+  });
+  return { title: 'Deployments', crumbs: [['Deployments']], primary: null, html: pageHead('Deployments', `${deploys.filter(d => d.today).length} today across ${apps.length} apps`) + filters + body };
+}
+
+function vDeployment(id) {
+  const d = depBy(id); if (!d) return vNotFound();
+  const a = appBy(d.app);
+  buildSteps(d);
+  const prev = deploys.find(x => x.app === d.app && x.current && x.id !== d.id);
+  const html = `<div class="page-head"><div class="ph-text"><div class="title-row"><h1><span class="mono">${d.app}</span> <span class="muted mono" style="font-weight:400">${d.id}</span></h1><span id="dep-badge">${badge(depStatus(d))}</span>${d.current ? '<span class="tag-current">current</span>' : ''}</div>
+    <div class="ph-meta"><span class="sha">${d.sha}</span><span>${esc(d.msg)}</span><span>${icon('user')}${esc(d.author)}</span><span>${chip(TRIG[d.trigger])}</span><span class="mono">walroos/${d.app}:${d.sha}</span><span>${icon('clock')}${d.when}</span></div></div>
+    <div class="ph-actions"><a class="btn" href="#/apps/${d.app}">Open app</a>${d.status === 'failed' ? `<button class="btn btn-primary" data-act="retryDeploy" data-id="${d.id}">${icon('refresh')}Retry</button>` : ''}</div></div>
+    <div id="dep-alert">${depAlert(d, prev)}</div>
+    <ol class="stepper" id="dep-stepper" aria-label="Deployment steps"></ol>
+    <div class="log-tools"><label class="sr-only" for="log-q">Search logs</label><input type="search" id="log-q" class="mono" placeholder="Search logs" value="${esc(S.logQuery)}">
+      <label class="check"><input type="checkbox" id="log-auto" ${S.autoscroll ? 'checked' : ''}>Autoscroll</label>
+      <button class="btn btn-sm" data-act="logExpand" data-id="${d.id}" data-open="1">Expand all</button><button class="btn btn-sm" data-act="logExpand" data-id="${d.id}" data-open="0">Collapse all</button></div>
+    <div class="log" id="dep-log" role="log" aria-label="Deployment log"></div>`;
+  return { title: `${d.app} ${d.id}`, crumbs: [['Deployments', '#/deployments'], [d.app, `#/apps/${d.app}`], [d.id]], primary: null, html, mount: () => paintDeploy(d) };
+}
+function depAlert(d, prev) {
+  if (d.status !== 'failed') return '';
+  const err = buildSteps(d).flatMap(s => s.lines).filter(l => l.lv === 'err').pop();
+  return `<div class="alert alert-bad" role="alert">${icon('alert')}<div class="alert-text"><strong class="mono">${esc(err ? err.t : 'Deployment failed')}</strong><span class="muted">${prev ? `Previous version still serving · <span class="sha">${prev.sha}</span> ${esc(prev.msg)}` : 'Nothing was released.'}</span></div>
+    <div class="alert-actions"><button class="btn btn-sm btn-primary" data-act="retryDeploy" data-id="${d.id}">${icon('refresh')}Retry</button>${prev ? `<a class="btn btn-sm" href="#/deployments/${prev.id}">View previous</a>` : ''}</div></div>`;
+}
+function paintDeploy(d) {
+  const steps = buildSteps(d);
+  const live = d.live, cur = live ? liveStepIdx(d) : -1;
+  let shownLeft = live ? d.pos : Infinity;
+  const stepper = $('#dep-stepper'); if (!stepper) return;
+  stepper.innerHTML = steps.map((s, i) => {
+    const st = live ? (i < cur ? 'ok' : i === cur ? 'run' : 'pending') : s.st;
+    const ic = st === 'ok' ? icon('check') : st === 'bad' ? icon('x') : st === 'run' ? icon('refresh', 'spin') : st === 'skip' ? icon('more') : '<span class="pending-ring" aria-hidden="true"></span>';
+    const dur = st === 'run' ? 'running…' : st === 'pending' || st === 'skip' ? '—' : fmtDur(s.sec);
+    return `<li class="step ${st}" aria-current="${st === 'run' ? 'step' : 'false'}"><span class="step-h">${ic}${s.name}</span><span class="step-d">${dur}${st === 'bad' ? ' · failed' : st === 'skip' ? ' · skipped' : ''}</span></li>`;
+  }).join('');
+  const q = S.logQuery.toLowerCase();
+  const log = $('#dep-log');
+  const groups = steps.map((s, i) => {
+    const take = Math.min(s.lines.length, shownLeft); shownLeft -= take;
+    let lines = s.lines.slice(0, take);
+    if (!lines.length && live && i > cur) return '';
+    if (q) lines = lines.filter(l => l.t.toLowerCase().includes(q));
+    const key = `${d.id}:${i}`;
+    const open = S.collapsed[key] === undefined ? (s.st === 'bad' || live || !q ? true : lines.length > 0) : !S.collapsed[key];
+    const st = live ? (i < cur ? 'ok' : 'run') : s.st;
+    const ic = st === 'ok' ? `<span class="dot ok"></span>` : st === 'bad' ? `<span class="dot bad"></span>` : st === 'run' ? `<span class="dot busy"></span>` : `<span class="dot idle"></span>`;
+    return `<details class="log-group" data-step="${key}" ${open ? 'open' : ''}><summary>${icon('chevRight', 'chev')}${ic}<span class="grow">${s.name}</span><span class="mono muted" style="font-size:var(--fs-xs)">${q ? `${lines.length} match${lines.length === 1 ? '' : 'es'} · ` : ''}${st === 'run' ? '…' : s.st === 'skip' ? 'skipped' : fmtDur(s.sec)}</span></summary>
+      <div class="log-lines">${lines.length ? lines.map(l => `<div class="ln ${l.lv}"><span class="ts">${l.ts}</span><span class="t">${hl(l.t, q)}</span></div>`).join('') : `<div class="log-empty">${live && i === cur ? 'Running…' : s.st === 'skip' ? 'Skipped — an earlier step failed.' : 'No matching lines.'}</div>`}</div></details>`;
+  }).join('');
+  log.innerHTML = groups || '<div class="log-empty">Waiting for a build slot…</div>';
+  const b = $('#dep-badge'); if (b) b.innerHTML = badge(depStatus(d));
+  if (S.autoscroll) log.scrollTop = log.scrollHeight;
+  if (!live && d._wasLive) { d._wasLive = false; route(); }
+  if (live) d._wasLive = true;
+}
+
+function vNodes(q) {
+  const list = filtered(nodes);
+  const body = listView('nodes', q, {
+    what: 'nodes', rows: 3, isEmpty: !list.length,
+    empty: emptyBox(icon('nodes', 'ic-lg'), 'No nodes yet', 'Join a machine to the hub over Tailscale. One command, then it shows up here.', `<button class="btn btn-primary" data-act="addNode">${icon('plus')}Add node</button>`),
+    data: () => `<div class="table-wrap"><table class="tbl"><thead><tr><th>Node</th><th class="hide-sm">Roles</th><th>Status</th><th class="hide-sm" style="min-width:120px">CPU</th><th class="hide-sm" style="min-width:140px">RAM</th><th class="hide-md" style="min-width:140px">Disk</th><th class="hide-md">Podman</th><th class="hide-md">walroos</th><th class="hide-md">Containers</th><th class="hide-sm">Last seen</th></tr></thead><tbody>${list.map(n => {
+      const off = n.status === 'offline';
+      return `<tr data-href="#/nodes/${n.name}" style="cursor:pointer"><td><div class="cell-stack"><a class="cell-title mono" href="#/nodes/${n.name}">${n.name}</a><span class="cell-sub mono od-truncate">${n.host}</span></div></td>
+      <td class="hide-sm"><div class="od-cluster" style="--od-gap:4px">${n.roles.map(r => chip(r)).join('')}</div></td><td>${badge(n.status)}</td>
+      <td class="hide-sm">${off ? '<span class="muted">—</span>' : meter('CPU', n.cpu, `${n.cpu}%`)}</td><td class="hide-sm">${off ? '<span class="muted">—</span>' : meter('RAM', n.ram / n.ramT * 100, `${n.ram}/${n.ramT} GB`)}</td><td class="hide-md">${off ? '<span class="muted">—</span>' : meter('Disk', n.disk / n.diskT * 100, `${n.disk}/${n.diskT} GB`)}</td>
+      <td class="hide-md mono">${n.podman}</td><td class="hide-md mono">${n.walroos}${n.walroos !== '0.9.2' ? ' ' + chip('update') : ''}</td><td class="hide-md mono">${n.containers ?? '—'}</td><td class="hide-sm ${off ? '' : 'muted'} od-nowrap" ${off ? 'style="color:var(--bad)"' : ''}>${n.seen}</td></tr>`;
+    }).join('')}</tbody></table></div>`,
+  });
+  return { title: 'Nodes', crumbs: [['Nodes']], primary: { label: 'Add node', act: 'addNode', icon: 'plus' }, html: pageHead('Nodes', `${nodes.filter(n => n.status === 'online').length} of ${nodes.length} online · tailnet tail3f2a.ts.net`) + body };
+}
+function containersOf(n) {
+  // ponytail: hub and node agent are the walroos binary under systemd --user, not containers
+  if (n.name === 'homelab-1') return [['ws-walroos', 'workspace', 'walroos', wsBy('walroos') ? wsBy('walroos').status : 'stopped', '6%', '2.4 GB'], ['ws-tienda-api', 'workspace', 'tienda-api', 'running', '3%', '1.1 GB'], ['ws-blog', 'workspace', 'blog', wsBy('blog') ? wsBy('blog').status : 'stopped', '—', '—'], ['registry', 'system', null, 'running', '1%', '120 MB']];
+  if (n.name === 'homelab-2') return [['tienda-api-a1b2c3d', 'app', 'tienda-api', 'running', '28%', '2.9 GB'], ['blog-5e6f7a8', 'app', 'blog', 'running', '4%', '640 MB'], ['cloudflared', 'system', null, 'running', '3%', '48 MB']];
+  if (n.name === 'vps-fra') return [['landing-0a1b2c3', 'app', 'landing', 'offline', '—', '—'], ['cloudflared', 'system', null, 'offline', '—', '—']];
+  return [];
+}
+function vNode(name) {
+  const n = nodeBy(name); if (!n) return vNotFound();
+  const off = n.status === 'offline';
+  const cpu = series(n.seed, 48, n.cpu ?? 18, 22), ram = series(n.seed + 3, 48, n.ram ? n.ram / n.ramT * 100 : 40, 10);
+  if (off) { for (let i = 44; i < 48; i++) { cpu[i] = null; ram[i] = null; } }
+  else { cpu[47] = n.cpu; ram[47] = n.ram / n.ramT * 100; }
+  const cs = containersOf(n);
+  const html = `<div class="page-head"><div class="ph-text"><div class="title-row"><h1 class="mono">${n.name}</h1>${badge(n.status, off ? `offline · last seen ${n.seen}` : 'online')}<div class="od-cluster" style="--od-gap:4px">${n.roles.map(r => chip(r)).join('')}</div></div>
+    <div class="ph-meta"><span class="mono">${n.host}</span>${copyBtn(n.host, 'Copy hostname')}<span class="mono">${n.ip}</span><span>${n.os} · ${n.arch}</span><span>Podman <span class="mono">${n.podman}</span></span><span>walroos <span class="mono">${n.walroos}</span></span></div></div>
+    <div class="ph-actions">${cmd(`ssh ${n.host}`)}</div></div>
+    ${off ? `<div class="alert alert-bad" role="alert">${icon('alert')}<div class="alert-text"><strong>No heartbeat for ${n.seen.replace(' ago', '')}</strong><span class="muted">Check Tailscale on the machine, then restart the agent.</span></div><div class="alert-actions" style="min-width:min(100%,320px)">${cmd('systemctl --user restart walroos-node')}</div></div>` : ''}
+    <div class="stats">
+      <div class="card stat od-stat"><span class="stat-label">${icon('cpu')}CPU</span><span class="stat-num">${off ? '—' : n.cpu + '%'}</span><span class="stat-sub">${off ? 'no data' : 'now'}</span></div>
+      <div class="card stat od-stat"><span class="stat-label">${icon('activity')}RAM</span><span class="stat-num">${off ? '—' : n.ram}<small>${off ? '' : ` / ${n.ramT} GB`}</small></span><span class="stat-sub">${off ? `${n.ramT} GB total` : Math.round(n.ram / n.ramT * 100) + '% used'}</span></div>
+      <div class="card stat od-stat"><span class="stat-label">${icon('nodes')}Disk</span><span class="stat-num">${off ? '—' : n.disk}<small>${off ? '' : ` / ${n.diskT} GB`}</small></span><span class="stat-sub">${n.diskT} GB total</span></div>
+      <div class="card stat od-stat"><span class="stat-label">${icon('apps')}Containers</span><span class="stat-num">${n.containers ?? '—'}</span><span class="stat-sub">${cs.filter(c => c[1] === 'app').length} apps · ${cs.filter(c => c[1] === 'workspace').length} workspaces</span></div>
+    </div>
+    <div class="grid-2">${chart('CPU · 24h', cpu, v => Math.round(v) + '%')}${chart('RAM · 24h', ram, v => Math.round(v) + '%')}</div>
+    <section class="section"><h2>Containers</h2><div class="table-wrap"><table class="tbl"><thead><tr><th>Container</th><th>Belongs to</th><th>Status</th><th class="hide-sm">CPU</th><th class="hide-sm">Memory</th></tr></thead><tbody>${cs.map(([c, kind, ref, st, cp, mem]) => `<tr><td class="mono">${c}</td><td>${ref ? `<a class="link mono" href="#/${kind === 'app' ? 'apps' : 'workspaces'}/${ref}">${ref}</a> <span class="muted">${kind}</span>` : '<span class="muted">system</span>'}</td><td>${badge(st)}</td><td class="hide-sm mono">${cp}</td><td class="hide-sm mono">${mem}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No containers yet. Create a workspace or deploy an app here.</td></tr>'}</tbody></table></div></section>`;
+  return { title: n.name, crumbs: [['Nodes', '#/nodes'], [n.name]], primary: { label: 'Add node', act: 'addNode', icon: 'plus' }, html };
+}
+
+function vIntegrations() {
+  const git = key => {
+    const i = integrations[key];
+    const title = `<span class="int-logo">${icon(i.icon)}</span>${i.name}`;
+    if (!i.connected) return accItem(`int-${key}`, title, badge('not connected'), `<form class="form" style="max-width:560px" data-form="connectInt" data-k="${key}" novalidate>
+      <div class="grid2"><div class="field"><label for="i-${key}-url">Instance URL</label><input id="i-${key}-url" name="url" class="mono" value="https://gitlab.com" autocomplete="off"></div>
+      <div class="field"><label for="i-${key}-tok">Personal access token <span class="req" aria-hidden="true">*</span></label><input id="i-${key}-tok" name="tok" type="password" class="mono" placeholder="glpat-…" autocomplete="off" required aria-describedby="i-${key}-err"></div></div>
+      <p class="help">Scopes: api, read_repository. Webhooks are registered automatically.</p><p class="err" id="i-${key}-err" hidden></p>
+      <button class="btn btn-primary" style="align-self:flex-start" type="submit">Connect ${i.name}</button></form>`);
+    return accItem(`int-${key}`, title, `<span class="mono">${esc(i.account)}</span><span>${i.repos} repos</span>${badge('connected')}`,
+      `<dl class="kv"><dt>Account</dt><dd class="mono">${esc(i.account)}</dd>${i.url ? `<dt>URL</dt><dd class="mono">${esc(i.url)}</dd>` : ''}<dt>Auth</dt><dd>${i.via}</dd><dt>Webhooks</dt><dd>Registered on deploy</dd></dl>
+      <div class="od-row"><button class="btn btn-sm" data-act="syncInt" data-k="${key}">${icon('refresh')}Sync repos</button><button class="btn btn-sm btn-ghost btn-danger" data-act="disconnectInt" data-k="${key}">Disconnect</button></div>`);
+  };
+  const cf = accItem('int-cloudflare', `<span class="int-logo">${icon('cloud')}</span>Cloudflare`, `<span>zone <span class="mono">walroos.com</span></span><span>1 of 2 tunnels up</span>${badge('connected')}`,
+    `<dl class="kv"><dt>API token</dt><dd class="mono">cf_••••••••••3kQz · Zone:DNS:Edit, Tunnel:Edit</dd><dt>Zone</dt><dd class="mono">walroos.com</dd></dl>
+    <div class="table-wrap"><table class="tbl"><thead><tr><th>Node</th><th>Tunnel</th><th>Status</th><th class="hide-sm">Routes</th></tr></thead><tbody>
+      <tr><td class="mono">homelab-2</td><td class="mono muted">walroos-homelab-2</td><td>${badge('healthy')}</td><td class="hide-sm mono muted">api.tienda.walroos.com, blog.walroos.com</td></tr>
+      <tr><td class="mono">vps-fra</td><td class="mono muted">walroos-vps-fra</td><td>${badge('down')}</td><td class="hide-sm mono muted">walroos.com, www.walroos.com</td></tr></tbody></table></div>`);
+  const html = `<h1 class="sr-only">Integrations</h1>
+    <section class="section"><div class="sec-head"><h2>Git providers</h2><p class="muted">Clone access and deploy webhooks.</p></div><div class="acc-group">${git('github')}${git('forgejo')}${git('gitlab')}</div></section>
+    <section class="section"><div class="sec-head"><h2>Ingress</h2><p class="muted">Public domains for prod apps.</p></div><div class="acc-group">${cf}</div></section>
+    <section class="section"><div class="sec-head"><h2>Webhooks</h2><p class="muted">Public via Tailscale Funnel. Providers post here.</p></div>${cmd(`https://${HUB}/hooks/github`, '')}
+      <div class="table-wrap"><table class="tbl"><thead><tr><th>Time</th><th>Event</th><th class="hide-sm">Repository</th><th>Response</th><th class="hide-sm">Duration</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>${deliveries.map(([t, e, r, c, ms], i) => `<tr><td class="mono muted od-nowrap">${t}</td><td class="mono">${e}</td><td class="hide-sm">${repoCell(r)}</td><td>${badge(c < 300 ? 'succeeded' : 'failed', c < 300 ? String(c) : `${c} bad signature`)}</td><td class="hide-sm mono">${ms}</td><td class="ta-r"><button class="btn btn-sm btn-ghost" data-act="redeliver" data-i="${i}">Redeliver</button></td></tr>`).join('')}</tbody></table></div></section>`;
+  return { title: 'Integrations', crumbs: [['Integrations']], primary: null, html };
+}
+
+function vSettings(tab) {
+  const f = k => tab === k;
+  const light = document.documentElement.dataset.theme === 'light';
+  const collapsed = document.body.classList.contains('sb-collapsed');
+  const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const keys = sshKeys.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Name</th><th class="hide-sm">Fingerprint</th><th class="hide-md">Added</th><th class="hide-sm">Last used</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>${sshKeys.map((k, i) => `<tr><td><div class="cell-stack"><span class="cell-title">${esc(k.name)}</span><span class="cell-sub mono">${k.type}</span></div></td><td class="hide-sm mono muted"><span class="od-truncate" style="max-width:340px">${esc(k.fp)}</span></td><td class="hide-md muted">${k.added}</td><td class="hide-sm muted">${k.last}</td><td class="ta-r"><button class="btn btn-sm btn-ghost btn-danger" data-act="delKey" data-i="${i}">Remove</button></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted" style="font-size:var(--fs-sm)">No keys yet. Add your laptop\'s public key to connect to workspaces.</p>';
+  const toks = tokens.length ? `<div class="table-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Scopes</th><th class="hide-sm">Last used</th><th class="hide-md">Created</th><th class="ta-r"><span class="sr-only">Actions</span></th></tr></thead><tbody>${tokens.map((t, i) => `<tr><td class="mono">${esc(t.name)}</td><td><div class="od-cluster" style="--od-gap:4px">${t.scopes.map(s => chip(esc(s))).join('')}</div></td><td class="hide-sm muted">${t.last}</td><td class="hide-md muted">${t.created}</td><td class="ta-r"><button class="btn btn-sm btn-ghost btn-danger" data-act="revokeToken" data-i="${i}">Revoke</button></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted" style="font-size:var(--fs-sm)">No tokens. Create one for CI or Claude Code.</p>';
+  const snip = `claude mcp add walroos --transport http https://${HUB}/mcp --header "Authorization: Bearer $WALROOS_TOKEN"`;
+  const html = `<h1 class="sr-only">Settings</h1><div class="acc-group">
+    ${accItem('account', 'Account', `<span class="mono">${esc(S.profile.handle)}</span><span>Owner</span>`, `<dl class="kv"><dt>Identity</dt><dd class="mono">${esc(S.profile.handle)} (Tailscale)</dd><dt>Name</dt><dd>${esc(S.profile.name)}</dd><dt>Tailnet</dt><dd class="mono">tail3f2a.ts.net</dd><dt>Role</dt><dd>Owner</dd></dl><a class="btn btn-sm" style="align-self:flex-start" href="#/profile">Edit profile</a>`, f('account'))}
+    ${accItem('ssh-keys', 'SSH keys', pl(sshKeys.length, 'key'), `<div class="acc-bar"><span class="muted">Allowed to SSH into every workspace.</span><button class="btn btn-sm btn-primary" data-act="addKey">${icon('plus')}Add key</button></div>${keys}`, f('ssh-keys'))}
+    ${accItem('tokens', 'API tokens', pl(tokens.length, 'token'), `<div class="acc-bar"><span class="muted">For CI, the CLI and MCP clients. Shown once at creation.</span><button class="btn btn-sm btn-primary" data-act="createToken">${icon('plus')}Create token</button></div>${toks}`, f('tokens'))}
+    ${accItem('mcp', 'MCP', `<span class="mono">/mcp</span>${badge('online')}`, `<div class="field"><span class="label">Endpoint · streamable HTTP</span>${cmd(`https://${HUB}/mcp`, '')}</div>
+      <div class="field"><span class="label">Add to Claude Code</span>${cmd('export WALROOS_TOKEN=wlr_pat_…')}${cmd(snip)}</div>
+      <div class="field"><span class="label">Tools exposed</span><div class="od-cluster" style="--od-gap:4px">${['list_nodes', 'list_workspaces', 'create_workspace', 'start_workspace', 'stop_workspace', 'workspace_ssh_info', 'list_apps', 'deploy_app', 'get_deployment', 'get_deployment_logs', 'rollback_app'].map(t => chip(`<span class="mono">${t}</span>`)).join('')}</div></div>`, f('mcp'))}
+    ${accItem('appearance', 'Appearance', `${light ? 'Light' : 'Dark'} theme`, `<div class="pref"><span>Theme</span><div class="seg" role="group" aria-label="Theme"><button data-act="setTheme" data-t="dark" aria-pressed="${!light}">Dark</button><button data-act="setTheme" data-t="light" aria-pressed="${light}">Light</button></div></div>
+      <div class="pref"><span>Sidebar <span class="muted">· shortcut <kbd>[</kbd></span></span><button class="btn btn-sm" data-act="toggleSidebar">${collapsed ? 'Expand' : 'Collapse to icons'}</button></div>`, f('appearance'))}
+    ${accItem('about', 'About', '<span class="mono">walroos 0.9.2</span>', `<dl class="kv"><dt>Hub</dt><dd class="mono">0.9.2 · build e2f9a10 · ${HUB}</dd><dt>Agents</dt><dd class="mono">${nodes.map(n => `${n.name} ${n.walroos}`).join(' · ')}</dd><dt>Uptime</dt><dd class="mono">12d 6h</dd></dl>
+      <div class="od-row"><button class="btn btn-sm" data-act="checkUpdates">${icon('refresh')}Check for updates</button>${copyBtn('walroos 0.9.2 (e2f9a10)', 'Copy version')}</div>`, f('about'))}
+  </div>`;
+  return { title: 'Settings', crumbs: [['Settings']], primary: null, html };
+}
+
+function vProfile() {
+  const p = S.profile, light = document.documentElement.dataset.theme === 'light';
+  const row = (id, label, help, ctl) => `<div class="set-row"><div class="od-field"><label for="${id}">${label}</label>${help ? `<span class="help">${help}</span>` : ''}</div><div class="set-ctl">${ctl}</div></div>`;
+  const tzs = ['America/Caracas', 'America/Bogota', 'America/Mexico_City', 'Europe/Madrid', 'UTC'];
+  const html = `<div class="profile">
+    <section class="card id-card"><span class="avatar" aria-hidden="true">${esc((p.name || 'J')[0].toUpperCase())}</span>
+      <div class="cell-stack"><h1>${esc(p.name)}</h1><span class="mono muted">${esc(p.handle)}</span></div>
+      <div class="od-cluster" style="--od-gap:4px">${chip('Owner', 'chip-ac')}${chip('<span class="mono">tail3f2a.ts.net</span>')}</div>
+      <p class="help">You sign in with your Tailscale identity. There is no password to manage.</p></section>
+    <div class="side-stack">
+      <form class="card" data-form="profile" novalidate>
+        <div class="card-head"><h2>Profile</h2></div>
+        ${row('pf-name', 'Display name', 'Shown in sessions and deploy history.', `<input id="pf-name" name="dname" value="${esc(p.name)}" autocomplete="name" required>`)}
+        ${row('pf-tz', 'Timezone', 'Used for log timestamps.', `<select id="pf-tz" name="tz">${tzs.map(t => `<option ${t === p.tz ? 'selected' : ''}>${t}</option>`).join('')}</select>`)}
+        ${row('pf-node', 'Default node', 'Preselected for new workspaces.', `<select id="pf-node" name="node">${nodes.filter(n => n.roles.includes('dev')).map(n => `<option value="${n.name}" ${n.name === p.node ? 'selected' : ''}>${n.name}</option>`).join('')}</select>`)}
+        <div class="set-row"><div class="od-field"><span class="label" id="pf-th">Theme</span></div><div class="set-ctl"><div class="seg" role="group" aria-labelledby="pf-th"><button type="button" data-act="setTheme" data-t="dark" aria-pressed="${!light}">Dark</button><button type="button" data-act="setTheme" data-t="light" aria-pressed="${light}">Light</button></div></div></div>
+        <div class="m-foot"><button type="reset" class="btn">Discard</button><button type="submit" class="btn btn-primary">Save changes</button></div>
+      </form>
+    </div></div>`;
+  return { title: 'Profile', crumbs: [['Profile']], primary: null, html };
+}
+
+function vWelcome() {
+  const s = S.setup;
+  const step = (done, n, title, text, action) => `<li class="card setup-step ${done ? 'done' : ''}"><span class="num">${done ? icon('check') : n}</span><div><h3>${title}</h3><p class="muted" style="font-size:var(--fs-sm)">${text}</p></div>${done ? badge('succeeded', 'done') : action}</li>`;
+  const all = s.node && s.git && s.ws;
+  const html = `<div style="max-width:720px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:var(--sp6)">
+    <div class="ph-text"><span class="brand" style="color:var(--ac)">${LOGO}</span><h1>Set up walroos</h1><p class="muted">Your hub is running on <span class="mono">${HUB}</span>. 0 nodes · 0 apps · 0 workspaces. Three steps and you're coding on your own hardware.</p></div>
+    <ol class="setup-steps">
+      ${step(s.node, 1, 'Add a node', 'Run one command on any machine in your tailnet. It joins with the roles you pick.', `<button class="btn btn-primary" data-act="addNode" data-setup="1">${icon('plus')}Add node</button>`)}
+      ${step(s.git, 2, 'Connect Git', 'GitHub, GitLab or Forgejo. Used for clone access and deploy webhooks.', `<button class="btn ${s.node ? 'btn-primary' : ''}" data-act="setupGit">${icon('github')}Connect GitHub</button>`)}
+      ${step(s.ws, 3, 'Create your first workspace', 'Pick a repo, walroos builds its dev container and hands you an SSH host.', `<button class="btn ${s.node && s.git ? 'btn-primary' : ''}" data-act="newWorkspace" data-setup="1">${icon('workspace')}New workspace</button>`)}
+    </ol>
+    ${all ? `<div class="alert alert-ok">${icon('check')}<div class="alert-text"><strong>You're set.</strong><span class="muted">Connect with <span class="mono">ssh walroos.walroos</span> or open the overview.</span></div><a class="btn btn-primary" href="#/overview">Go to overview</a></div>` : `<p class="muted" style="font-size:var(--fs-sm)">Already have nodes? <a class="link" href="#/overview">Skip to the overview</a>.</p>`}
+  </div>`;
+  return { title: 'Get started', crumbs: [['Get started']], primary: null, html };
+}
+const vNotFound = () => ({ title: 'Not found', crumbs: [['Not found']], primary: null, html: emptyBox(icon('search', 'ic-lg'), 'Nothing here', 'That workspace, app or node doesn\'t exist — maybe it was deleted.', '<a class="btn" href="#/overview">Back to overview</a>') });
+
+/* ---------- shell ---------- */
+const NAV = [['overview', 'Overview', 'overview'], ['workspaces', 'Workspaces', 'workspace'], ['apps', 'Apps', 'apps'], ['deployments', 'Deployments', 'deploy'], ['nodes', 'Nodes', 'nodes'], ['integrations', 'Integrations', 'plug'], ['settings', 'Settings', 'settings']];
+function renderShell() {
+  const p = S.profile;
+  $('#sidebar').innerHTML = `<div class="sb-top"><a class="brand" href="#/overview" aria-label="walroos overview">${LOGO}<span class="lbl">walroos</span></a></div>
+    <div class="sb-env"><label class="sr-only" for="node-filter">Node</label><select id="node-filter" data-filter="node"></select></div>
+    <nav class="nav" aria-label="Main">${NAV.map(([s, l, i]) => `<a href="#/${s}" data-sec="${s}" aria-label="${l}" title="${l}">${icon(i)}<span class="lbl">${l}</span></a>`).join('')}</nav>
+    <a class="sb-user" href="#/profile" data-sec="profile" aria-label="Your profile, ${esc(p.handle)}, tailnet connected" title="Profile"><span class="avatar" aria-hidden="true">${esc((p.name || 'J')[0].toUpperCase())}</span><span class="sb-user-t lbl"><span class="od-truncate" style="font-weight:500">${esc(p.name)}</span><span class="conn"><span class="dot ok" aria-hidden="true"></span><span class="od-truncate mono">${esc(p.handle)}</span></span></span></a>`;
+  renderNodeFilter();
+  $('.menu-btn').innerHTML = icon('menu');
+  $('.search-btn').innerHTML = `${icon('search')}<span>Search or jump to…</span><kbd>${KBD}</kbd>`;
+}
+function renderNodeFilter() {
+  const sel = $('#node-filter'); if (!sel) return;
+  sel.innerHTML = `<option value="">All nodes · tail3f2a</option>${nodes.map(n => `<option value="${n.name}" ${S.nodeFilter === n.name ? 'selected' : ''}>${n.status === 'online' ? '●' : '○'} ${n.name} (${n.roles.join(', ')})</option>`).join('')}`;
+}
+function renderTop(v) {
+  const cr = v.crumbs.length > 1 ? v.crumbs.slice(0, -1) : v.crumbs;
+  $('#crumbs').innerHTML = cr.map(([l, hr]) => `<li>${hr && v.crumbs.length > 1 ? `<a href="${hr}">${esc(l)}</a>` : `<span aria-current="page">${esc(l)}</span>`}</li>`).join('');
+  const p = v.primary;
+  $('#tb-primary').innerHTML = !p ? '' : p.copy
+    ? `<button class="btn btn-primary" data-copy="${esc(p.copy)}" aria-label="${p.label}">${icon(p.icon)}<span class="tb-label">${p.label}</span></button>`
+    : `<button class="btn btn-primary" data-act="${p.act}" ${p.name ? `data-name="${p.name}"` : ''} aria-label="${p.label}">${icon(p.icon)}<span class="tb-label">${p.label}</span></button>`;
+}
+function parse() {
+  const raw = S.hash.replace(/^#\/?/, '') || 'overview';
+  const [p, qs = ''] = raw.split('?');
+  return { parts: p.split('/').filter(Boolean).map(decodeURIComponent), q: new URLSearchParams(qs) };
+}
+function route() {
+  clearTimers();
+  const { parts, q } = parse();
+  const [sec, id, tab] = parts;
+  let v;
+  switch (sec) {
+    case 'overview': v = vOverview(q); break;
+    case 'workspaces': v = id ? vWorkspace(id, tab) : vWorkspaces(q); break;
+    case 'apps': v = id ? vApp(id, tab) : vApps(q); break;
+    case 'deployments': v = id ? vDeployment(id) : vDeployments(q); break;
+    case 'nodes': v = id ? vNode(id) : vNodes(q); break;
+    case 'integrations': v = vIntegrations(); break;
+    case 'settings': v = vSettings(id); break;
+    case 'welcome': v = vWelcome(); break;
+    case 'profile': v = vProfile(); break;
+    default: v = vNotFound();
+  }
+  S.view = { sec, id, tab };
+  $('#view').innerHTML = `<div class="content">${v.html}</div>`;
+  renderTop(v);
+  $$('#sidebar [data-sec]').forEach(a => a.dataset.sec === sec ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
+  document.title = `${v.title} · walroos`;
+  if (v.mount) v.mount();
+}
+function refresh(secs) { if (secs.includes(S.view.sec) && !$('#layer').innerHTML) route(); }
+
+/* ---------- layers ---------- */
+function openLayer(html, kind = 'modal', label = 'Dialog', wide = false) {
+  if (!$('#layer').innerHTML) S.lastFocus = document.activeElement;
+  closeMenus();
+  S.layerTimers.forEach(clearTimeout); S.layerTimers = [];
+  $('#layer').innerHTML = `<div class="overlay ov-${kind}" data-act="closeLayerBg"><div class="${kind}${wide ? ' wide' : ''}" role="dialog" aria-modal="true" aria-label="${esc(label)}">${html}</div></div>`;
+  requestAnimationFrame(() => { const f = $('#layer [autofocus]') || $('#layer input:not([type=hidden]):not([type=radio]), #layer textarea, #layer select') || $('#layer button'); if (f) f.focus(); });
+}
+function closeLayer() {
+  S.layerTimers.forEach(clearTimeout); S.layerTimers = [];
+  if (!$('#layer').innerHTML) return;
+  $('#layer').innerHTML = '';
+  if (S.lastFocus && document.contains(S.lastFocus)) S.lastFocus.focus();
+  S.lastFocus = null;
+}
+function confirmModal({ title, body, confirm, danger, onConfirm }) {
+  openLayer(`${modalHead(title)}<div class="m-body"><p class="muted">${body}</p></div><div class="m-foot"><button class="btn" data-act="closeLayer">Cancel</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="confirm-btn" autofocus>${confirm}</button></div>`, 'modal', title);
+  S.onConfirm = onConfirm;
+}
+function toast(text, kind = 'ok') {
+  const t = document.createElement('div');
+  t.className = `toast ${kind}`;
+  t.innerHTML = `${icon(kind === 'bad' ? 'alert' : 'check')}<span>${esc(text)}</span>`;
+  $('#toasts').appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 120); }, kind === 'bad' ? 4200 : 2400);
+}
+function closeMenus(except) { $$('details.menu[open]').forEach(d => { if (d !== except) d.open = false; }); }
+function placeMenu(det) {
+  const pop = det.querySelector('.menu-pop'), sum = det.querySelector('summary');
+  const r = sum.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+  let left = Math.min(r.right - w, innerWidth - w - 8); left = Math.max(8, left);
+  let top = r.bottom + 4; if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 4);
+  pop.style.left = left + 'px'; pop.style.top = top + 'px';
+}
+
+/* ---------- flows ---------- */
+function newWorkspace(fromSetup) {
+  const devNodes = nodes.filter(n => n.roles.includes('dev'));
+  openLayer(`${modalHead('New workspace', 'Clones the repo into a Podman container on a dev node.')}
+  <form class="m-body form" data-form="newWs" data-setup="${fromSetup ? 1 : ''}" novalidate id="nw-form">
+    <div class="field"><label for="nw-repo">Repository URL <span class="req" aria-hidden="true">*</span></label>
+      <input id="nw-repo" name="repo" list="nw-repos" required autocomplete="off" spellcheck="false" class="mono" placeholder="github.com/owner/repo" aria-describedby="nw-repo-help nw-repo-err" autofocus>
+      <datalist id="nw-repos">${REPOS.map(r => `<option value="${r}">`).join('')}</datalist>
+      <p class="help" id="nw-repo-help">Suggestions come from GitHub and Forgejo.</p><p class="err" id="nw-repo-err" hidden></p></div>
+    <div class="grid2"><div class="field"><label for="nw-branch">Branch</label><input id="nw-branch" name="branch" value="main" list="nw-branches" class="mono" autocomplete="off"><datalist id="nw-branches"><option value="main"><option value="dev"><option value="feat/pagos"></datalist></div>
+      <div class="field"><label for="nw-node">Node</label><select id="nw-node" name="node">${devNodes.map(n => `<option value="${n.name}" ${n.status !== 'online' ? 'disabled' : ''}>${n.name} · CPU ${n.cpu ?? '—'}% · RAM ${n.ram ?? '—'}/${n.ramT} GB</option>`).join('')}</select><p class="help">Only nodes with the dev role.</p></div></div>
+    <div class="field"><span class="label" id="nw-cfg-l">Configuration</span><div id="nw-config" class="config-box" aria-labelledby="nw-cfg-l" aria-live="polite">${configBox('')}</div></div>
+    <details class="disclosure"><summary>Resources <span class="muted">(optional)</span></summary><div class="grid2">
+      <div class="field"><label for="nw-cpu">CPU limit</label><select id="nw-cpu" name="cpu"><option value="0">No limit</option><option>2</option><option>4</option><option>8</option></select></div>
+      <div class="field"><label for="nw-mem">RAM limit</label><select id="nw-mem" name="mem"><option value="0">No limit</option><option>4</option><option>8</option><option>16</option></select></div></div></details>
+    <div class="m-foot"><button type="button" class="btn" data-act="closeLayer">Cancel</button><button type="submit" class="btn btn-primary">Create workspace</button></div>
+  </form>`, 'panel', 'New workspace');
+}
+const hasDevcontainer = repo => /(walroos|tienda-api|landing)(\.git)?\/?$/.test(repo.trim());
+function configBox(repo) {
+  if (!repo) return '<span class="muted">Enter a repository to detect its dev container.</span>';
+  return hasDevcontainer(repo) ? `<span class="cfg ok">${icon('check')}Detected <code>.devcontainer/devcontainer.json</code></span>`
+    : `<span class="cfg">${icon('info')}No devcontainer found — using <strong>Walroos base image</strong> (Debian + mise)</span>`;
+}
+const REPO_RE = /^(https?:\/\/)?[\w.-]+\.[\w-]+(\/[\w.-]+){2,}(\.git)?\/?$/;
+function validateRepo(input) {
+  const v = input.value.trim(), err = $('#nw-repo-err');
+  const msg = !v ? 'Repository URL is required.' : !REPO_RE.test(v) ? 'Use host/owner/repo, like github.com/jefjesuswt/walroos.' : '';
+  input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+  err.hidden = !msg; err.textContent = msg;
+  return !msg;
+}
+function runCreateWorkspace(form) {
+  const repo = form.repo.value.trim().replace(/^https?:\/\//, '').replace(/\.git$/, '').replace(/\/$/, '');
+  const branch = form.branch.value.trim() || 'main', node = form.node.value, setup = form.dataset.setup;
+  let name = repo.split('/').pop(); if (wsBy(name)) name = `${name}-${workspaces.length + 1}`;
+  const dc = hasDevcontainer(repo);
+  const w = { name, repo, branch, node, status: 'starting', detail: dc ? 'devcontainer' : 'Walroos base image', active: 'now', uptime: '0m', config: dc ? 'devcontainer' : 'base', ports: [], cpu: +form.cpu.value || 2, mem: +form.mem.value || 4, vol: ['—', '—'] };
+  workspaces.push(w);
+  const steps = [
+    ['Clone', [`git clone --branch ${branch} https://${repo} /workspaces/${name}`, 'Receiving objects: 100% (2841/2841), 4.1 MiB | 38 MiB/s', `checked out ${branch}`]],
+    [dc ? 'Build image' : 'Pull image', dc ? ['devcontainer: reading .devcontainer/devcontainer.json', `podman build -t walroos/ws-${name}:dev .devcontainer`, 'features: go, node, github-cli', 'image built in 48s (cache hit 7/9 layers)'] : ['podman pull ghcr.io/walroos/base:debian-13', 'mise install (reading .mise.toml)', 'image ready']],
+    ['Start', [`podman run -d --name ws-${name} --network walroos -v src:/workspaces/${name} -v home:/home/jef`, 'sshd listening on :2222 (tailnet only)']],
+    ['Ready', [`ready → ssh ${name}.walroos`]],
+  ];
+  const panel = $('#layer .panel');
+  const lines = [];
+  const paint = cur => {
+    panel.innerHTML = `${modalHead(`Creating ${esc(name)}`, `<span class="mono">${esc(repo)}@${esc(branch)}</span> on <span class="mono">${node}</span>`)}
+    <div class="m-body"><ol class="progress" aria-live="polite">${steps.map(([s], i) => `<li class="${i < cur || cur >= steps.length ? 'ok' : i === cur ? 'run' : ''}">${i < cur || cur >= steps.length ? icon('check') : i === cur ? icon('refresh', 'spin') : '<span class="pending-ring" aria-hidden="true"></span>'}<span class="grow">${s === 'Ready' ? 'Ready' : s === 'Clone' ? 'Clone repository' : s === 'Start' ? 'Start container' : s}</span></li>`).join('')}</ol>
+    <details class="disclosure" ${cur >= steps.length ? '' : 'open'}><summary>Logs</summary><div><div class="log" style="max-height:220px"><div class="log-lines">${lines.map(l => `<div class="ln dim"><span class="t">${esc(l)}</span></div>`).join('')}</div></div></div></details>
+    ${cur >= steps.length ? `<div class="alert alert-ok">${icon('check')}<div class="alert-text"><strong>${esc(name)} is ready</strong><span class="muted">Connect from any device on your tailnet.</span></div></div>${cmd(`ssh ${name}.walroos`)}` : ''}</div>
+    <div class="m-foot">${cur >= steps.length ? `<button class="btn" data-act="closeLayer">Close</button><a class="btn btn-primary" href="#/workspaces/${encodeURIComponent(name)}/connect">Open workspace</a>` : '<button class="btn" data-act="closeLayer">Run in background</button>'}</div>`;
+  };
+  let i = 0;
+  const tick = () => {
+    if (i < steps.length) { lines.push(...steps[i][1]); paint(i); i++; layerLater(tick, 1100); }
+    else paint(steps.length);
+  };
+  tick();
+  setTimeout(() => { w.status = 'running'; w.ports = dc ? [[3000, 'dev server']] : []; w.vol = ['24 MB', '12 MB']; toast(`${name} is running`); if (setup) S.setup.ws = true; refresh(['workspaces', 'overview', 'welcome']); }, 1100 * steps.length);
+}
+
+function addNode(fromSetup) {
+  const command = `curl -fsSL get.walroos.com | sh -s -- node join --hub walroos-hub --token ${JOIN_TOKEN}`;
+  openLayer(`${modalHead('Add node', 'Run this on the machine you want to join. It needs Tailscale up and Podman installed.')}
+    <div class="m-body">${cmd(command)}<p class="help">The token expires in 1 hour and works once. Roles default to <span class="mono">dev</span>; change them later.</p>
+    <div class="alert" id="join-state" aria-live="polite">${icon('refresh', 'spin')}<div class="alert-text"><strong>Waiting for node to connect…</strong><span class="muted">Listening on <span class="mono">${HUB}</span></span></div></div></div>
+    <div class="m-foot"><button class="btn" data-act="closeLayer">Close</button></div>`, 'modal', 'Add node', true);
+  layerLater(() => {
+    const name = `homelab-${nodes.length + 1 - (nodes.some(n => n.name === 'vps-fra') ? 1 : 0)}`;
+    const n = nodeBy(name) ? null : { name, roles: ['dev'], status: 'online', cpu: 4, ram: 1.2, ramT: 16, disk: 18, diskT: 256, containers: 0, host: `${name}.tail3f2a.ts.net`, ip: '100.101.12.11', os: 'Debian 13', arch: 'amd64', podman: '5.4.1', walroos: '0.9.2', seen: 'just now', seed: 31 };
+    const nn = n || nodeBy(name);
+    if (n) nodes.push(n);
+    if (fromSetup) S.setup.node = true;
+    renderNodeFilter();
+    const el = $('#join-state'); if (!el) return;
+    el.className = 'alert alert-ok';
+    el.innerHTML = `${icon('check')}<div class="alert-text"><strong><span class="mono">${nn.name}</span> connected</strong><span class="muted mono">${nn.ip} · ${nn.os} · Podman ${nn.podman}</span></div><div class="alert-actions"><a class="btn btn-sm btn-primary" href="#/nodes/${nn.name}">View node</a></div>`;
+    toast(`${nn.name} joined the hub`);
+    refresh(['nodes', 'overview', 'welcome']);
+  }, 6000);
+}
+
+function newApp() {
+  openLayer(`${modalHead('New app', 'Builds the repo\'s Dockerfile and runs it on a prod node.')}
+  <form class="m-body form" data-form="newApp" novalidate>
+    <div class="field"><label for="na-repo">Repository URL <span class="req" aria-hidden="true">*</span></label><input id="na-repo" name="repo" list="na-repos" class="mono" required autocomplete="off" placeholder="github.com/owner/repo" autofocus><datalist id="na-repos">${REPOS.map(r => `<option value="${r}">`).join('')}</datalist><p class="err" id="na-repo-err" hidden></p></div>
+    <div class="grid2"><div class="field"><label for="na-node">Node</label><select id="na-node" name="node">${nodes.filter(n => n.roles.includes('prod')).map(n => `<option value="${n.name}" ${n.status !== 'online' ? 'disabled' : ''}>${n.name}${n.status !== 'online' ? ' (offline)' : ` · CPU ${n.cpu}%`}</option>`).join('')}</select></div>
+    <div class="field"><label for="na-dom">Domain</label><input id="na-dom" name="domain" class="mono" placeholder="app.walroos.com" autocomplete="off"><p class="help">Routed through Cloudflare Tunnel.</p></div></div>
+    <fieldset class="field" style="border:0;padding:0;margin:0"><legend class="label" style="margin-bottom:6px">Deploy trigger</legend><div class="od-cluster" style="--od-gap:16px">${Object.entries(APP_TRIG).map(([v, l], i) => `<label class="check"><input type="radio" name="trigger" value="${v}" ${i === 0 ? 'checked' : ''}>${l}</label>`).join('')}</div></fieldset>
+    <div class="m-foot"><button type="button" class="btn" data-act="closeLayer">Cancel</button><button type="submit" class="btn btn-primary">Create and deploy</button></div>
+  </form>`, 'panel', 'New app');
+}
+
+function rollbackTarget(a) {
+  const latest = deploys.find(d => d.app === a.name && !d.live);
+  if (latest && latest.status === 'failed') return deploys.find(d => d.app === a.name && d.current) || null;
+  return deploys.find(d => d.app === a.name && d.status === 'succeeded' && !d.current) || null;
+}
+function doRollback(d, a) {
+  deploys.forEach(x => { if (x.app === d.app) x.current = false; });
+  d.current = true; a.status = 'running';
+  toast(`${d.app} rolled back to ${d.sha}`);
+  route();
+}
+function rollbackApp(name) {
+  const a = appBy(name), t = a && rollbackTarget(a); if (!t) return;
+  const latest = deploys.find(d => d.app === name && !d.live);
+  confirmModal({
+    title: `Roll back ${name}?`,
+    body: latest.status === 'failed' ? `Pins <span class="mono">${name}</span> to <span class="sha">${t.sha}</span> (${esc(t.msg)}), the version still serving, and marks <span class="sha">${latest.sha}</span> as rolled back.` : `Routes traffic back to <span class="sha">${t.sha}</span> · ${esc(t.msg)}. The current container is kept for 24h.`,
+    confirm: 'Roll back', onConfirm: () => doRollback(t, a),
+  });
+}
+
+/* palette */
+function paletteItems() {
+  const nav = h => () => go(h);
+  return [
+    ...[['Deploy tienda-api', 'deploy', () => deployAndOpen('tienda-api', 'main'), 'action'], ['Connect to walroos', 'terminal', nav('#/workspaces/walroos/connect'), 'action'], ['Add node', 'plus', () => addNode(), 'action'], ['New workspace', 'plus', () => newWorkspace(), 'action'], ['New app', 'plus', () => newApp(), 'action'], ['Copy ssh walroos.walroos', 'copy', () => copyText('ssh walroos.walroos'), 'action'], ['Toggle light / dark', 'sun', () => setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'), 'action'], ['Getting started', 'check', nav('#/welcome'), 'action'], ['Profile', 'user', nav('#/profile'), 'action'], ['About walroos', 'info', nav('#/settings/about'), 'action'], ['Collapse or expand sidebar', 'sidebar', () => ACT.toggleSidebar(), 'action']].map(([l, i, run, g]) => ({ l, i, run, g: 'Actions', hint: '' })),
+    ...workspaces.map(w => ({ l: w.name, i: 'workspace', run: nav(`#/workspaces/${w.name}`), g: 'Workspaces', hint: `${w.status} · ${w.node}` })),
+    ...apps.map(a => ({ l: a.name, i: 'apps', run: nav(`#/apps/${a.name}`), g: 'Apps', hint: a.domain })),
+    ...nodes.map(n => ({ l: n.name, i: 'nodes', run: nav(`#/nodes/${n.name}`), g: 'Nodes', hint: n.status })),
+    ...NAV.map(([s, l, i]) => ({ l, i, run: nav(`#/${s}`), g: 'Pages', hint: '' })),
+  ];
+}
+function openPalette() {
+  openLayer(`<div class="pal-in">${icon('search')}<label class="sr-only" for="pal-q">Search</label><input id="pal-q" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list" placeholder="Search workspaces, apps, nodes or run an action" autocomplete="off" spellcheck="false"><kbd>esc</kbd></div><ul class="pal-list" id="pal-list" role="listbox"></ul><div class="pal-foot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div>`, 'palette', 'Command palette');
+  S.pal = { items: paletteItems(), sel: 0, shown: [] };
+  paintPalette('');
+}
+function paintPalette(q) {
+  q = q.toLowerCase().trim();
+  const shown = S.pal.items.filter(it => !q || (it.l + ' ' + it.hint + ' ' + it.g).toLowerCase().includes(q));
+  S.pal.shown = shown; S.pal.sel = Math.min(S.pal.sel, Math.max(0, shown.length - 1));
+  let g = '';
+  $('#pal-list').innerHTML = shown.length ? shown.map((it, i) => {
+    const head = it.g !== g ? `<li class="pal-group" role="presentation">${(g = it.g)}</li>` : '';
+    return `${head}<li class="pal-item" role="option" id="pal-${i}" data-pal="${i}" aria-selected="${i === S.pal.sel}">${icon(it.i)}<span class="grow ${it.g !== 'Actions' && it.g !== 'Pages' ? 'mono' : ''}">${esc(it.l)}</span><span class="hint">${esc(it.hint)}</span></li>`;
+  }).join('') : '<li class="pal-empty">No matches. Try "deploy", "node" or a workspace name.</li>';
+  const inp = $('#pal-q'); if (inp) inp.setAttribute('aria-activedescendant', shown.length ? `pal-${S.pal.sel}` : '');
+  const sel = $(`#pal-${S.pal.sel}`); if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+function runPalette(i) { const it = S.pal && S.pal.shown[i]; if (!it) return; closeLayer(); it.run(); }
+
+/* misc */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('walroos-theme', t); } catch (e) { /* private mode */ }
+  renderShell(); renderNavCurrent();
+  if (S.view.sec === 'settings' || S.view.sec === 'profile') route();
+}
+function renderNavCurrent() { $$('#sidebar [data-sec]').forEach(a => a.dataset.sec === S.view.sec ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')); }
+function copyText(text, btn) {
+  const done = () => {
+    toast('Copied to clipboard');
+    if (btn) { const old = btn.innerHTML; btn.classList.add('copied'); if (btn.classList.contains('btn-icon')) btn.innerHTML = icon('check'); setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = old; }, 1200); }
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text) && done());
+  else if (fallbackCopy(text)) done();
+}
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand('copy'); } catch (e) { ok = false; } ta.remove();
+  if (!ok) toast('Copy failed — select the text manually', 'bad');
+  return ok;
+}
+function closeDrawer() { document.body.classList.remove('drawer-open'); }
+const TERM_OUT = w => ({
+  help: 'commands: ls, git status, git log, whoami, uname -a, go version, node -v, bun -v, clear',
+  ls: w.name === 'tienda-api' ? 'bun.lock  package.json  src  tests  tsconfig.json  Dockerfile  README.md' : 'cmd  docs  internal  web  go.mod  go.sum  Makefile  ARCHITECTURE.md  README.md',
+  'git status': `On branch ${w.branch}\nYour branch is up to date with 'origin/${w.branch}'.\n\nnothing to commit, working tree clean`,
+  'git log': w.name === 'tienda-api' ? '91ab3cd wip: pagos con PSE\na1b2c3d fix: idempotencia en pagos\n7c9e2f1 feat: reintentos con backoff en webhooks' : 'e2f9a10 feat(hub): node join tokens\n4b7c1d2 fix(ssh): proxy keepalive\n0c3a9f8 docs: ARCHITECTURE.md',
+  whoami: 'jef', 'uname -a': `Linux ${w.name} 6.12.9-amd64 #1 SMP Debian x86_64 GNU/Linux`,
+  'go version': 'go version go1.26.0 linux/amd64', 'node -v': 'v22.11.0', 'bun -v': '1.3.2',
+});
+
+/* ---------- events ---------- */
+const ACT = {
+  openDrawer: () => { document.body.classList.add('drawer-open'); const f = $('.nav a'); if (f) f.focus(); },
+  closeDrawer,
+  toggleSidebar: () => { const c = document.body.classList.toggle('sb-collapsed'); try { localStorage.setItem('walroos-sb', c ? '1' : '0'); } catch (e) { /* noop */ } renderShell(); renderNavCurrent(); if (S.view.sec === 'settings') route(); },
+  toggleTheme: () => setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'),
+  setTheme: el => setTheme(el.dataset.t),
+  palette: () => openPalette(),
+  closeLayer,
+  closeLayerBg: (el, e) => { if (e.target === el) closeLayer(); },
+  dismissBanner: () => { S.banner = false; route(); },
+  newWorkspace: el => newWorkspace(el.dataset.setup),
+  newApp: () => newApp(),
+  addNode: el => addNode(el.dataset.setup),
+  toggleWs: el => {
+    const w = wsBy(el.dataset.name); if (!w || w.status === 'starting' || w.status === 'stopping') return;
+    const to = w.status === 'running' ? 'stopped' : 'running';
+    w.status = to === 'running' ? 'starting' : 'stopping'; route();
+    setTimeout(() => { w.status = to; if (to === 'running') { w.active = 'now'; w.uptime = '0m'; } else w.uptime = '—'; toast(`${w.name} ${to === 'running' ? 'started' : 'stopped'}`); refresh(['workspaces', 'overview', 'nodes']); }, 1400);
+  },
+  rebuildWs: el => {
+    const w = wsBy(el.dataset.name); if (!w) return; closeMenus();
+    confirmModal({ title: `Rebuild ${w.name}?`, body: 'Rebuilds the image and recreates the container. Files in the src and home volumes are kept; running processes stop.', confirm: 'Rebuild', onConfirm: () => {
+      w.status = 'starting'; route(); toast(`Rebuilding ${w.name}…`);
+      setTimeout(() => { w.status = 'running'; w.uptime = '0m'; toast(`${w.name} rebuilt`); refresh(['workspaces', 'overview']); }, 2200);
+    } });
+  },
+  deleteWs: el => {
+    const name = el.dataset.name; closeMenus();
+    confirmModal({ title: `Delete ${name}?`, body: `Removes the container and its <span class="mono">src</span> and <span class="mono">home</span> volumes. Unpushed commits in the workspace are lost. This can't be undone.`, confirm: 'Delete workspace', danger: true, onConfirm: () => {
+      const i = workspaces.findIndex(w => w.name === name); if (i >= 0) workspaces.splice(i, 1);
+      toast(`${name} deleted`);
+      if (S.view.sec === 'workspaces' && S.view.id) go('#/workspaces'); else route();
+    } });
+  },
+  deployNow: el => deployAndOpen(el.dataset.app, el.dataset.ref),
+  retryDeploy: el => { const d = depBy(el.dataset.id); if (d) deployAndOpen(d.app, d.sha); },
+  rollbackApp: el => rollbackApp(el.dataset.app),
+  rollbackTo: el => {
+    const d = depBy(el.dataset.id), a = d && appBy(d.app); if (!d) return;
+    confirmModal({ title: `Roll back ${d.app} to ${d.sha}?`, body: `Image <span class="mono">walroos/${d.app}:${d.sha}</span> starts again and takes traffic after its healthcheck passes.`, confirm: 'Roll back', onConfirm: () => doRollback(d, a) });
+  },
+  rtPause: () => { S.rtPaused = !S.rtPaused; route(); },
+  reveal: el => { const id = el.dataset.id; S.revealed.has(id) ? S.revealed.delete(id) : S.revealed.add(id); route(); },
+  delEnv: el => {
+    const { app, key } = el.dataset;
+    confirmModal({ title: `Delete ${key}?`, body: `<span class="mono">${app}</span> needs a redeploy for the change to take effect.`, confirm: 'Delete variable', danger: true, onConfirm: () => { envs[app] = envs[app].filter(r => r[0] !== key); toast(`${key} deleted · redeploy to apply`); route(); } });
+  },
+  importEnv: el => {
+    const app = el.dataset.app;
+    openLayer(`${modalHead('Import .env', `Paste the contents of a .env file. Existing keys in <span class="mono">${app}</span> are overwritten.`)}
+    <form class="m-body form" data-form="importEnv" data-app="${app}"><div class="field"><label for="ie-t">.env contents</label><textarea id="ie-t" name="t" rows="8" class="mono" placeholder="# comments are ignored&#10;API_URL=https://api.tienda.walroos.com&#10;JWT_SECRET=…" autofocus></textarea></div>
+    <label class="check"><input type="checkbox" name="auto" checked>Mark keys containing SECRET, KEY, TOKEN or PASSWORD as secrets</label><p class="err" id="ie-err" hidden></p>
+    <div class="m-foot" style="margin:0 -16px -16px"><button type="button" class="btn" data-act="closeLayer">Cancel</button><button class="btn btn-primary" type="submit">Import</button></div></form>`, 'modal', 'Import .env');
+  },
+  delDomain: el => {
+    const { app, d } = el.dataset;
+    confirmModal({ title: `Remove ${d}?`, body: 'The DNS record and tunnel route are deleted. The app stops answering on this domain.', confirm: 'Remove domain', danger: true, onConfirm: () => { domains[app] = domains[app].filter(r => r[0] !== d); toast(`${d} removed`); route(); } });
+  },
+  logExpand: el => { const d = depBy(el.dataset.id); STEPS.forEach((_, i) => { S.collapsed[`${d.id}:${i}`] = el.dataset.open !== '1'; }); paintDeploy(d); },
+  termFull: () => { const t = $('#term'); if (t && t.requestFullscreen) t.requestFullscreen().catch(() => toast('Full screen not available here', 'bad')); },
+  syncInt: el => { toast(`${integrations[el.dataset.k].name}: repos synced`); },
+  disconnectInt: el => {
+    const k = el.dataset.k, i = integrations[k];
+    confirmModal({ title: `Disconnect ${i.name}?`, body: 'Webhooks are removed. Apps from these repos stop auto-deploying; running containers keep running.', confirm: 'Disconnect', danger: true, onConfirm: () => { i.connected = false; toast(`${i.name} disconnected`); route(); } });
+  },
+  redeliver: el => { const d = deliveries[+el.dataset.i]; toast(`Redelivered ${d[1]} · ${d[3] < 300 ? d[3] : 200}`); },
+  addKey: () => openLayer(`${modalHead('Add SSH key', 'The public key from your laptop, e.g. ~/.ssh/id_ed25519.pub')}
+    <form class="m-body form" data-form="addKey" novalidate><div class="field"><label for="k-n">Name</label><input id="k-n" name="n" placeholder="macbook-air" autocomplete="off" autofocus></div>
+    <div class="field"><label for="k-k">Public key <span class="req" aria-hidden="true">*</span></label><textarea id="k-k" name="k" rows="4" class="mono" placeholder="ssh-ed25519 AAAAC3Nz… jef@macbook" required aria-describedby="k-err"></textarea><p class="err" id="k-err" hidden></p></div>
+    ${cmd('cat ~/.ssh/id_ed25519.pub | pbcopy')}
+    <div class="m-foot" style="margin:0 -16px -16px"><button type="button" class="btn" data-act="closeLayer">Cancel</button><button class="btn btn-primary" type="submit">Add key</button></div></form>`, 'modal', 'Add SSH key'),
+  delKey: el => { const k = sshKeys[+el.dataset.i]; confirmModal({ title: `Remove ${k.name}?`, body: 'This key can no longer SSH into workspaces. Open sessions stay connected until they close.', confirm: 'Remove key', danger: true, onConfirm: () => { sshKeys.splice(+el.dataset.i, 1); toast('SSH key removed'); route(); } }); },
+  createToken: () => openLayer(`${modalHead('Create API token', 'Shown once. Store it in your CI secrets or password manager.')}
+    <form class="m-body form" data-form="createToken" novalidate><div class="field"><label for="t-n">Name <span class="req" aria-hidden="true">*</span></label><input id="t-n" name="n" class="mono" placeholder="github-actions-blog" autocomplete="off" required autofocus aria-describedby="t-err"><p class="err" id="t-err" hidden></p></div>
+    <fieldset class="field" style="border:0;padding:0;margin:0"><legend class="label" style="margin-bottom:6px">Scopes</legend><div class="od-cluster" style="--od-gap:16px">${['read', 'deploy', 'workspaces', 'admin'].map((s, i) => `<label class="check"><input type="checkbox" name="scope" value="${s}" ${i < 2 ? 'checked' : ''}>${s}</label>`).join('')}</div></fieldset>
+    <div class="m-foot" style="margin:0 -16px -16px"><button type="button" class="btn" data-act="closeLayer">Cancel</button><button class="btn btn-primary" type="submit">Create token</button></div></form>`, 'modal', 'Create API token'),
+  revokeToken: el => { const t = tokens[+el.dataset.i]; confirmModal({ title: `Revoke ${t.name}?`, body: 'Anything using this token gets 401 immediately. CI pipelines using it will fail.', confirm: 'Revoke token', danger: true, onConfirm: () => { tokens.splice(+el.dataset.i, 1); toast('Token revoked'); route(); } }); },
+  kickSession: el => {
+    const list = SESSIONS[el.dataset.ws] || [], s = list[+el.dataset.i]; if (!s) return;
+    confirmModal({ title: `Disconnect ${s.user}?`, body: `Closes the ${esc(s.client)} session from <span class="mono">${esc(s.from)}</span>. Unsaved editor buffers on their side may be lost; files in the workspace are kept.`, confirm: 'Disconnect', danger: true, onConfirm: () => { list.splice(+el.dataset.i, 1); toast(`${s.user} disconnected`); route(); } });
+  },
+  checkUpdates: () => toast('Hub is on 0.9.2, the latest. vps-fra will update when it comes back online.'),
+  setupGit: () => openLayer(`${modalHead('Connect GitHub', 'Installs the walroos GitHub App on the repos you choose.')}
+    <div class="m-body"><p class="muted" style="font-size:var(--fs-sm)">You'll be sent to github.com to pick repositories, then back here.</p></div>
+    <div class="m-foot"><button class="btn" data-act="closeLayer">Cancel</button><button class="btn btn-primary" data-act="setupGitDone" autofocus>${icon('github')}Continue to GitHub</button></div>`, 'modal', 'Connect GitHub'),
+  setupGitDone: () => { S.setup.git = true; closeLayer(); toast('GitHub connected · jefjesuswt'); route(); },
+};
+
+document.addEventListener('click', e => {
+  const cp = e.target.closest('[data-copy]');
+  if (cp) { e.preventDefault(); copyText(cp.dataset.copy, cp); return; }
+  if (e.target.id === 'confirm-btn') { const fn = S.onConfirm; S.onConfirm = null; closeLayer(); if (fn) fn(); return; }
+  const link = e.target.closest('a[href^="#/"]');
+  if (link && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); go(link.getAttribute('href')); return; }
+  const pal = e.target.closest('[data-pal]');
+  if (pal) { runPalette(+pal.dataset.pal); return; }
+  const el = e.target.closest('[data-act]');
+  if (el && ACT[el.dataset.act]) { if (el.tagName === 'BUTTON' || el.tagName === 'A') e.preventDefault(); ACT[el.dataset.act](el, e); return; }
+  const card = e.target.closest('[data-href]');
+  if (card && !e.target.closest('a, button, input, select, summary')) { go(card.dataset.href); return; }
+  const det = e.target.closest('details.menu');
+  closeMenus(det);
+});
+document.addEventListener('toggle', e => {
+  const t = e.target;
+  if (t.matches && t.matches('details.menu') && t.open) { closeMenus(t); placeMenu(t); const f = t.querySelector('.menu-pop button, .menu-pop input, .menu-pop a'); if (f) f.focus({ preventScroll: true }); }
+  if (t.matches && t.matches('details[data-step]')) S.collapsed[t.dataset.step] = !t.open;
+  if (t.matches && t.matches('details[data-acc]')) { if (t.open) S.acc.add(t.dataset.acc); else S.acc.delete(t.dataset.acc); }
+}, true);
+addEventListener('scroll', () => closeMenus(), { passive: true });
+addEventListener('resize', () => closeMenus());
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); $('#layer .palette') ? closeLayer() : openPalette(); return; }
+  if (e.key === '[' && !e.metaKey && !e.ctrlKey && !(e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) && !$('#layer').innerHTML) { ACT.toggleSidebar(); return; }
+  if (e.key === 'Escape') {
+    const open = $('details.menu[open]');
+    if (open) { open.open = false; open.querySelector('summary').focus(); return; }
+    if ($('#layer').innerHTML) { closeLayer(); return; }
+    if (document.body.classList.contains('drawer-open')) { closeDrawer(); $('.menu-btn').focus(); }
+    return;
+  }
+  if (e.target.id === 'pal-q' && S.pal) {
+    const n = S.pal.shown.length;
+    if (e.key === 'ArrowDown' && n) { e.preventDefault(); S.pal.sel = (S.pal.sel + 1) % n; paintPalette(e.target.value); }
+    else if (e.key === 'ArrowUp' && n) { e.preventDefault(); S.pal.sel = (S.pal.sel - 1 + n) % n; paintPalette(e.target.value); }
+    else if (e.key === 'Enter') { e.preventDefault(); runPalette(S.pal.sel); }
+  }
+  if (e.key === 'Tab' && $('#layer').innerHTML) { // keep focus inside the dialog
+    const f = $$('#layer button:not([disabled]), #layer a[href], #layer input, #layer select, #layer textarea, #layer summary').filter(x => x.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+  }
+});
+
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'pal-q') { S.pal.sel = 0; paintPalette(t.value); }
+  else if (t.id === 'rt-q') { S.rtFilter = t.value; paintRuntime(S.view.id); }
+  else if (t.id === 'log-q') { S.logQuery = t.value; const d = depBy(S.view.id); if (d) paintDeploy(d); }
+  else if (t.id === 'nw-repo') { $('#nw-config').innerHTML = configBox(REPO_RE.test(t.value.trim()) ? t.value : ''); if (t.getAttribute('aria-invalid') === 'true') validateRepo(t); }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.filter === 'node') { S.nodeFilter = t.value; route(); }
+  else if (t.dataset.filter === 'app') { S.depFilter.app = t.value; route(); }
+  else if (t.dataset.filter === 'status') { S.depFilter.status = t.value; route(); }
+  else if (t.id === 'rt-lv') { S.rtLevel = t.value; paintRuntime(S.view.id); }
+  else if (t.id === 'log-auto') S.autoscroll = t.checked;
+  else if (t.name === 'trigger' && t.dataset.app) { const a = appBy(t.dataset.app); a.trigger = t.value; toast(`${a.name}: trigger set to ${APP_TRIG[t.value]}`); route(); }
+});
+document.addEventListener('focusout', e => { if (e.target.id === 'nw-repo' && e.target.value) validateRepo(e.target); });
+
+function fieldErr(id, msg, input) { const el = $('#' + id); el.hidden = !msg; el.textContent = msg; if (input) { input.setAttribute('aria-invalid', msg ? 'true' : 'false'); if (msg) input.focus(); } return !msg; }
+document.addEventListener('submit', e => {
+  const f = e.target, kind = f.dataset.form; if (!kind) return;
+  e.preventDefault();
+  if (kind === 'newWs') { if (!validateRepo(f.repo)) { f.repo.focus(); return; } runCreateWorkspace(f); }
+  else if (kind === 'newApp') {
+    const repo = f.repo.value.trim();
+    if (!fieldErr('na-repo-err', !repo ? 'Repository URL is required.' : !REPO_RE.test(repo) ? 'Use host/owner/repo, like github.com/jefjesuswt/landing.' : '', f.repo)) return;
+    const clean = repo.replace(/^https?:\/\//, '').replace(/\.git$/, '').replace(/\/$/, '');
+    let name = clean.split('/').pop(); if (appBy(name)) name = `${name}-2`;
+    const domain = f.domain.value.trim() || `${name}.walroos.com`;
+    apps.push({ name, repo: clean, node: f.node.value, domain, trigger: f.trigger.value, status: 'running', port: 3000, health: '/health', dockerfile: './Dockerfile', spark: Array(14).fill(0) });
+    envs[name] = [['PORT', '3000', 0]]; domains[name] = [[domain, 'Cloudflare Tunnel', 'pending']];
+    closeLayer();
+    setTimeout(() => { domains[name][0][2] = 'active'; }, 3000);
+    deployAndOpen(name, 'main');
+  }
+  else if (kind === 'deployRef') { closeMenus(); deployAndOpen(f.dataset.app, f.ref.value.trim() || 'main'); }
+  else if (kind === 'term') {
+    const input = f.querySelector('input'), c = input.value.trim(), w = wsBy(f.dataset.name); input.value = '';
+    const buf = S.term[w.name], ps = `<span class="ps">jef@${esc(w.name)}:/workspaces/${esc(w.name)}$</span> ${esc(c)}`;
+    if (c === 'clear') { buf.length = 0; }
+    else { buf.push(ps); if (c) { const out = TERM_OUT(w)[c]; buf.push(out != null ? esc(out) : c === 'claude' ? 'Claude Code needs a TTY — run: ssh ' + esc(w.name) + '.walroos -t claude' : `bash: ${esc(c.split(' ')[0])}: command not found`); } }
+    const o = $('#term-out'); o.innerHTML = buf.join('\n'); o.scrollTop = o.scrollHeight;
+  }
+  else if (kind === 'wsRes') { const w = wsBy(f.dataset.name); w.cpu = +f.cpu.value; w.mem = +f.mem.value; toast(`Limits saved · ${w.cpu} vCPU, ${w.mem} GB — restart to apply`); }
+  else if (kind === 'addEnv') {
+    const k = f.k.value.trim().toUpperCase(), v = f.v.value;
+    if (!fieldErr('env-err', !/^[A-Z_][A-Z0-9_]*$/.test(k) ? 'Key must be letters, digits and underscores, not starting with a digit.' : !v ? 'Value is required.' : '', !/^[A-Z_][A-Z0-9_]*$/.test(k) ? f.k : f.v)) return;
+    const rows = envs[f.dataset.app], ex = rows.find(r => r[0] === k);
+    if (ex) { ex[1] = v; ex[2] = f.s.checked ? 1 : 0; } else rows.push([k, v, f.s.checked ? 1 : 0]);
+    toast(`${k} saved · redeploy to apply`); route();
+  }
+  else if (kind === 'importEnv') {
+    const rows = envs[f.dataset.app]; let n = 0;
+    f.t.value.split(/\r?\n/).forEach(line => {
+      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line); if (!m || line.trim().startsWith('#')) return;
+      const k = m[1].toUpperCase(), v = m[2].replace(/^(['"])(.*)\1$/, '$2'), s = f.auto.checked && /SECRET|KEY|TOKEN|PASSWORD/.test(k) ? 1 : 0;
+      const ex = rows.find(r => r[0] === k); if (ex) { ex[1] = v; ex[2] = s || ex[2]; } else rows.push([k, v, s]); n++;
+    });
+    if (!n) { fieldErr('ie-err', 'No KEY=VALUE lines found.', f.t); return; }
+    closeLayer(); toast(`Imported ${n} variable${n === 1 ? '' : 's'} · redeploy to apply`); route();
+  }
+  else if (kind === 'addDomain') {
+    const d = f.d.value.trim().toLowerCase();
+    if (!fieldErr('dm-err', !/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(d) ? 'Enter a hostname like status.walroos.com.' : (domains[f.dataset.app] || []).some(r => r[0] === d) ? 'That domain is already attached.' : '', f.d)) return;
+    const row = [d, f.i.value, 'pending']; domains[f.dataset.app].push(row); route();
+    toast(`${d}: creating DNS record…`);
+    setTimeout(() => { row[2] = 'active'; if (S.view.tab === 'domains') route(); }, 2500);
+  }
+  else if (kind === 'build') {
+    const port = f.port.value.trim(), hp = f.health.value.trim();
+    if (!fieldErr('b-err', !/^\d{2,5}$/.test(port) ? 'Port must be a number, e.g. 3000.' : !hp.startsWith('/') ? 'Healthcheck path must start with /.' : '', !/^\d{2,5}$/.test(port) ? f.port : f.health)) return;
+    const a = appBy(f.dataset.app); a.dockerfile = f.dockerfile.value.trim() || './Dockerfile'; a.port = +port; a.health = hp; deploys.forEach(d => { if (d.app === a.name) d._steps = null; });
+    toast('Build settings saved · applied on next deploy');
+  }
+  else if (kind === 'connectInt') {
+    const k = f.dataset.k;
+    if (!fieldErr(`i-${k}-err`, f.tok.value.trim().length < 8 ? 'Paste a personal access token (at least 8 characters).' : '', f.tok)) return;
+    const btn = f.querySelector('[type=submit]'); btn.disabled = true; btn.innerHTML = `${icon('refresh', 'spin')}Connecting…`;
+    setTimeout(() => { Object.assign(integrations[k], { connected: true, account: 'jefjesuswt', url: f.url.value.trim(), repos: 3, via: 'Access token' }); toast(`${integrations[k].name} connected`); refresh(['integrations']); }, 900);
+  }
+  else if (kind === 'addKey') {
+    const key = f.k.value.trim();
+    if (!fieldErr('k-err', !/^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]{16,}/.test(key) ? 'That doesn\'t look like an OpenSSH public key. It starts with ssh-ed25519, ssh-rsa or ecdsa-sha2-….' : '', f.k)) return;
+    sshKeys.push({ name: f.n.value.trim() || key.split(' ')[2] || 'new-key', type: key.split(' ')[0].replace('ssh-', '').toUpperCase(), fp: 'SHA256:' + btoa(key.slice(-24)).slice(0, 32), added: 'today', last: 'never' });
+    closeLayer(); toast('SSH key added'); route();
+  }
+  else if (kind === 'profile') {
+    const name = f.dname.value.trim();
+    if (!name) { f.dname.focus(); toast('Display name can\'t be empty', 'bad'); return; }
+    Object.assign(S.profile, { name, tz: f.tz.value, node: f.node.value });
+    renderShell(); route(); toast('Profile saved');
+  }
+  else if (kind === 'createToken') {
+    const name = f.n.value.trim(), scopes = $$('input[name=scope]:checked', f).map(x => x.value);
+    if (!fieldErr('t-err', !name ? 'Give the token a name so you know where it lives.' : !scopes.length ? 'Pick at least one scope.' : '', f.n)) return;
+    const secret = 'wlr_pat_' + Array.from({ length: 4 }, hex7).join('').slice(0, 28);
+    tokens.unshift({ name, scopes, last: 'never', created: 'today' });
+    $('#layer .modal').innerHTML = `${modalHead('Token created', 'Copy it now. You won\'t see it again.')}<div class="m-body">${cmd(secret, '')}<div class="alert alert-busy">${icon('alert')}<div class="alert-text"><strong>Shown once</strong><span class="muted">walroos stores only a hash of this token.</span></div></div></div><div class="m-foot"><button class="btn btn-primary" data-act="closeLayer" autofocus>Done</button></div>`;
+    $('#layer .m-foot .btn').focus();
+    if (S.view.sec === 'settings') { const keep = $('#layer').innerHTML; route(); $('#layer').innerHTML = keep; $('#layer .m-foot .btn').focus(); }
+  }
+});
+
+/* ---------- boot ---------- */
+if (document.documentElement.classList.contains('pre-collapsed')) document.body.classList.add('sb-collapsed');
+renderShell();
+// ponytail: in-memory router; the URL hash is mirrored only when the host allows it (sandboxed srcdoc previews don't)
+function go(h) {
+  S.hash = h;
+  try { if (location.hash !== h) history.pushState(null, '', h); } catch (e) { /* preview iframe: keep in-memory route */ }
+  closeLayer(); closeDrawer(); route(); scrollTo(0, 0); $('#view').focus({ preventScroll: true });
+}
+const readHash = () => { try { return location.hash.startsWith('#/') ? location.hash : ''; } catch (e) { return ''; } };
+addEventListener('hashchange', () => { const h = readHash(); if (h && h !== S.hash) go(h); });
+addEventListener('popstate', () => { const h = readHash(); if (h && h !== S.hash) go(h); });
+S.hash = readHash() || '#/overview';
+route();
+
+</script>
+</body>
+</html>

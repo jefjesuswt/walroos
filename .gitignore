@@ -1,2 +1,4 @@
 .env
 bin/
+web/node_modules/
+internal/web/ui/dist/

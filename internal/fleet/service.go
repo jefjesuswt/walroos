@@ -3,80 +3,97 @@ package fleet
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"regexp"
+	"slices"
 	"time"
 )
 
-type NodeStorer interface {
-	Migrate(ctx context.Context) error
-	Save(ctx context.Context, n Node) error
-	GetAll(ctx context.Context) ([]Node, error)
-	GetByID(ctx context.Context, id string) (Node, error)
-	Delete(ctx context.Context, id string) error
-	UpdateLastSeen(ctx context.Context, id string) error
-}
-
 type Service struct {
-	storer NodeStorer
+	store *Store
+	now   func() time.Time
 }
 
-func NewService(storer NodeStorer) *Service {
-	return &Service{
-		storer: storer,
+func NewService(store *Store) *Service {
+	return &Service{store: store, now: time.Now}
+}
+
+// CreateJoinToken returns a single-use token valid for one hour. Only its hash is stored.
+func (s *Service) CreateJoinToken(ctx context.Context) (token string, expiresAt time.Time, err error) {
+	token = "wlr_join_" + randomHex(16)
+	expiresAt = s.now().UTC().Add(joinTokenTTL)
+	return token, expiresAt, s.store.SaveJoinToken(ctx, hash(token), expiresAt)
+}
+
+var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// Join trades a join token for a node identity. The returned node token is shown once.
+func (s *Service) Join(ctx context.Context, joinToken, name string, roles []string) (Node, string, error) {
+	if !nameRe.MatchString(name) {
+		return Node{}, "", ErrInvalidName
 	}
-}
-
-func (s *Service) Init(ctx context.Context) error {
-	return s.storer.Migrate(ctx)
-}
-
-func (s *Service) RegisterNode(ctx context.Context, name, address string) (Node, error) {
-	nodeID := newSecureString(8)
-	token := newSecureString(32)
-
-	node := Node{
-		ID:        nodeID,
-		Name:      name,
-		Address:   address,
-		Token:     token,
-		CreatedAt: time.Now().UTC(),
-		LastSeen:  time.Now().UTC(),
-	}
-
-	if err := s.storer.Save(ctx, node); err != nil {
-		return Node{}, fmt.Errorf("failed to save node: %w", err)
-	}
-
-	return node, nil
-}
-
-func (s *Service) ListNodes(ctx context.Context) ([]Node, error) {
-	return s.storer.GetAll(ctx)
-}
-
-func (s *Service) RemoveNode(ctx context.Context, id string) error {
-	return s.storer.Delete(ctx, id)
-}
-
-func (s *Service) PingNode(ctx context.Context, id, token string) error {
-	node, err := s.storer.GetByID(ctx, id)
+	roles, err := normalizeRoles(roles)
 	if err != nil {
-		return err
+		return Node{}, "", err
 	}
 
-	if node.Token != token {
-		return fmt.Errorf("unauthorized: invalid token for node: %s", id)
+	n := Node{
+		ID:        randomHex(8),
+		Name:      name,
+		Roles:     roles,
+		CreatedAt: s.now().UTC(),
 	}
+	n.setStatus(s.now())
 
-	return s.storer.UpdateLastSeen(ctx, id)
+	nodeToken := "wlr_node_" + randomHex(32)
+	if err := s.store.Join(ctx, hash(joinToken), n, hash(nodeToken)); err != nil {
+		return Node{}, "", err
+	}
+	return n, nodeToken, nil
 }
 
-func newSecureString(length int) string {
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
+func (s *Service) Heartbeat(ctx context.Context, id, nodeToken, address string, t Telemetry) error {
+	return s.store.Heartbeat(ctx, id, hash(nodeToken), address, t)
+}
 
-	return hex.EncodeToString(bytes)
+func (s *Service) List(ctx context.Context) ([]Node, error) {
+	nodes, err := s.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	for i := range nodes {
+		nodes[i].setStatus(now)
+	}
+	return nodes, nil
+}
+
+func (s *Service) Remove(ctx context.Context, id string) error {
+	return s.store.Delete(ctx, id)
+}
+
+// normalizeRoles dedupes and orders roles as in Roles; rejects unknown ones.
+func normalizeRoles(in []string) ([]string, error) {
+	out := []string{}
+	for _, r := range Roles {
+		if slices.Contains(in, r) {
+			out = append(out, r)
+		}
+	}
+	if len(out) == 0 || len(out) != len(slices.Compact(slices.Sorted(slices.Values(in)))) {
+		return nil, ErrInvalidRoles
+	}
+	return out, nil
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	rand.Read(b) // never returns an error (crypto/rand, Go 1.24+)
+	return hex.EncodeToString(b)
+}
+
+func hash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
