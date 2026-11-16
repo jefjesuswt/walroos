@@ -1,34 +1,37 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/jefjesuswt/walroos/cmd/walroos/hub"
 	"github.com/jefjesuswt/walroos/cmd/walroos/node"
-	"github.com/jefjesuswt/walroos/shared/ui"
+	"github.com/jefjesuswt/walroos/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "walroos",
-	Short: "A CLI tool to manage Podman containers",
-	Long:  "An All-in-One CLI tool for managing Podman containers, it allows the user to orchestrate multiple servers and manage their containers from a single interface.",
-	Run: func(cmd *cobra.Command, args []string) {
-		ui.PrintTitle("🐳 WALROOS CORE CLI")
-		fmt.Println("  Use 'walroos --help' to see available commands.")
-	},
+	Use:           "walroos",
+	Short:         "Self-hosted dev workspaces and deploys on Podman",
+	Long:          "Walroos runs dev workspaces and deploys apps on your own machines, over a Tailscale network.\n\n  walroos hub        control plane (API + UI)\n  walroos node join  add this machine to a hub\n  walroos node run   node agent",
+	Version:       version.Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Printf("Error: %v\n", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
 func init() {
-
-	rootCmd.AddCommand(hub.Cmd)
-	rootCmd.AddCommand(node.Cmd)
+	rootCmd.AddCommand(hub.Cmd, node.Cmd)
 }

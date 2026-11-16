@@ -1,144 +1,124 @@
 package fleet
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
-type NodeManager interface {
-	RegisterNode(ctx context.Context, name, address string) (Node, error)
-	ListNodes(ctx context.Context) ([]Node, error)
-	RemoveNode(ctx context.Context, id string) error
-	PingNode(ctx context.Context, id, token string) error
-}
-
 type Handler struct {
-	nm NodeManager
+	svc    *Service
+	hubURL string // how nodes reach this hub, used in the join command
 }
 
-func NewHandler(nm NodeManager) *Handler {
-	return &Handler{
-		nm: nm,
-	}
+func NewHandler(svc *Service, hubURL string) *Handler {
+	return &Handler{svc: svc, hubURL: hubURL}
 }
 
-func (h *Handler) RegisterRoutes(router *whttp.Router) {
-
-	router.NotFound(func(w http.ResponseWriter, req *http.Request) {
-		whttp.ErrorJSON(w, http.StatusNotFound, "Endpoint not found in Walroos Hub.")
-	})
-
-	router.Group(func(r *whttp.Router) {
-		r.Route("/api/nodes", func(n *whttp.Router) {
-			n.Post("/", h.handleNewNode)
-			n.Post("/{id}/ping", h.handlePing)
-			n.Get("/", h.handleList)
-			n.Delete("/{id}", h.handleRemove)
-		})
-	})
+// NodeRoutes are called by node agents; they authenticate with join/node tokens.
+func (h *Handler) NodeRoutes(r *whttp.Router) {
+	r.Post("/api/nodes/join", h.handleJoin)
+	r.Post("/api/nodes/{id}/heartbeat", h.handleHeartbeat)
 }
 
-func (h *Handler) handleNewNode(w http.ResponseWriter, req *http.Request) {
-	type requestPayload struct {
-		Name    string `json:"name"`
-		Address string `json:"address"`
-	}
+// UserRoutes must be mounted behind user auth.
+func (h *Handler) UserRoutes(r *whttp.Router) {
+	r.Get("/api/nodes", h.handleList)
+	r.Delete("/api/nodes/{id}", h.handleRemove)
+	r.Post("/api/nodes/join-tokens", h.handleNewJoinToken)
+}
 
-	var rp requestPayload
-
-	err := json.NewDecoder(req.Body).Decode(&rp)
+func (h *Handler) handleNewJoinToken(w http.ResponseWriter, req *http.Request) {
+	token, expiresAt, err := h.svc.CreateJoinToken(req.Context())
 	if err != nil {
-		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	node, err := h.nm.RegisterNode(req.Context(), rp.Name, rp.Address)
-	if err != nil {
-
-		if errors.Is(err, ErrNodeNameAlreadyExists) {
-			whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		if errors.Is(err, ErrNodeAddressAlreadyExists) {
-			whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	whttp.JSON(w, http.StatusCreated, node)
+	whttp.JSON(w, http.StatusCreated, map[string]any{
+		"token":      token,
+		"expires_at": expiresAt,
+		"command":    "walroos node join --hub " + h.hubURL + " --token " + token,
+	})
+}
+
+func (h *Handler) handleJoin(w http.ResponseWriter, req *http.Request) {
+	var body struct {
+		Token string   `json:"token"`
+		Name  string   `json:"name"`
+		Roles []string `json:"roles"`
+	}
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	node, nodeToken, err := h.svc.Join(req.Context(), body.Token, body.Name, body.Roles)
+	switch {
+	case errors.Is(err, ErrInvalidName), errors.Is(err, ErrInvalidRoles):
+		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrInvalidJoinToken):
+		whttp.ErrorJSON(w, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, ErrNodeNameAlreadyExists):
+		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
+	case err != nil:
+		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	default:
+		whttp.JSON(w, http.StatusCreated, map[string]any{"node": node, "token": nodeToken})
+	}
+}
+
+func (h *Handler) handleHeartbeat(w http.ResponseWriter, req *http.Request) {
+	token, ok := bearerToken(req)
+	if !ok {
+		whttp.ErrorJSON(w, http.StatusUnauthorized, "missing bearer token")
+		return
+	}
+
+	var t Telemetry
+	if err := json.NewDecoder(req.Body).Decode(&t); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	address, _, _ := net.SplitHostPort(req.RemoteAddr)
+	err := h.svc.Heartbeat(req.Context(), req.PathValue("id"), token, address, t)
+	switch {
+	case errors.Is(err, ErrUnauthorized):
+		whttp.ErrorJSON(w, http.StatusUnauthorized, err.Error())
+	case err != nil:
+		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, req *http.Request) {
-	nodes, err := h.nm.ListNodes(req.Context())
+	nodes, err := h.svc.List(req.Context())
 	if err != nil {
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	whttp.JSON(w, http.StatusOK, nodes)
 }
 
 func (h *Handler) handleRemove(w http.ResponseWriter, req *http.Request) {
-	nodeID := req.PathValue("id")
-
-	if err := h.nm.RemoveNode(req.Context(), nodeID); err != nil {
-		if errors.Is(err, ErrNodeNotFound) {
-			whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-			return
-		}
-
+	err := h.svc.Remove(req.Context(), req.PathValue("id"))
+	switch {
+	case errors.Is(err, ErrNodeNotFound):
+		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
+	case err != nil:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-		return
+	default:
+		w.WriteHeader(http.StatusNoContent)
 	}
-
-	whttp.JSON(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "node removed",
-	})
-
 }
 
-func (h *Handler) handlePing(w http.ResponseWriter, req *http.Request) {
-	nodeID := req.PathValue("id")
-
-	token, err := getBearerToken(req)
-	if err != nil {
-		whttp.ErrorJSON(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	if err := h.nm.PingNode(req.Context(), nodeID, token); err != nil {
-		if errors.Is(err, ErrNodeNotFound) {
-			whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-			return
-		}
-
-		whttp.ErrorJSON(w, http.StatusUnauthorized, err.Error())
-		return
-	}
-
-	whttp.JSON(w, http.StatusOK, map[string]string{
-		"status":  "success",
-		"message": "ping respected",
-	})
-}
-
-func getBearerToken(req *http.Request) (string, error) {
-	authHeader := req.Header.Get("Authorization")
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	if token == "" || token == authHeader {
-		return "", errors.New("Missing or invalid authorization token.")
-	}
-
-	return token, nil
+func bearerToken(req *http.Request) (string, bool) {
+	token, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer ")
+	return token, ok && token != ""
 }
