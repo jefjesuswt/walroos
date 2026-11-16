@@ -1,0 +1,154 @@
+// Small components ported 1:1 from the Open Design prototype (index.html at the repo root).
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+
+const P: Record<string, string> = {
+  overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  workspace: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  apps: '<path d="M12 3 3 7.5l9 4.5 9-4.5L12 3Z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/>',
+  deploy: '<circle cx="12" cy="12" r="9"/><path d="m8 12 4-4 4 4M12 8v8"/>',
+  nodes: '<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  plug: '<path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0V7ZM12 17v5"/>',
+  settings: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  check: '<path d="m5 12 5 5L20 7"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  refresh: '<path d="M20 11A8 8 0 0 0 5.6 6.6L3 9M3 4v5h5M4 13a8 8 0 0 0 14.4 4.4L21 15M21 20v-5h-5"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
+  alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/>',
+};
+
+export const Icon = ({ n, cls = '' }: { n: string; cls?: string }) => (
+  <svg className={`ic ${cls}`} viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: P[n] || '' }} />
+);
+
+export const Logo = () => <img src="/favicon.svg" alt="" width={24} height={24} />;
+
+const ST: Record<string, string> = { online: 'ok', running: 'ok', pending: 'busy', offline: 'bad', failed: 'bad', stopped: 'idle' };
+export const Badge = ({ s, label = s }: { s: string; label?: string }) => (
+  <span className={`badge s-${ST[s] || 'idle'}`}><span className="dot" aria-hidden="true" />{label}</span>
+);
+
+export const Chip = ({ children }: { children: ReactNode }) => <span className="chip">{children}</span>;
+
+export function Meter({ label, pct, text }: { label: string; pct: number; text: string }) {
+  const p = Math.max(0, Math.min(100, Math.round(pct || 0)));
+  const lvl = p >= 85 ? 'b-bad' : p >= 70 ? 'b-busy' : '';
+  return (
+    <div className="meter">
+      <div className="meter-h"><span>{label}</span><span className="mono od-nowrap">{text}</span></div>
+      <div className="bar" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={p}><i className={lvl} style={{ width: `${p}%` }} /></div>
+    </div>
+  );
+}
+
+/* ---------- toasts + copy ---------- */
+type Toast = { id: number; text: string; kind: 'ok' | 'bad' };
+const ToastCtx = createContext<(text: string, kind?: 'ok' | 'bad') => void>(() => {});
+export const useToast = () => useContext(ToastCtx);
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const push = (text: string, kind: 'ok' | 'bad' = 'ok') => {
+    const id = Date.now() + Math.random();
+    setToasts(t => [...t, { id, text, kind }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3200);
+  };
+  return (
+    <ToastCtx.Provider value={push}>
+      {children}
+      <div id="toasts" role="status" aria-live="polite">
+        {toasts.map(t => <div key={t.id} className={`toast ${t.kind}`}><Icon n={t.kind === 'bad' ? 'alert' : 'check'} /><span>{t.text}</span></div>)}
+      </div>
+    </ToastCtx.Provider>
+  );
+}
+
+// navigator.clipboard needs a secure context; http://walroos-hub on the tailnet isn't one.
+function copyText(text: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand('copy');
+  ta.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+}
+
+export function CopyBtn({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const toast = useToast();
+  const [done, setDone] = useState(false);
+  const onClick = () => copyText(text).then(
+    () => { toast('Copied to clipboard'); setDone(true); setTimeout(() => setDone(false), 1200); },
+    () => toast('Copy failed: select the text and copy it', 'bad'),
+  );
+  return (
+    <button type="button" className={`btn-icon${done ? ' copied' : ''}`} aria-label={label} title={label} onClick={onClick}>
+      <Icon n={done ? 'check' : 'copy'} />
+    </button>
+  );
+}
+
+export const Cmd = ({ text }: { text: string }) => (
+  <div className="cmd"><span className="prompt" aria-hidden="true">$</span><code>{text}</code><CopyBtn text={text} label="Copy command" /></div>
+);
+
+/* ---------- modal ---------- */
+export function Modal({ title, sub, wide, onClose, children, foot }: {
+  title: string; sub?: string; wide?: boolean; onClose: () => void; children: ReactNode; foot: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => { // once per open: callers pass inline onClose, re-running would steal focus on every render
+    const last = document.activeElement as HTMLElement | null;
+    ref.current?.querySelector<HTMLElement>('[autofocus], input, button')?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); last?.focus(); };
+  }, []);
+  // portal: a modal inside .content would sit under sticky/scrolling table layers
+  return createPortal(
+    <div className="overlay ov-modal" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} className={`modal${wide ? ' wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="m-title">
+        <div className="m-head">
+          <div><h2 id="m-title">{title}</h2>{sub && <p className="muted">{sub}</p>}</div>
+          <button type="button" className="btn-icon" aria-label="Close" onClick={onClose}><Icon n="x" /></button>
+        </div>
+        <div className="m-body">{children}</div>
+        <div className="m-foot">{foot}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export const EmptyState = ({ icon, title, text, action }: { icon: string; title: string; text: string; action?: ReactNode }) => (
+  <div className="state"><Icon n={icon} cls="ic-lg" /><h3>{title}</h3><p className="muted">{text}</p>{action}</div>
+);
+
+export function ago(iso: string | null): string {
+  if (!iso) return 'never';
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 10) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+/** Calls fn now and every ms while mounted; pauses when the tab is hidden. */
+export function usePoll(fn: () => void, ms: number) {
+  const saved = useRef(fn);
+  saved.current = fn;
+  useEffect(() => {
+    saved.current();
+    const id = setInterval(() => !document.hidden && saved.current(), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+}
