@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 	"github.com/spf13/cobra"
+	"tailscale.com/net/netns"
 	"tailscale.com/tsnet"
 )
 
@@ -85,6 +86,11 @@ and --owner with your tailnet login so you can use the UI.
 			identify = auth.Static(devLogin)
 			hubURL = "http://" + devAddr
 		} else {
+			// tsnet is userspace-only (no TUN, no kernel routes), so its sockets don't need to
+			// bypass the host's routing. Bypassing (SO_MARK / SO_BINDTODEVICE to the default
+			// interface) skips host VPNs like NordVPN, whose firewall then drops the traffic.
+			// Same as `tailscaled --tun=userspace-networking`.
+			netns.SetEnabled(false)
 			ts := &tsnet.Server{
 				Hostname: hostname,
 				Dir:      filepath.Join(dataDir, "tsnet"),
