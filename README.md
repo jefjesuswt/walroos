@@ -2,7 +2,11 @@
 
 # walroos
 
-Self-hosted dev workspaces and deploys on Podman, over your Tailscale network. See [ARCHITECTURE.md](ARCHITECTURE.md).
+Self-hosted dev workspaces and deploys on Podman, over your Tailscale network.
+
+- [PLAN.md](PLAN.md): status and next steps
+- [ARCHITECTURE.md](ARCHITECTURE.md): design (Spanish)
+- [CLAUDE.md](CLAUDE.md): conventions for working on the repo with Claude Code
 
 **Status: M0** — nodes join a hub and report telemetry; the web UI lists them live.
 

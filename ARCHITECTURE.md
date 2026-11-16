@@ -71,10 +71,10 @@ flowchart LR
 
 | Dirección | Para qué | Cómo |
 |---|---|---|
-| nodo → hub | registro, heartbeat, telemetría | `POST /api/nodes/{id}/ping` (ya existe) |
+| nodo → hub | registro, heartbeat, telemetría | `POST /api/nodes/join`, `POST /api/nodes/{id}/heartbeat` (M0) |
 | hub → nodo | crear/parar contenedores, build, quadlets, logs, terminal | API HTTP del agente sobre la tailnet |
 
-El agente **solo** acepta peticiones cuya identidad en la tailnet (`LocalClient.WhoIs`) sea el hub, además de un token de nodo. No se expone el socket de Podman: el agente ofrece una API acotada y habla con Podman localmente con `config/podman.go`.
+El agente **solo** acepta peticiones cuya identidad en la tailnet (`LocalClient.WhoIs`) sea el hub, además de un token de nodo. No se expone el socket de Podman: el agente ofrece una API acotada y habla con Podman localmente por la CLI (`podman ...`).
 
 Logs y eventos van por **SSE** (stdlib). La terminal web usa **WebSocket** (`coder/websocket`, ya en el árbol de dependencias).
 
@@ -216,21 +216,19 @@ Con esto, Claude Code en la laptop puede decir "crea un workspace para este repo
 cmd/walroos/          cobra: hub, node, ssh-config, ws, deploy
 internal/
   fleet/              nodos, heartbeat, telemetría          (existe)
-  container/          wrapper Podman                        (existe, se mueve al agente)
   agent/              API del nodo + SSH gateway + quadlets  (nuevo)
   workspace/          servicio + store + devcontainer parse  (nuevo)
   app/                apps, env, dominios                    (nuevo)
   deploy/             cola, worker, pipeline, rollback       (nuevo)
   forge/              webhooks + verificación de firma por proveedor (nuevo)
-  auth/               WhoIs, tokens                          (nuevo)
+  auth/               WhoIs + allowlist (M0), tokens (nuevo)
   mcp/                herramientas MCP                       (nuevo)
-  web/                embed.FS de la SPA                     (nuevo)
+  web/                embed.FS de la SPA                     (M0)
 shared/whttp/         router + JSON                          (existe)
-config/               sqlite, podman                         (existe)
-migrations/*.sql      embebidas, tabla schema_version
+config/               sqlite + migrations/*.sql embebidas, tabla schema_version (M0)
 ```
 
-- **Patrón por dominio**: `models.go`, `service.go`, `sqlite-store.go` y `handlers.go`, igual que `fleet`. Las interfaces solo existen donde hay dos implementaciones o tests que las necesitan.
+- **Patrón por dominio**: `models.go`, `service.go`, `sqlite-store.go` y `handlers.go`, igual que `fleet` (`store.go` en vez de `sqlite-store.go`). Las interfaces solo existen donde hay dos implementaciones o tests que las necesitan.
 - **SQLite** en modo WAL, con conexiones de escritura y lectura separadas, como ya está hecho.
 - **Migraciones**: archivos `.sql` embebidos y aplicados en orden; reemplazan el `CREATE TABLE IF NOT EXISTS` de cada store.
 
@@ -252,7 +250,7 @@ deployments(id, app_id, sha, trigger, status, image, started_at, finished_at, lo
 
 ## 8. UI
 
-SPA estática embebida en el binario (`//go:embed web/dist`). Habla solo con la API pública; no tiene un backend propio.
+SPA estática embebida en el binario (`web/` se compila a `internal/web/ui/dist`, `//go:embed`). Habla solo con la API pública; no tiene un backend propio.
 
 Pantallas:
 - **Flota**: nodos, roles, CPU/RAM y "añadir nodo" (genera el comando `walroos node join ...`).
@@ -290,5 +288,5 @@ El diseño visual se hace con Open Design a partir de estas pantallas.
 
 1. **Usuarios**: monousuario en v1. El multitenant va en `cloud.walroos.com` como capa aparte, con una instancia por tenant (ver Alcance).
 2. **Ingress**: Cloudflare Tunnel por defecto, por el CGNAT. Caddy queda para v2. Funnel solo para webhooks.
-3. **UI**: Vite + React + TS + Tailwind, embebida con `embed.FS`.
+3. **UI**: Vite + React + TS con el CSS del prototipo (sin Tailwind), embebida con `embed.FS`. Acento magenta; logo en `web/public/`.
 4. **Red**: Tailscale (o Headscale) es obligatorio en v1.
