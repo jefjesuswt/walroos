@@ -143,11 +143,14 @@ M1 progress:
 - [x] Hub → agent API, authenticated by tailnet identity and node token
 - [x] Database schema for workspaces and SSH keys
 - [x] Agent creates, starts, stops and deletes workspaces (clone, `devcontainer.json`, build or pull)
-- [ ] walroos base image for repos without a devcontainer
-- [ ] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`)
+- [x] walroos base image for repos without a devcontainer (Debian, git, mise, sftp-server; user `dev`)
+- [ ] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`, agent forwarding for `git push`)
 - [ ] Workspace service on the hub
 - [ ] `walroos ssh-config`
 - [ ] Workspaces page and SSH keys in the UI
+- [ ] Rebuild a workspace without losing `$HOME`
+- [ ] Per-workspace environment variables and secrets
+- [ ] Reach services running on the node (e.g. a database) from a workspace
 
 ### Not planned
 
