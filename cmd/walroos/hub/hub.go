@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/web"
@@ -75,6 +76,8 @@ and --owner with your tailnet login so you can use the UI.
 			ln       net.Listener
 			identify auth.Identify
 			hubURL   string
+			hubID    string // our tailnet StableNodeID; agents only accept calls from it
+			agents   = &agent.Client{HTTP: &http.Client{Timeout: 30 * time.Second}}
 		)
 
 		if dev {
@@ -85,6 +88,7 @@ and --owner with your tailnet login so you can use the UI.
 			}
 			identify = auth.Static(devLogin)
 			hubURL = "http://" + devAddr
+			hubID = "dev" // ponytail: no tailnet in --dev, so agents can't verify or be reached
 		} else {
 			// tsnet is userspace-only (no TUN, no kernel routes), so its sockets don't need to
 			// bypass the host's routing. Bypassing (SO_MARK / SO_BINDTODEVICE to the default
@@ -100,7 +104,8 @@ and --owner with your tailnet login so you can use the UI.
 			defer ts.Close()
 
 			slog.Info("Connecting to the tailnet...", "hostname", hostname)
-			if _, err := ts.Up(ctx); err != nil {
+			status, err := ts.Up(ctx)
+			if err != nil {
 				return ui.WrapError("tailscale up: %w", err)
 			}
 			lc, err := ts.LocalClient()
@@ -114,9 +119,12 @@ and --owner with your tailnet login so you can use the UI.
 			}
 			identify = auth.Tailscale(lc)
 			hubURL = "http://" + hostname
+			hubID = string(status.Self.ID)
+			agents.HTTP = ts.HTTPClient()
+			agents.HTTP.Timeout = 30 * time.Second
 		}
 
-		fleetHandler := fleet.NewHandler(fleet.NewService(fleet.NewStore(db)), hubURL)
+		fleetHandler := fleet.NewHandler(fleet.NewService(fleet.NewStore(db)), hubURL, hubID, agents)
 
 		router := whttp.NewRouter()
 		router.Use(withLogger, withRecoverer)

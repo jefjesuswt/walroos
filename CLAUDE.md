@@ -11,6 +11,7 @@ Self-hosted platform on Podman: remote dev workspaces (like Coder/DevPod) + Dokp
 cd web && bun install && bun run build && cd ..   # UI → internal/web/ui/dist (embedded, not in git)
 go build -o bin/walroos ./cmd/walroos
 go test ./...
+WALROOS_PODMAN_TEST=1 go test ./internal/agent -v   # + workspace lifecycle on real rootless podman
 go run ./cmd/walroos hub --dev                    # 127.0.0.1:8080, no Tailscale, user dev@localhost
 cd web && bun run dev                             # Vite :5173, proxies /api to :8080
 ```

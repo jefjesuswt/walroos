@@ -43,14 +43,16 @@ Objetivo: desde la laptop, `ssh proyecto.walroos` abre un shell dentro de un con
 
 Tareas, en orden:
 
-1. **API hub → agente.** El agente escucha en su IP de la tailnet (p. ej. `:7070`). Acepta solo peticiones cuyo `WhoIs` sea el hub. Usa el `tailscaled` del host (`client/local`), igual que hoy usa la tailnet para hablar con el hub.
-2. **Migración `002`**: tablas `workspaces` y `ssh_keys` (ver esquema en ARCHITECTURE §7).
-3. **Agente: crear workspace.**
-   - `podman volume create ws-<name>-src` y `ws-<name>-home`.
-   - Clonar el repo dentro del volumen src.
-   - Leer `.devcontainer/devcontainer.json` (subconjunto: `image`, `build.dockerfile`, `containerEnv`, `remoteUser`, `forwardPorts`, `postCreateCommand`, `mounts`).
-   - Build o pull de la imagen; `podman run -d` con label `walroos.workspace=<name>`.
-   - Start/stop/delete.
+1. ✅ **API hub → agente** (`internal/agent`). El agente escucha en `:7070` (todas las interfaces: en modo userspace la tailnet llega por loopback) y acepta solo peticiones cuyo `WhoIs` tenga el StableID del hub, que aprende de la respuesta del heartbeat, más el sha256 del token de nodo como Bearer. Primer endpoint `GET /v1/info`; en el hub, `GET /api/nodes/{id}/agent`.
+2. ✅ **Migración `002`**: tablas `workspaces` y `ssh_keys`. Referencian `users(login)` (no hay `user_id`). `foreign_keys` activado en el DSN: un nodo con workspaces no se puede borrar (el servicio de workspaces tendrá que traducir ese error), y borrar un usuario borra sus claves. `ssh_keys.fingerprint` es único: el agente busca por huella.
+3. ✅ **Agente: crear workspace** (`internal/agent/workspaces.go`, API `/v1/workspaces`).
+   - Podman es la fuente de verdad: contenedor `ws-<name>` con label `walroos.workspace`, volúmenes `ws-<name>-src` (repo) y `ws-<name>-home` (`$HOME`). En memoria solo lo que está en curso (`creating`/`deleting`) y el último error (`failed`).
+   - Crear es asíncrono (`202`): `git` del host clona directo al volumen, se lee `devcontainer.json` (JSONC, subconjunto), build o pull, y `podman run` con `--userns=keep-id:uid=U,gid=G` para que el usuario del host sea el `remoteUser` dentro (uid/gid/`$HOME` se preguntan a la imagen).
+   - Start/stop/delete síncronos; delete borra contenedor, volúmenes e imagen construida.
+   - Usuario: `remoteUser` de `devcontainer.json`, si no el de la label `devcontainer.metadata` de la imagen (las `mcr.microsoft.com/devcontainers/*` declaran p. ej. `node` ahí), si no el usuario por defecto de la imagen. De la label solo se toma el usuario.
+   - `mounts` del devcontainer: solo `type=volume` y `type=tmpfs`; `bind` se rechaza para que un repo no pueda montar rutas del host.
+   - Límites (`ponytail:`): sin credenciales de git (solo repos públicos o token en la URL), `postCreateCommand` en forma objeto no soportado, sin docker compose, estado `failed` se pierde si reinicia el agente.
+   - Tests con podman real: `WALROOS_PODMAN_TEST=1 go test ./internal/agent -v`.
 4. **Imagen base** de walroos para repos sin devcontainer: Debian + git + curl + mise + `openssh-sftp-server`.
 5. **SSH gateway en el agente** (`golang.org/x/crypto/ssh`, puerto 2222).
    - Usuario SSH = nombre del workspace.
