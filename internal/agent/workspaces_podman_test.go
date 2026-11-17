@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -97,34 +98,88 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	}
 }
 
-// TestWorkspaceBaseImage: a repo without devcontainer.json runs on BaseImage as root.
+// TestWorkspaceBaseImage: a repo without devcontainer.json runs on the walroos base image, as dev,
+// with the tools the base image promises.
 func TestWorkspaceBaseImage(t *testing.T) {
-	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
-		t.Skip("set WALROOS_PODMAN_TEST=1 to run against real podman")
-	}
-	repo := t.TempDir()
-	writeFile(t, filepath.Join(repo, "main.go"), "package main\n")
-	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"}} {
-		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	b := make([]byte, 4)
-	rand.Read(b)
-	name := "walroos-test-" + hex.EncodeToString(b)
+	needPodman(t)
+	repo := gitRepo(t, map[string]string{"main.go": "package main\n"})
+	name := testName()
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
 
 	if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
 		t.Fatal(err)
 	}
-	ws := waitState(t, w, name, "running")
-	if ws.User != "0:0" || ws.Image != BaseImage {
-		t.Fatalf("workspace = %+v, want root on %s", ws, BaseImage)
+	ws := waitState(t, w, name, "running", 10*time.Minute) // first run builds the base image
+	if ws.User != "1000:1000" || ws.Image != BaseImage() {
+		t.Fatalf("workspace = %+v, want dev (1000) on %s", ws, BaseImage())
 	}
-	out, err := podman(context.Background(), "exec", "-w", ws.Folder, "ws-"+name, "/bin/sh", "-c", "ls; echo $HOME")
-	if err != nil || out != "main.go\n/root" {
-		t.Fatalf("exec: %q, %v", out, err)
+
+	// Non-interactive, like `ssh host cmd` or VS Code: no .bashrc, so tools must be on PATH.
+	sh := func(script string) string {
+		t.Helper()
+		out, err := podman(context.Background(), "exec", "--user", ws.User, "-w", ws.Folder, "ws-"+name, "/bin/sh", "-c", script)
+		if err != nil {
+			t.Fatalf("exec %q: %v", script, err)
+		}
+		return out
+	}
+	checks := map[string]string{
+		"whoami; echo $HOME":                                    "dev\n/home/dev",
+		"stat -c %U main.go":                                    "dev",
+		"git --version >/dev/null && echo ok":                   "ok",
+		"curl --version >/dev/null && echo ok":                  "ok",
+		"mise --version >/dev/null && echo ok":                  "ok",
+		"test -x /usr/lib/openssh/sftp-server && echo ok":       "ok",
+		"sudo -n true && echo ok":                               "ok",
+		"echo $PATH | grep -q mise/shims && echo ok":            "ok",
+		"test -f ~/.bashrc && echo ok":                          "ok", // image's home copied into the home volume
+		"bash -lc 'echo $PATH' | grep -q mise/shims && echo ok": "ok", // login shell (interactive ssh) keeps the shims
+		"ls /usr/lib/*/libicuuc.so.* >/dev/null && echo ok":     "ok", // ICU, .NET crashes without it
+	}
+	for script, want := range checks {
+		if got := sh(script); got != want {
+			t.Errorf("%s: got %q, want %q", script, got, want)
+		}
+	}
+}
+
+// TestWorkspaceBaseImageBuildFails: if the base image can't be built, the workspace ends failed
+// with a readable error instead of hanging or running on something else.
+func TestWorkspaceBaseImageBuildFails(t *testing.T) {
+	needPodman(t)
+	orig := baseContainerfile
+	baseContainerfile = []byte("FROM docker.io/library/alpine:3.22\nRUN echo base-broke >&2 && false\n")
+	t.Cleanup(func() { baseContainerfile = orig })
+
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "failed", time.Minute)
+	if !strings.Contains(ws.Error, "build base image") || !strings.Contains(ws.Error, "base-broke") {
+		t.Fatalf("error = %q, want the build failure", ws.Error)
+	}
+}
+
+// TestWorkspaceConcurrentCreates: several workspaces on the base image at once all come up
+// (the base image is built once, under baseMu, if missing).
+func TestWorkspaceConcurrentCreates(t *testing.T) {
+	needPodman(t)
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	w := NewWorkspaces()
+	names := []string{testName(), testName(), testName()}
+	for _, n := range names {
+		t.Cleanup(func() { w.Delete(context.Background(), n) })
+		if _, err := w.Create(context.Background(), WorkspaceSpec{Name: n, RepoURL: repo}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range names {
+		waitState(t, w, n, "running", 10*time.Minute)
 	}
 }
 
@@ -201,9 +256,9 @@ func TestWorkspaceCreateFails(t *testing.T) {
 	}
 }
 
-func waitState(t *testing.T, w *Workspaces, name, want string) Workspace {
+func waitState(t *testing.T, w *Workspaces, name, want string, timeout ...time.Duration) Workspace {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Minute)
+	deadline := time.Now().Add(append(timeout, 5*time.Minute)[0])
 	for {
 		ws, err := w.Get(context.Background(), name)
 		if err != nil {
@@ -217,5 +272,206 @@ func waitState(t *testing.T, w *Workspaces, name, want string) Workspace {
 			t.Fatalf("waiting for %s: %+v", want, ws)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func needPodman(t *testing.T) {
+	t.Helper()
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1 to run against real podman")
+	}
+}
+
+func testName() string {
+	b := make([]byte, 4)
+	rand.Read(b)
+	return "walroos-test-" + hex.EncodeToString(b)
+}
+
+// gitRepo makes a local git repo with files committed on branch main.
+func gitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	repo := t.TempDir()
+	for path, body := range files {
+		writeFile(t, filepath.Join(repo, path), body)
+	}
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return repo
+}
+
+// TestPruneOldBaseImages: base images from older Containerfiles are removed, unless a
+// workspace still runs on one; the current one always stays.
+func TestPruneOldBaseImages(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	build := func(tag, label string) {
+		t.Helper()
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "Containerfile"), "FROM docker.io/library/alpine:3.22\nLABEL walroos.test="+label+"\n")
+		if _, err := podman(ctx, "build", "-q", "-t", tag, dir); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { podman(context.Background(), "rmi", "-f", "--ignore", tag) })
+	}
+	// Its own repository, so the test never prunes the real base image.
+	unused, inUse, current := "localhost/walroos-base-test:unused", "localhost/walroos-base-test:inuse", "localhost/walroos-base-test:current"
+	build(unused, "a")
+	build(inUse, "b")
+	build(current, "c")
+	ctr := testName()
+	if _, err := podman(ctx, "run", "-d", "--name", ctr, inUse, "sleep", "300"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { podman(context.Background(), "rm", "-f", "-t", "0", ctr) })
+
+	pruneOldBaseImages(ctx, current)
+
+	exists := func(img string) bool { _, err := podman(ctx, "image", "exists", img); return err == nil }
+	if exists(unused) {
+		t.Error("unused old base image was kept")
+	}
+	if !exists(inUse) {
+		t.Error("old base image in use by a container was removed")
+	}
+	if !exists(current) {
+		t.Error("current base image was removed")
+	}
+}
+
+// TestWorkspaceSurvivesAgentRestart: state lives in podman, so a fresh agent (new Workspaces)
+// still sees running and stopped workspaces.
+func TestWorkspaceSurvivesAgentRestart(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { NewWorkspaces().Delete(context.Background(), name) })
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w, name, "running")
+
+	restarted := NewWorkspaces()
+	if ws, err := restarted.Get(ctx, name); err != nil || ws.State != "running" || ws.User == "" || ws.Folder == "" {
+		t.Fatalf("after agent restart: %+v, %v", ws, err)
+	}
+	// Stopped outside walroos (podman stop, host reboot): the agent reports it as stopped.
+	if _, err := podman(ctx, "stop", "-t", "0", "ws-"+name); err != nil {
+		t.Fatal(err)
+	}
+	if ws, _ := restarted.Get(ctx, name); ws.State != "stopped" {
+		t.Fatalf("after external stop: %+v", ws)
+	}
+	if err := restarted.Start(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if ws, _ := restarted.Get(ctx, name); ws.State != "running" {
+		t.Fatalf("after start: %+v", ws)
+	}
+}
+
+// TestWorkspaceDoesNotTouchForeignContainers: a container or volume that merely shares the
+// ws-<name> naming but isn't a walroos workspace must never be reused or deleted.
+func TestWorkspaceDoesNotTouchForeignContainers(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	name := testName()
+	foreign := "ws-" + name
+	if _, err := podman(ctx, "run", "-d", "--name", foreign, "docker.io/library/alpine:3.22", "sleep", "300"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := podman(ctx, "volume", "create", foreign+"-src"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		podman(context.Background(), "rm", "-f", "-t", "0", foreign)
+		podman(context.Background(), "volume", "rm", "-f", foreign+"-src")
+	})
+
+	w := NewWorkspaces()
+	if _, err := w.Get(ctx, name); !errors.Is(err, ErrWorkspaceNotFound) {
+		t.Fatalf("a foreign container is not a workspace: %v", err)
+	}
+	if err := w.Delete(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := podman(ctx, "container", "exists", foreign); err != nil {
+		t.Error("Delete removed a container that isn't a walroos workspace")
+	}
+	if _, err := podman(ctx, "volume", "exists", foreign+"-src"); err != nil {
+		t.Error("Delete removed a volume that isn't a walroos workspace's")
+	}
+
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "failed")
+	t.Logf("create over foreign names fails with: %s", ws.Error)
+	if out, _ := podman(ctx, "exec", foreign, "ls", "/"); out == "" {
+		t.Error("the foreign container was disturbed")
+	}
+	w.Delete(ctx, name)
+	if _, err := podman(ctx, "container", "exists", foreign); err != nil {
+		t.Error("Delete after a failed create removed the foreign container")
+	}
+}
+
+// TestWorkspaceRetryAfterFailedClone: creating again (without deleting) after a failed clone
+// reuses the volume and clones cleanly.
+func TestWorkspaceRetryAfterFailedClone(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: filepath.Join(t.TempDir(), "nope")}); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w, name, "failed")
+
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	ws := waitState(t, w, name, "running")
+	if out, err := podman(ctx, "exec", "-w", ws.Folder, "ws-"+name, "cat", "README.md"); err != nil || out != "x" {
+		t.Fatalf("after retry: %q, %v", out, err)
+	}
+}
+
+// TestWorkspaceMiseToolPersists: what `mise use -g` installs lands in the $HOME volume, so it
+// survives stop/start. Needs network (downloads jq from GitHub).
+func TestWorkspaceMiseToolPersists(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "running")
+	sh := func(script string) (string, error) {
+		return podman(ctx, "exec", "--user", ws.User, "-w", ws.Folder, "ws-"+name, "/bin/bash", "-c", script)
+	}
+	if out, err := sh("mise use -g -y jq@1.7.1 2>&1 && jq --version"); err != nil || !strings.HasSuffix(out, "jq-1.7.1") {
+		t.Fatalf("mise install: %q, %v", out, err)
+	}
+	if err := w.Stop(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Start(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := sh("jq --version"); err != nil || out != "jq-1.7.1" {
+		t.Fatalf("after restart (non-interactive, via shims): %q, %v", out, err)
 	}
 }

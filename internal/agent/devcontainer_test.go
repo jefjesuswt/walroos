@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -131,5 +132,19 @@ func TestRepoName(t *testing.T) {
 		if got := repoName(url); got != want {
 			t.Errorf("repoName(%q) = %q, want %q", url, got, want)
 		}
+	}
+}
+
+func TestBaseImageTagFollowsContainerfile(t *testing.T) {
+	orig := baseContainerfile
+	t.Cleanup(func() { baseContainerfile = orig })
+
+	a := BaseImage()
+	if a != BaseImage() || !strings.HasPrefix(a, "localhost/walroos-base:") {
+		t.Fatalf("tag %q is not stable or not local", a)
+	}
+	baseContainerfile = append(append([]byte{}, orig...), "\n# edited\n"...)
+	if BaseImage() == a {
+		t.Fatal("editing the Containerfile must change the tag, or nodes keep a stale base image")
 	}
 }

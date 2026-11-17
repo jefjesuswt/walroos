@@ -53,16 +53,32 @@ Tareas, en orden:
    - `mounts` del devcontainer: solo `type=volume` y `type=tmpfs`; `bind` se rechaza para que un repo no pueda montar rutas del host.
    - Límites (`ponytail:`): sin credenciales de git (solo repos públicos o token en la URL), `postCreateCommand` en forma objeto no soportado, sin docker compose, estado `failed` se pierde si reinicia el agente.
    - Tests con podman real: `WALROOS_PODMAN_TEST=1 go test ./internal/agent -v`.
-4. **Imagen base** de walroos para repos sin devcontainer: Debian + git + curl + mise + `openssh-sftp-server`.
+4. ✅ **Imagen base** (`internal/agent/base/Containerfile`, embebida): Debian 13 slim + git, curl, ssh, `openssh-sftp-server`, sudo y mise (versión fija, sha256 verificado, amd64/arm64). Usuario `dev` (uid 1000, sudo sin contraseña) declarado en `devcontainer.metadata`, así que corre como `dev` sin código extra.
+   - El agente la construye en local la primera vez que un repo no trae devcontainer (~1 min, una vez por nodo), con un mutex para creaciones simultáneas. Tag `localhost/walroos-base:<hash del Containerfile>`: si el Containerfile cambia, se reconstruye y se borran las versiones viejas que ningún workspace usa.
+   - Runtimes de mise en `~/.local/share/mise` (volumen del home): sobreviven a reconstruir el contenedor. Shims en el `PATH` para sesiones no interactivas.
+   - Incluye `libicu` (.NET revienta al arrancar sin ICU) y `/etc/profile.d/mise.sh` (el `/etc/profile` de Debian pisa el `PATH` en login shells, como una sesión SSH interactiva).
+   - ~420 MB; 171 MB son el binario de mise. Probado con DotnetApp real: clon por SSH, `mise use dotnet@10`, `dotnet build` OK.
+   - El agente solo toca contenedores y volúmenes con su label `walroos.workspace`: un `ws-<name>` ajeno ni se reutiliza ni se borra.
 5. **SSH gateway en el agente** (`golang.org/x/crypto/ssh`, puerto 2222).
    - Usuario SSH = nombre del workspace.
    - Sesión → `podman exec -it`. Soporta `pty`, `exec`, `direct-tcpip` y el subsistema `sftp`.
    - Claves públicas: el agente las pide al hub y las cachea.
+   - **Agent forwarding** (`ssh -A`, petición `auth-agent-req@openssh.com`): `git push` desde el workspace usa las llaves del portátil, sin copiar llaves al contenedor. El socket tiene que existir dentro del contenedor (p. ej. un directorio del agente montado al crear el workspace, `SSH_AUTH_SOCK` apuntando ahí), así que puede requerir tocar `create` de la tarea 3. Descubierto probando DotnetApp: el clon usa las llaves del nodo, pero el contenedor no tiene ninguna.
 6. **Hub: servicio de workspaces** (elige nodo con rol `dev`, llama al agente, guarda estado).
 7. **CLI `walroos ssh-config`**: imprime los bloques `Host <ws>.walroos` para `~/.ssh/config`.
 8. **UI**:
    - Página Workspaces: lista, modal "crear desde repo", info de conexión (SSH / VS Code / Claude Code).
    - Ajustes → claves SSH.
+
+Tareas descubiertas probando con DotnetApp (2026-11-16):
+
+9. **Rebuild sin perder el home.** Hoy, cambiar el devcontainer (o recibir una imagen base nueva) obliga a borrar y crear, y eso borra el volumen del home: runtimes de mise, login de `claude`, historial. Rebuild = borrar contenedor e imagen construida, conservar `-src` y `-home`, volver a resolver imagen y usuario, `podman run` y `postCreateCommand`. Agente (`POST /v1/workspaces/{name}/rebuild`) + hub + botón en la UI.
+10. **Variables y secretos por workspace.** Lo que no está en git (`.env`, `MSSQL_SA_PASSWORD`, cadenas de conexión) hoy hay que copiarlo a mano. El hub los guarda cifrados (mismo esquema que `app_env` de M3: AES-GCM, clave en archivo `0600`) y el agente los inyecta al crear o reconstruir (`podman run --env-file` desde un archivo temporal `0600`, borrado después). Decidir si además se escribe un `.env` en la carpeta del repo para proyectos que lo leen de ahí.
+11. **Servicios del nodo desde el workspace.** Proyectos como DotnetApp necesitan una base de datos (SQL Server con compose). Mientras no haya compose (M5), el servicio corre aparte en el nodo. Verificar y documentar cómo llega el workspace a él: `host.containers.internal` con la red rootless (pasta) y un puerto publicado solo en `127.0.0.1` del host. Si no llega, decidir la receta (publicar en la IP de la tailnet, o una red podman compartida `walroos-dev`).
+
+Notas de uso (para el README cuando haya flujo completo):
+- No meter en un workspace credenciales de **producción**: el contenedor vive en un nodo del homelab y lo ve cualquiera con acceso al nodo. Para proyectos que trabajan contra la BD de producción (un proyecto .NET), usar una BD de desarrollo.
+- Proyectos sin devcontainer arrancan en la imagen base y el runtime se instala con `mise use` (una vez, persiste en el home). Mejor añadir un `devcontainer.json` con la imagen del stack (p. ej. `mcr.microsoft.com/devcontainers/dotnet:10.0`) para que cada workspace nuevo nazca listo.
 
 Decisiones abiertas de M1:
 - Podman por CLI (como en M0) o por la API REST del socket. Default: seguir con CLI hasta que duela.

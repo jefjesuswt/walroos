@@ -25,10 +25,6 @@ var (
 	ErrInvalidWorkspace  = errors.New("workspace name must be a DNS label and repo_url is required")
 )
 
-// BaseImage runs workspaces whose repo has no devcontainer.json.
-// ponytail: plain Debian until the walroos base image (git, curl, mise, sftp-server) exists.
-const BaseImage = "docker.io/library/debian:13"
-
 const (
 	labelWorkspace = "walroos.workspace"
 	labelUser      = "walroos.user"   // uid:gid sessions run as
@@ -107,7 +103,7 @@ func create(ctx context.Context, spec WorkspaceSpec) error {
 	name := spec.Name
 	src, home := "ws-"+name+"-src", "ws-"+name+"-home"
 	for _, v := range []string{src, home} {
-		if _, err := podman(ctx, "volume", "create", "--ignore", v); err != nil {
+		if err := ensureVolume(ctx, v, name); err != nil {
 			return err
 		}
 	}
@@ -183,8 +179,10 @@ func create(ctx context.Context, spec WorkspaceSpec) error {
 
 // resolveImage builds build.dockerfile, or makes sure image (or the base image) is present.
 func resolveImage(ctx context.Context, name, repo string, dc *devcontainer) (string, error) {
-	image := BaseImage
-	if dc != nil && dc.Build.Dockerfile != "" {
+	if dc == nil {
+		return ensureBaseImage(ctx)
+	}
+	if dc.Build.Dockerfile != "" {
 		dockerfile, err := inside(repo, filepath.Join(dc.dir, dc.Build.Dockerfile))
 		if err != nil {
 			return "", fmt.Errorf("build.dockerfile: %w", err)
@@ -193,19 +191,16 @@ func resolveImage(ctx context.Context, name, repo string, dc *devcontainer) (str
 		if err != nil {
 			return "", fmt.Errorf("build.context: %w", err)
 		}
-		image = "localhost/walroos-ws-" + name
+		image := "localhost/walroos-ws-" + name
 		_, err = podman(ctx, "build", "-t", image, "-f", dockerfile, buildCtx)
 		return image, err
 	}
-	if dc != nil && dc.Image != "" {
-		image = dc.Image
-	}
-	if _, err := podman(ctx, "image", "exists", image); err != nil {
-		if _, err := podman(ctx, "pull", "-q", image); err != nil {
+	if _, err := podman(ctx, "image", "exists", dc.Image); err != nil {
+		if _, err := podman(ctx, "pull", "-q", dc.Image); err != nil {
 			return "", err
 		}
 	}
-	return image, nil
+	return dc.Image, nil
 }
 
 // probeUser asks the image for the uid, gid and $HOME of user ("" = the image's default user).
@@ -346,13 +341,38 @@ func (w *Workspaces) Delete(ctx context.Context, name string) error {
 		w.mu.Unlock()
 	}()
 
-	if _, err := podman(ctx, "rm", "-f", "-t", "5", "--ignore", "ws-"+name); err != nil {
+	// Only what carries our label: a container or volume that merely shares the ws-<name>
+	// naming belongs to someone else and must survive.
+	label := "label=" + labelWorkspace + "=" + name
+	if ids, err := podman(ctx, "ps", "-aq", "--filter", label); err != nil {
 		return err
+	} else if ids != "" {
+		if _, err := podman(ctx, append([]string{"rm", "-f", "-t", "5"}, strings.Fields(ids)...)...); err != nil {
+			return err
+		}
 	}
-	if _, err := podman(ctx, "volume", "rm", "-f", "ws-"+name+"-src", "ws-"+name+"-home"); err != nil && !strings.Contains(err.Error(), "no such volume") {
+	if vols, err := podman(ctx, "volume", "ls", "-q", "--filter", label); err != nil {
 		return err
+	} else if vols != "" {
+		if _, err := podman(ctx, append([]string{"volume", "rm", "-f"}, strings.Fields(vols)...)...); err != nil {
+			return err
+		}
 	}
 	podman(ctx, "rmi", "-f", "--ignore", "localhost/walroos-ws-"+name) // only exists for build.dockerfile
+	return nil
+}
+
+// ensureVolume creates the workspace volume, or reuses it if it's ours (a retried create keeps
+// the clone). A volume with that name but without our label belongs to someone else: refuse.
+func ensureVolume(ctx context.Context, volume, workspace string) error {
+	owner, err := podman(ctx, "volume", "inspect", "--format", `{{index .Labels "`+labelWorkspace+`"}}`, volume)
+	if err != nil { // doesn't exist
+		_, err := podman(ctx, "volume", "create", "--label", labelWorkspace+"="+workspace, volume)
+		return err
+	}
+	if owner != workspace {
+		return fmt.Errorf("volume %s already exists and isn't this workspace's; remove or rename it", volume)
+	}
 	return nil
 }
 
