@@ -48,6 +48,7 @@ func Tailscale(lc *local.Client) Identify {
 }
 
 type Server struct {
+	ws        *Workspaces
 	identify  Identify
 	tokenHash []byte
 	hubID     atomic.Pointer[string]
@@ -55,7 +56,7 @@ type Server struct {
 
 // NewServer serves the agent API for the node that owns nodeToken.
 func NewServer(identify Identify, nodeToken string) *Server {
-	return &Server{identify: identify, tokenHash: []byte(TokenHash(nodeToken))}
+	return &Server{ws: NewWorkspaces(), identify: identify, tokenHash: []byte(TokenHash(nodeToken))}
 }
 
 // SetHubID pins the hub's StableNodeID. Until it's set every request gets 503.
@@ -69,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	r := whttp.NewRouter()
 	r.Use(s.auth)
 	r.Get("/v1/info", handleInfo)
+	s.workspaceRoutes(r)
 	return r
 }
 
