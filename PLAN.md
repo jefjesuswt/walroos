@@ -67,7 +67,7 @@ Tareas, en orden:
    - **Agent forwarding** (`ssh -A`): `create` monta `$XDG_RUNTIME_DIR/walroos/<ws>` en `/run/walroos` (label `walroos.agentdir`). Por conexión, un socket `0600` ahí y `SSH_AUTH_SOCK` apuntando a él; se borra al desconectar.
    - Un workspace parado arranca solo al conectar.
    - Probar: añadir la clave con `curl -X POST http://walroos-hub/api/ssh-keys -d "{\"public_key\":\"$(cat ~/.ssh/id_ed25519.pub)\"}"` y `ssh -A -p 2222 <ws>@<nodo>`.
-   - Tests: `ssh_test.go` (todo menos podman, Linux) y `ssh_podman_test.go` (`WALROOS_PODMAN_TEST=1`). **Sin probar aún con podman real**: correr ese test en casa.
+   - Tests: `ssh_test.go` (todo menos podman, Linux) y `ssh_podman_test.go` (`WALROOS_PODMAN_TEST=1`), que pasa con podman real (2026-11-17, WSL Arch, Podman 6.2 rootless). Falta probarlo de punta a punta por la tailnet con `ssh` de verdad.
    - Límites (`ponytail:`): workspaces creados antes de esto no tienen directorio del agente (sin `-A` hasta recrearlos o la tarea 9); `-R` (remote forward) rechazado; si podman ignora el SIGHUP puede quedar el proceso del `exec`; sin `XDG_RUNTIME_DIR` el directorio cae a `/tmp/walroos-<uid>`.
 6. **Hub: servicio de workspaces** (elige nodo con rol `dev`, llama al agente, guarda estado).
 7. **CLI `walroos ssh-config`**: imprime los bloques `Host <ws>.walroos` para `~/.ssh/config`.
