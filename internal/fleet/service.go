@@ -3,11 +3,12 @@ package fleet
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"regexp"
 	"slices"
 	"time"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
 )
 
 type Service struct {
@@ -57,6 +58,10 @@ func (s *Service) Heartbeat(ctx context.Context, id, nodeToken, address string, 
 	return s.store.Heartbeat(ctx, id, hash(nodeToken), address, t)
 }
 
+func (s *Service) AgentTarget(ctx context.Context, id string) (address, tokenHash string, err error) {
+	return s.store.AgentTarget(ctx, id)
+}
+
 func (s *Service) List(ctx context.Context) ([]Node, error) {
 	nodes, err := s.store.List(ctx)
 	if err != nil {
@@ -93,7 +98,4 @@ func randomHex(n int) string {
 	return hex.EncodeToString(b)
 }
 
-func hash(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
-}
+func hash(token string) string { return agent.TokenHash(token) }

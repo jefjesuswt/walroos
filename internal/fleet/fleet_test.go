@@ -4,19 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
 	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
+const hubID = "nHubStableID"
+
 // newHub wires the same routes as `walroos hub`, on a temp SQLite, with login as the caller.
 func newHub(t *testing.T, login string) http.Handler {
+	return newHubWithAgents(t, login, &agent.Client{HTTP: http.DefaultClient})
+}
+
+func newHubWithAgents(t *testing.T, login string, agents *agent.Client) http.Handler {
 	t.Helper()
 	ctx := context.Background()
 
@@ -37,7 +45,7 @@ func newHub(t *testing.T, login string) http.Handler {
 		t.Fatal(err)
 	}
 
-	h := fleet.NewHandler(fleet.NewService(fleet.NewStore(db)), "http://walroos-hub")
+	h := fleet.NewHandler(fleet.NewService(fleet.NewStore(db)), "http://walroos-hub", hubID, agents)
 	r := whttp.NewRouter()
 	h.NodeRoutes(r)
 	r.Group(func(r *whttp.Router) {
@@ -110,8 +118,11 @@ func TestJoinHeartbeatListRemove(t *testing.T) {
 	if code := call(t, hub, "POST", hb, "wlr_node_wrong", fleet.Telemetry{}, nil); code != 401 {
 		t.Fatalf("wrong node token: %d, want 401", code)
 	}
-	if code := call(t, hub, "POST", hb, joined.Token, fleet.Telemetry{CPUPercent: 23.5, Podman: "5.4.1", Containers: 4}, nil); code != 204 {
-		t.Fatalf("heartbeat: %d", code)
+	var hbResp struct {
+		HubID string `json:"hub_id"`
+	}
+	if code := call(t, hub, "POST", hb, joined.Token, fleet.Telemetry{CPUPercent: 23.5, Podman: "5.4.1", Containers: 4}, &hbResp); code != 200 || hbResp.HubID != hubID {
+		t.Fatalf("heartbeat: %d, hub_id %q", code, hbResp.HubID)
 	}
 
 	var nodes []fleet.Node
@@ -161,5 +172,54 @@ func TestUserAuth(t *testing.T) {
 	}
 	if code := call(t, stranger, "POST", "/api/nodes/join-tokens", "", nil, nil); code != 403 {
 		t.Fatalf("stranger join token: %d, want 403", code)
+	}
+}
+
+// TestHubCallsAgent runs the real hub router against a real agent server: the agent pins the
+// hub from the heartbeat response, then /api/nodes/{id}/agent goes through.
+func TestHubCallsAgent(t *testing.T) {
+	var api *agent.Server
+	agentSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.Handler().ServeHTTP(w, r)
+	}))
+	t.Cleanup(agentSrv.Close)
+
+	// every node IP dials the test agent, like tsnet would dial the node
+	dialAgent := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, agentSrv.Listener.Addr().String())
+	}
+	hub := newHubWithAgents(t, "owner@github", &agent.Client{HTTP: &http.Client{Transport: &http.Transport{DialContext: dialAgent}}})
+
+	var jt struct{ Token string }
+	call(t, hub, "POST", "/api/nodes/join-tokens", "", nil, &jt)
+	var joined struct {
+		Node  fleet.Node
+		Token string
+	}
+	if code := call(t, hub, "POST", "/api/nodes/join", "", map[string]any{"token": jt.Token, "name": "homelab-1", "roles": []string{"dev"}}, &joined); code != 201 {
+		t.Fatalf("join: %d", code)
+	}
+	info := "/api/nodes/" + joined.Node.ID + "/agent"
+
+	api = agent.NewServer(func(*http.Request) (string, error) { return hubID, nil }, joined.Token)
+	if code := call(t, hub, "GET", info, "", nil, nil); code != 409 {
+		t.Fatalf("agent info before any heartbeat: %d, want 409 (no address yet)", code)
+	}
+
+	var hb struct {
+		HubID string `json:"hub_id"`
+	}
+	call(t, hub, "POST", "/api/nodes/"+joined.Node.ID+"/heartbeat", joined.Token, fleet.Telemetry{}, &hb)
+	if code := call(t, hub, "GET", info, "", nil, nil); code != 502 {
+		t.Fatalf("agent info before the agent knows the hub: %d, want 502", code)
+	}
+
+	api.SetHubID(hb.HubID)
+	var got agent.Info
+	if code := call(t, hub, "GET", info, "", nil, &got); code != 200 || got.Walroos == "" {
+		t.Fatalf("agent info: %d %+v", code, got)
+	}
+	if code := call(t, hub, "GET", "/api/nodes/nope/agent", "", nil, nil); code != 404 {
+		t.Fatalf("unknown node: %d, want 404", code)
 	}
 }
