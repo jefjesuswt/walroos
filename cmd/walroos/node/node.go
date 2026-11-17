@@ -7,15 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/spf13/cobra"
+	"tailscale.com/client/local"
 )
 
 // state is what `node join` saves and `node run` reads.
@@ -32,10 +35,11 @@ var Cmd = &cobra.Command{
 }
 
 var (
-	hubURL    string
-	joinToken string
-	nodeName  string
-	roles     []string
+	hubURL     string
+	joinToken  string
+	nodeName   string
+	roles      []string
+	listenAddr string
 )
 
 var joinCmd = &cobra.Command{
@@ -76,12 +80,24 @@ var runCmd = &cobra.Command{
 		}
 
 		ctx := cmd.Context()
-		slog.Info("Node agent starting", "name", st.Name, "hub", st.Hub)
+		slog.Info("Node agent starting", "name", st.Name, "hub", st.Hub, "listen", listenAddr)
+
+		// ponytail: listens on all interfaces because in userspace mode tailnet traffic arrives on
+		// loopback; anything not from the hub fails WhoIs and is rejected.
+		api := agent.NewServer(agent.Tailscale(&local.Client{}), st.Token)
+		ln, err := net.Listen("tcp", listenAddr)
+		if err != nil {
+			return ui.WrapError("agent listen %s: %w", listenAddr, err)
+		}
+		srv := &http.Server{Handler: api.Handler(), ReadHeaderTimeout: 10 * time.Second}
+		go srv.Serve(ln)
+		defer srv.Close()
 
 		ticker := time.NewTicker(fleet.HeartbeatInterval)
 		defer ticker.Stop()
 		for {
-			err := heartbeat(ctx, st)
+			hubID, err := heartbeat(ctx, st)
+			api.SetHubID(hubID)
 			var he *httpError
 			switch {
 			case errors.As(err, &he) && he.status == http.StatusUnauthorized:
@@ -107,16 +123,22 @@ func init() {
 	joinCmd.Flags().StringVar(&nodeName, "name", strings.ToLower(host), "Node name (DNS label)")
 	joinCmd.Flags().StringSliceVar(&roles, "roles", []string{"dev"}, "Roles: dev, build, prod")
 	joinCmd.MarkFlagRequired("token")
+	runCmd.Flags().StringVar(&listenAddr, "listen", ":"+agent.Port, "Address for the agent API the hub calls")
 
 	Cmd.AddCommand(joinCmd, runCmd)
 }
 
-func heartbeat(ctx context.Context, st state) error {
+// heartbeat reports telemetry and returns the hub's tailnet StableNodeID.
+func heartbeat(ctx context.Context, st state) (string, error) {
 	body, err := json.Marshal(collectTelemetry(ctx))
 	if err != nil {
-		return err
+		return "", err
 	}
-	return post(ctx, st.Hub+"/api/nodes/"+st.ID+"/heartbeat", st.Token, body, nil)
+	var out struct {
+		HubID string `json:"hub_id"`
+	}
+	err = post(ctx, st.Hub+"/api/nodes/"+st.ID+"/heartbeat", st.Token, body, &out)
+	return out.HubID, err
 }
 
 type httpError struct {
@@ -151,7 +173,7 @@ func post(ctx context.Context, url, token string, body []byte, out any) error {
 		json.NewDecoder(resp.Body).Decode(&e)
 		return &httpError{status: resp.StatusCode, msg: e.Error}
 	}
-	if out != nil {
+	if out != nil && resp.StatusCode != http.StatusNoContent { // pre-M1 hubs answer heartbeats with 204
 		return json.NewDecoder(resp.Body).Decode(out)
 	}
 	return nil

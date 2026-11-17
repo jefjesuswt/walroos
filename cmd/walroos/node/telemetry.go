@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/version"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -35,10 +36,7 @@ func collectTelemetry(ctx context.Context) fleet.Telemetry {
 		t.DiskUsedGB, t.DiskTotalGB = d.Used>>30, d.Total>>30
 	}
 
-	// ponytail: podman CLI over the bindings; pick an API client in M1 when we create containers
-	if out, err := exec.CommandContext(ctx, "podman", "version", "--format", "{{.Client.Version}}").Output(); err == nil {
-		t.Podman = strings.TrimSpace(string(out))
-	}
+	t.Podman = agent.PodmanVersion(ctx)
 	if out, err := exec.CommandContext(ctx, "podman", "ps", "-aq").Output(); err == nil {
 		t.Containers = len(strings.Fields(string(out)))
 	}

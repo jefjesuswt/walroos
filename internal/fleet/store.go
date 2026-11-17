@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -73,6 +74,15 @@ func (s *Store) Heartbeat(ctx context.Context, id, tokenHash, address string, t 
 		return ErrUnauthorized // unknown id or wrong token: don't tell which
 	}
 	return nil
+}
+
+// AgentTarget returns what the hub needs to call a node's agent: its last tailnet IP and token hash.
+func (s *Store) AgentTarget(ctx context.Context, id string) (address, tokenHash string, err error) {
+	err = s.db.Read.QueryRowContext(ctx, `SELECT address, token_hash FROM nodes WHERE id = ?`, id).Scan(&address, &tokenHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = ErrNodeNotFound
+	}
+	return address, tokenHash, err
 }
 
 func (s *Store) List(ctx context.Context) ([]Node, error) {
