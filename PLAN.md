@@ -59,11 +59,17 @@ Tareas, en orden:
    - Incluye `libicu` (.NET revienta al arrancar sin ICU) y `/etc/profile.d/mise.sh` (el `/etc/profile` de Debian pisa el `PATH` en login shells, como una sesión SSH interactiva).
    - ~420 MB; 171 MB son el binario de mise. Probado con gPay.Net real: clon por SSH, `mise use dotnet@10`, `dotnet build` OK.
    - El agente solo toca contenedores y volúmenes con su label `walroos.workspace`: un `ws-<name>` ajeno ni se reutiliza ni se borra.
-5. **SSH gateway en el agente** (`golang.org/x/crypto/ssh`, puerto 2222).
-   - Usuario SSH = nombre del workspace.
-   - Sesión → `podman exec -it`. Soporta `pty`, `exec`, `direct-tcpip` y el subsistema `sftp`.
-   - Claves públicas: el agente las pide al hub y las cachea.
-   - **Agent forwarding** (`ssh -A`, petición `auth-agent-req@openssh.com`): `git push` desde el workspace usa las llaves del portátil, sin copiar llaves al contenedor. El socket tiene que existir dentro del contenedor (p. ej. un directorio del agente montado al crear el workspace, `SSH_AUTH_SOCK` apuntando ahí), así que puede requerir tocar `create` de la tarea 3. Descubierto probando gPay.Net: el clon usa las llaves del nodo, pero el contenedor no tiene ninguna.
+5. ✅ **SSH gateway en el agente** (`internal/agent/ssh.go`, `golang.org/x/crypto/ssh`, `--ssh-listen :2222`).
+   - Usuario SSH = nombre del workspace. Solo peers de la tailnet (WhoIs antes del handshake). Host key ed25519 junto a `node.json` (`ssh_host_ed25519_key`, `0600`); el fingerprint sale en el log al arrancar.
+   - Claves: `internal/sshkeys` en el hub (`GET/POST/DELETE /api/ssh-keys`). El agente pregunta `POST /api/nodes/{id}/ssh-auth` con su token de nodo (huella + workspace → login) y cachea el sí 1 min. El owner entra a cualquier workspace; un member solo a los suyos (`workspaces.owner`).
+   - Sesión → `podman exec -i [-t] --user U -w <carpeta del repo>`, con el login shell del usuario (`getent`). Soporta `pty` (+ resize), `exec`, `env`, `direct-tcpip` (`-L`) y el subsistema `sftp` (el `sftp-server` de la imagen; si no hay, error claro, sin `pkg/sftp`).
+   - `-L`: `podman unshare nsenter --net=/proc/PID/ns/net -- walroos node relay HOST:PORT`, o sea, llega a los puertos del contenedor, no a los del host.
+   - **Agent forwarding** (`ssh -A`): `create` monta `$XDG_RUNTIME_DIR/walroos/<ws>` en `/run/walroos` (label `walroos.agentdir`). Por conexión, un socket `0600` ahí y `SSH_AUTH_SOCK` apuntando a él; se borra al desconectar.
+   - Un workspace parado arranca solo al conectar.
+   - Probar: añadir la clave con `curl -X POST http://walroos-hub/api/ssh-keys -d "{\"public_key\":\"$(cat ~/.ssh/id_ed25519.pub)\"}"` y `ssh -A -p 2222 <ws>@<nodo>`.
+   - Tests: `ssh_test.go` (todo menos podman, Linux) y `ssh_podman_test.go` (`WALROOS_PODMAN_TEST=1`). **Probado de punta a punta por la tailnet** (2026-11-17, Arch + Podman 6.2 rootless, `tailscaled --tun=userspace-networking`, cliente tsnet como laptop): `ssh`/`exec`, `sftp` (imagen base), `-L` al puerto del contenedor, `-A` (`/run/walroos/*.sock` 0600 y `ssh-add -l` ve la clave), `-R` rechazado, arranque automático si estaba parado, clave no registrada → `Permission denied`, conexión directa fuera de la tailnet → rechazada, host key estable tras reiniciar el agente.
+   - En modo userspace el peer llega como `127.0.0.1:<puerto>` y `WhoIs` resuelve por el 4-tupla mientras la conexión está abierta: por eso la identidad se conserva. Una conexión directa a `:2222` no tiene esa entrada y se rechaza.
+   - Límites (`ponytail:`): workspaces creados antes de esto no tienen directorio del agente (sin `-A` hasta recrearlos o la tarea 9); `-R` (remote forward) rechazado; si podman ignora el SIGHUP puede quedar el proceso del `exec`; sin `XDG_RUNTIME_DIR` el directorio cae a `/tmp/walroos-<uid>`.
 6. **Hub: servicio de workspaces** (elige nodo con rol `dev`, llama al agente, guarda estado).
 7. **CLI `walroos ssh-config`**: imprime los bloques `Host <ws>.walroos` para `~/.ssh/config`.
 8. **UI**:
@@ -82,8 +88,6 @@ Notas de uso (para el README cuando haya flujo completo):
 
 Decisiones abiertas de M1:
 - Podman por CLI (como en M0) o por la API REST del socket. Default: seguir con CLI hasta que duela.
-- `sftp`: usar el `sftp-server` de la imagen vía `podman exec`, o `pkg/sftp` en el agente. Default: el de la imagen. Si la imagen no lo tiene, usar `pkg/sftp`.
-- Dónde guarda el agente su host key SSH (sugerido: junto a `node.json`, `0600`).
 
 ## Después
 

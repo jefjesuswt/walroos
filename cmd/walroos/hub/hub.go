@@ -16,6 +16,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/web"
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -124,15 +125,19 @@ and --owner with your tailnet login so you can use the UI.
 			agents.HTTP.Timeout = 30 * time.Second
 		}
 
-		fleetHandler := fleet.NewHandler(fleet.NewService(fleet.NewStore(db)), hubURL, hubID, agents)
+		fleetSvc := fleet.NewService(fleet.NewStore(db))
+		fleetHandler := fleet.NewHandler(fleetSvc, hubURL, hubID, agents)
+		keysHandler := sshkeys.NewHandler(sshkeys.NewStore(db), fleetSvc.Authenticate)
 
 		router := whttp.NewRouter()
 		router.Use(withLogger, withRecoverer)
 		fleetHandler.NodeRoutes(router)
+		keysHandler.NodeRoutes(router)
 		router.Group(func(r *whttp.Router) {
 			r.Use(auth.Middleware(identify, users))
 			r.Get("/api/me", auth.HandleMe)
 			fleetHandler.UserRoutes(r)
+			keysHandler.UserRoutes(r)
 		})
 		router.Get("/", web.Handler())
 
