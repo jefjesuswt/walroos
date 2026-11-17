@@ -396,7 +396,7 @@ var folderRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // Errors show the path relative to the repo, never the host's volume path.
 func inside(root, p string) (string, error) {
 	rel, err := filepath.Rel(root, p)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("%s points outside the repo", rel)
 	}
 	return p, nil
