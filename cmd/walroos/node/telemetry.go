@@ -23,7 +23,7 @@ func collectTelemetry(ctx context.Context) fleet.Telemetry {
 	t.Hostname, _ = os.Hostname()
 
 	if info, err := host.InfoWithContext(ctx); err == nil && info.Platform != "" {
-		t.OS = info.Platform + " " + info.PlatformVersion // e.g. "debian 13.1"
+		t.OS = strings.TrimSpace(info.Platform + " " + info.PlatformVersion) // e.g. "debian 13.1"; rolling distros like Arch have no version
 	}
 	if p, err := cpu.PercentWithContext(ctx, time.Second, false); err == nil && len(p) > 0 {
 		t.CPUPercent = math.Round(p[0]*10) / 10

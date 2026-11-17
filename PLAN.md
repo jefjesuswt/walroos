@@ -4,19 +4,18 @@ Estado y siguientes pasos. La arquitectura completa está en [ARCHITECTURE.md](A
 
 ## Dónde estamos (2026-11-16)
 
-- **M0 hecho**, en la rama `m0-base` (sin mergear a `main`).
+- **M0 hecho** y mergeado a `main` (PR #1).
   - `walroos hub`: API + UI embebida, sobre tsnet. Auth por Tailscale WhoIs + allowlist (`--owner`).
   - `walroos node join|run`: token de join de un solo uso, heartbeat cada 15s con telemetría (CPU/RAM/disco, versión de Podman, nº de contenedores).
   - UI: página de nodos en vivo, "Add node" con el comando listo para copiar, borrar nodo.
   - Logo (morsita bebé en 3/4) y acento magenta.
-- **Probado** solo en Windows con `--dev` (sin Tailscale, sin Podman real).
+- **Verificado en real** (2026-11-16, Arch Linux, Podman 6.2, con NordVPN activo): hub en la tailnet, `node join` + `node run` con telemetría de Podman, usuario fuera de la allowlist → 403.
 
 ## Para retomar en otra máquina
 
-Requisitos: Go ≥ 1.26, [bun](https://bun.sh), Tailscale (para el modo real), Podman en los nodos Linux.
+Requisitos: Go ≥ 1.27.4 (lo exige `tailscale.com` v1.104), [bun](https://bun.sh), Tailscale (para el modo real), Podman en los nodos Linux.
 
 ```bash
-git fetch && git checkout m0-base
 cd web && bun install && bun run build && cd ..
 go build -o bin/walroos ./cmd/walroos
 go test ./...
@@ -25,12 +24,18 @@ go run ./cmd/walroos hub --dev        # http://127.0.0.1:8080
 
 `internal/web/ui/dist` no está en git: sin `bun run build` el hub responde "UI not built".
 
-## Pendiente de M0 (verificación real)
+### Tailscale detrás de otra VPN (NordVPN, etc.)
 
-- [ ] Hub con tsnet de verdad: `TS_AUTHKEY=... walroos hub --owner <tu-login>` y abrir `http://walroos-hub` desde otro equipo de la tailnet.
-- [ ] Un nodo Linux con Podman: `node join` + `node run`, comprobar que la telemetría de Podman aparece.
-- [ ] Usuario no autorizado → 403; nodo con tag (no usuario) → rechazado.
-- [ ] Decidir si se mergea `m0-base` a `main` (PR) antes de empezar M1.
+Tailscale saca su tráfico por fuera de cualquier VPN (`SO_MARK` / `SO_BINDTODEVICE` a la interfaz por defecto) y el firewall de NordVPN lo descarta: el login se queda colgado.
+- **Hub:** ya resuelto en código (`netns.SetEnabled(false)`; tsnet es userspace y no lo necesita).
+- **`tailscaled` del host:** usar modo userspace en `/etc/default/tailscaled`:
+  `FLAGS="--tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055"`.
+  Sin interfaz `tailscale0`, así que los clientes van por el proxy: `HTTP_PROXY=http://localhost:1055 walroos node run`, `curl -x http://localhost:1055 http://walroos-hub/api/me`.
+
+## Pendiente de M0
+
+- [ ] Nodo con tag (no usuario) → rechazado. Sin probar: hace falta un dispositivo con tag en la tailnet.
+- [ ] Unit de systemd `--user` para `walroos node run` (hoy se arranca a mano).
 
 ## M1 — Workspaces (siguiente)
 
