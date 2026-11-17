@@ -44,7 +44,7 @@ Objetivo: desde la laptop, `ssh proyecto.walroos` abre un shell dentro de un con
 Tareas, en orden:
 
 1. ✅ **API hub → agente** (`internal/agent`). El agente escucha en `:7070` (todas las interfaces: en modo userspace la tailnet llega por loopback) y acepta solo peticiones cuyo `WhoIs` tenga el StableID del hub, que aprende de la respuesta del heartbeat, más el sha256 del token de nodo como Bearer. Primer endpoint `GET /v1/info`; en el hub, `GET /api/nodes/{id}/agent`.
-2. **Migración `002`**: tablas `workspaces` y `ssh_keys` (ver esquema en ARCHITECTURE §7).
+2. ✅ **Migración `002`**: tablas `workspaces` y `ssh_keys`. Referencian `users(login)` (no hay `user_id`). `foreign_keys` activado en el DSN: un nodo con workspaces no se puede borrar (el servicio de workspaces tendrá que traducir ese error), y borrar un usuario borra sus claves. `ssh_keys.fingerprint` es único: el agente busca por huella.
 3. **Agente: crear workspace.**
    - `podman volume create ws-<name>-src` y `ws-<name>-home`.
    - Clonar el repo dentro del volumen src.

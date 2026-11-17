@@ -19,7 +19,8 @@ func NewSQLite(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("could not create directory: %w", err)
 	}
 
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbPath)
+	// foreign_keys is per connection in SQLite, so it goes in the DSN.
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)", dbPath)
 
 	writePool, err := sql.Open("sqlite", dsn)
 	if err != nil {
