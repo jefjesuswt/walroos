@@ -201,7 +201,7 @@ func TestHubCallsAgent(t *testing.T) {
 	}
 	info := "/api/nodes/" + joined.Node.ID + "/agent"
 
-	api = agent.NewServer(func(*http.Request) (string, error) { return hubID, nil }, joined.Token)
+	api = agent.NewServer(func(context.Context, string) (string, error) { return hubID, nil }, joined.Token)
 	if code := call(t, hub, "GET", info, "", nil, nil); code != 409 {
 		t.Fatalf("agent info before any heartbeat: %d, want 409 (no address yet)", code)
 	}

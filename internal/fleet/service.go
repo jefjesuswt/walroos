@@ -58,6 +58,11 @@ func (s *Service) Heartbeat(ctx context.Context, id, nodeToken, address string, 
 	return s.store.Heartbeat(ctx, id, hash(nodeToken), address, t)
 }
 
+// Authenticate checks a node's id and token, for node routes outside this package.
+func (s *Service) Authenticate(ctx context.Context, id, nodeToken string) error {
+	return s.store.Authenticate(ctx, id, hash(nodeToken))
+}
+
 func (s *Service) AgentTarget(ctx context.Context, id string) (address, tokenHash string, err error) {
 	return s.store.AgentTarget(ctx, id)
 }
