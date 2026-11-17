@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -79,6 +80,12 @@ func newTestGateway(t *testing.T) *testGateway {
 	tg.wsErr.Store("")
 	tg.userKey = newSigner(t)
 	folder := t.TempDir()
+	emptyHome := t.TempDir()
+	for _, f := range []string{".zshrc", ".zshenv", ".bash_profile", ".bashrc"} {
+		if err := os.WriteFile(filepath.Join(emptyHome, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	g := newSSHGateway(
 		func(context.Context, string) (string, error) {
@@ -106,7 +113,12 @@ func newTestGateway(t *testing.T) *testGateway {
 	}
 	g.command = func(ctx context.Context, ws Workspace, _ bool, env, argv []string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-		cmd.Dir, cmd.Env = ws.Folder, append(os.Environ(), env...)
+		cmd.Dir = ws.Folder
+		// Like a container: no host ssh-agent and no host dotfiles (one exporting SSH_AUTH_SOCK
+		// would hide the gateway's). Empty rc files keep zsh from its first-run wizard. Then
+		// the request's env, as podman does.
+		cmd.Env = append(cleanEnv(), "HOME="+emptyHome)
+		cmd.Env = append(cmd.Env, env...)
 		return cmd
 	}
 	exe := self(t)
@@ -440,4 +452,17 @@ func TestLoadOrCreateHostKey(t *testing.T) {
 	if fi, _ := os.Stat(file); fi.Mode().Perm() != 0o600 {
 		t.Errorf("host key mode %v, want 0600", fi.Mode().Perm())
 	}
+}
+
+// cleanEnv is os.Environ without what a container wouldn't have: the host's ssh-agent socket
+// and SSH_CONNECTION.
+func cleanEnv() []string {
+	var out []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "SSH_AUTH_SOCK=") || strings.HasPrefix(kv, "SSH_CONNECTION=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
