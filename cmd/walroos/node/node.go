@@ -18,6 +18,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 	"tailscale.com/client/local"
 )
 
@@ -40,6 +41,7 @@ var (
 	nodeName   string
 	roles      []string
 	listenAddr string
+	sshAddr    string
 )
 
 var joinCmd = &cobra.Command{
@@ -93,6 +95,14 @@ var runCmd = &cobra.Command{
 		go srv.Serve(ln)
 		defer srv.Close()
 
+		if sshAddr != "" {
+			sshLn, err := startSSH(api, st)
+			if err != nil {
+				return err
+			}
+			defer sshLn.Close()
+		}
+
 		ticker := time.NewTicker(fleet.HeartbeatInterval)
 		defer ticker.Stop()
 		for {
@@ -124,8 +134,50 @@ func init() {
 	joinCmd.Flags().StringSliceVar(&roles, "roles", []string{"dev"}, "Roles: dev, build, prod")
 	joinCmd.MarkFlagRequired("token")
 	runCmd.Flags().StringVar(&listenAddr, "listen", ":"+agent.Port, "Address for the agent API the hub calls")
+	runCmd.Flags().StringVar(&sshAddr, "ssh-listen", ":"+agent.SSHPort, "Address for the workspaces' SSH gateway (empty disables it)")
 
-	Cmd.AddCommand(joinCmd, runCmd)
+	Cmd.AddCommand(joinCmd, runCmd, relayCmd)
+}
+
+// relayCmd is how the SSH gateway reaches ports inside a workspace (ssh -L, VS Code): it runs
+// in the workspace's network namespace and pipes HOST:PORT to stdin/stdout.
+var relayCmd = &cobra.Command{
+	Use:    "relay HOST:PORT",
+	Hidden: true,
+	Args:   cobra.ExactArgs(1),
+	RunE:   func(cmd *cobra.Command, args []string) error { return agent.Relay(args[0]) },
+}
+
+// startSSH serves the SSH gateway. Keys are checked with the hub; the host key lives next to
+// node.json so clients see the same one across restarts.
+func startSSH(api *agent.Server, st state) (net.Listener, error) {
+	hostKey, err := agent.LoadOrCreateHostKey(filepath.Join(filepath.Dir(statePath()), "ssh_host_ed25519_key"))
+	if err != nil {
+		return nil, ui.WrapError("ssh host key: %w", err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, ui.WrapError("find walroos binary for port forwarding: %w", err)
+	}
+	authorize := func(ctx context.Context, workspace, fingerprint string) (string, error) {
+		body, _ := json.Marshal(map[string]string{"workspace": workspace, "fingerprint": fingerprint})
+		var out struct {
+			Login string `json:"login"`
+		}
+		err := post(ctx, st.Hub+"/api/nodes/"+st.ID+"/ssh-auth", st.Token, body, &out)
+		return out.Login, err
+	}
+	gw := api.SSHGateway(authorize, hostKey, []string{exe, "node", "relay"})
+
+	// ponytail: all interfaces, like the agent API; connections that aren't from the tailnet
+	// are dropped before the SSH handshake.
+	ln, err := net.Listen("tcp", sshAddr)
+	if err != nil {
+		return nil, ui.WrapError("ssh listen %s: %w", sshAddr, err)
+	}
+	go gw.Serve(ln)
+	slog.Info("SSH gateway listening", "addr", sshAddr, "host_key", ssh.FingerprintSHA256(hostKey.PublicKey()))
+	return ln, nil
 }
 
 // heartbeat reports telemetry and returns the hub's tailnet StableNodeID.
