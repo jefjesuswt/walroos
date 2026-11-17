@@ -76,6 +76,15 @@ func (s *Store) Heartbeat(ctx context.Context, id, tokenHash, address string, t 
 	return nil
 }
 
+func (s *Store) Authenticate(ctx context.Context, id, tokenHash string) error {
+	var one int
+	err := s.db.Read.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id = ? AND token_hash = ?`, id, tokenHash).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrUnauthorized
+	}
+	return err
+}
+
 // AgentTarget returns what the hub needs to call a node's agent: its last tailnet IP and token hash.
 func (s *Store) AgentTarget(ctx context.Context, id string) (address, tokenHash string, err error) {
 	err = s.db.Read.QueryRowContext(ctx, `SELECT address, token_hash FROM nodes WHERE id = ?`, id).Scan(&address, &tokenHash)

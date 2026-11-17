@@ -27,8 +27,10 @@ var (
 
 const (
 	labelWorkspace = "walroos.workspace"
-	labelUser      = "walroos.user"   // uid:gid sessions run as
-	labelFolder    = "walroos.folder" // where the repo is mounted; sessions start here
+	labelUser      = "walroos.user"     // uid:gid sessions run as
+	labelFolder    = "walroos.folder"   // where the repo is mounted; sessions start here
+	labelAgentDir  = "walroos.agentdir" // where agentDir is mounted; absent on workspaces from before the SSH gateway
+	agentMount     = "/run/walroos"     // container path of agentDir
 	createTimeout  = 30 * time.Minute
 )
 
@@ -48,6 +50,8 @@ type Workspace struct {
 	User   string `json:"user,omitempty"`   // uid:gid
 	Folder string `json:"folder,omitempty"` // repo path inside the container
 	Error  string `json:"error,omitempty"`
+
+	AgentDir string `json:"-"` // container dir for forwarded ssh-agent sockets, "" if not mounted
 }
 
 // Workspaces manages workspace containers through the podman CLI. Podman is the source of
@@ -146,11 +150,17 @@ func create(ctx context.Context, spec WorkspaceSpec) error {
 		return err
 	}
 
+	sockets := agentDir(name)
+	if err := os.MkdirAll(sockets, 0o700); err != nil {
+		return err
+	}
+
 	folder := "/workspaces/" + repoName(spec.RepoURL)
 	user := uid + ":" + gid
 	args := []string{"run", "-d", "--name", "ws-" + name, "--hostname", name,
 		"--label", labelWorkspace + "=" + name, "--label", labelUser + "=" + user, "--label", labelFolder + "=" + folder,
-		"--user", user, "-v", src + ":" + folder, "-v", home + ":" + homeDir, "-w", folder}
+		"--label", labelAgentDir + "=" + agentMount,
+		"--user", user, "-v", src + ":" + folder, "-v", home + ":" + homeDir, "-v", sockets + ":" + agentMount + ":z", "-w", folder}
 	if uid != "0" { // map the host user to the workspace user; rootless default already maps it to root
 		args = append(args, "--userns=keep-id:uid="+uid+",gid="+gid)
 	}
@@ -272,7 +282,8 @@ func (w *Workspaces) list(ctx context.Context, name string) ([]Workspace, error)
 
 	byName := map[string]Workspace{}
 	for _, c := range containers {
-		ws := Workspace{Name: c.Labels[labelWorkspace], State: "stopped", Image: c.Image, User: c.Labels[labelUser], Folder: c.Labels[labelFolder]}
+		ws := Workspace{Name: c.Labels[labelWorkspace], State: "stopped", Image: c.Image, User: c.Labels[labelUser],
+			Folder: c.Labels[labelFolder], AgentDir: c.Labels[labelAgentDir]}
 		if c.State == "running" {
 			ws.State = "running"
 		}
@@ -302,6 +313,7 @@ func (w *Workspaces) list(ctx context.Context, name string) ([]Workspace, error)
 }
 
 func (w *Workspaces) Start(ctx context.Context, name string) error {
+	os.MkdirAll(agentDir(name), 0o700) // the runtime dir is emptied on reboot, and the bind mount needs it
 	return w.containerOp(ctx, name, "start", "ws-"+name)
 }
 
@@ -359,7 +371,21 @@ func (w *Workspaces) Delete(ctx context.Context, name string) error {
 		}
 	}
 	podman(ctx, "rmi", "-f", "--ignore", "localhost/walroos-ws-"+name) // only exists for build.dockerfile
+	os.RemoveAll(agentDir(name))
 	return nil
+}
+
+// agentDir is the host directory mounted at agentMount, where the SSH gateway puts forwarded
+// ssh-agent sockets. It lives in the user's runtime dir: private, and short enough for unix
+// socket paths (108 bytes max).
+// ponytail: the /tmp fallback (no XDG_RUNTIME_DIR, e.g. no login session) trusts that nobody
+// else created it first; run the agent as a systemd user service, which sets the runtime dir.
+func agentDir(name string) string {
+	base := os.Getenv("XDG_RUNTIME_DIR")
+	if base == "" {
+		base = filepath.Join(os.TempDir(), "walroos-"+strconv.Itoa(os.Getuid()))
+	}
+	return filepath.Join(base, "walroos", name)
 }
 
 // ensureVolume creates the workspace volume, or reuses it if it's ours (a retried create keeps

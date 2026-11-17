@@ -1,8 +1,8 @@
 package agent_test
 
 import (
+	"context"
 	"errors"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -12,7 +12,7 @@ import (
 func TestAgentAuth(t *testing.T) {
 	const hub, nodeToken = "nHub", "wlr_node_secret"
 	caller := hub
-	api := agent.NewServer(func(*http.Request) (string, error) {
+	api := agent.NewServer(func(context.Context, string) (string, error) {
 		if caller == "" {
 			return "", errors.New("not on the tailnet")
 		}

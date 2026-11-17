@@ -12,6 +12,7 @@ cd web && bun install && bun run build && cd ..   # UI → internal/web/ui/dist 
 go build -o bin/walroos ./cmd/walroos
 go test ./...
 WALROOS_PODMAN_TEST=1 go test ./internal/agent -v   # + workspace lifecycle on real rootless podman
+GOOS=linux CGO_ENABLED=0 go test -c ./internal/agent # SSH tests are linux-only: run the binary in WSL
 go run ./cmd/walroos hub --dev                    # 127.0.0.1:8080, no Tailscale, user dev@localhost
 cd web && bun run dev                             # Vite :5173, proxies /api to :8080
 ```
@@ -22,7 +23,9 @@ cd web && bun run dev                             # Vite :5173, proxies /api to 
 cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, run, telemetry)
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs + users allowlist middleware
+internal/agent/         node agent: hub API (:7070), workspaces on podman, SSH gateway (:2222)
 internal/fleet/         nodes: models, store, service, handlers, integration tests
+internal/sshkeys/       users' SSH keys + the node-facing ssh-auth check
 internal/web/           serves the embedded SPA (SPA fallback, JSON 404 for /api/*)
 internal/version/
 shared/whttp/           router + JSON helpers

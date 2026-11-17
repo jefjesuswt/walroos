@@ -32,14 +32,14 @@ type Info struct {
 	Podman   string `json:"podman"` // empty when podman is not installed
 }
 
-// Identify returns the tailnet StableNodeID of whoever sent the request.
-type Identify func(*http.Request) (string, error)
+// Identify returns the tailnet StableNodeID of the peer at remoteAddr (ip:port).
+type Identify func(ctx context.Context, remoteAddr string) (string, error)
 
 // Tailscale identifies callers with the host tailscaled's WhoIs. In userspace mode
 // (--tun=userspace-networking) tailnet traffic arrives on loopback and WhoIs still resolves it.
 func Tailscale(lc *local.Client) Identify {
-	return func(r *http.Request) (string, error) {
-		who, err := lc.WhoIs(r.Context(), r.RemoteAddr)
+	return func(ctx context.Context, remoteAddr string) (string, error) {
+		who, err := lc.WhoIs(ctx, remoteAddr)
 		if err != nil {
 			return "", err
 		}
@@ -81,7 +81,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			whttp.ErrorJSON(w, http.StatusServiceUnavailable, "hub identity not known yet, waiting for the first heartbeat")
 			return
 		}
-		if id, err := s.identify(r); err != nil || id != *hub {
+		if id, err := s.identify(r.Context(), r.RemoteAddr); err != nil || id != *hub {
 			whttp.ErrorJSON(w, http.StatusForbidden, "only the hub can call this agent")
 			return
 		}
