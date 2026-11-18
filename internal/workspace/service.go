@@ -37,7 +37,7 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	if !nameRe.MatchString(in.Name) || in.RepoURL == "" {
 		return Workspace{}, ErrInvalid
 	}
-	if !remoteRepo(in.RepoURL) {
+	if !RemoteRepo(in.RepoURL) {
 		return Workspace{}, ErrRepoURL
 	}
 
@@ -78,7 +78,7 @@ func (s *Service) Detect(ctx context.Context, in DetectInput) (json.RawMessage, 
 	if in.RepoURL == "" {
 		return nil, fmt.Errorf("%w: repo_url is required", ErrInvalid)
 	}
-	if !remoteRepo(in.RepoURL) {
+	if !RemoteRepo(in.RepoURL) {
 		return nil, ErrRepoURL
 	}
 	node, err := s.pickNode(ctx, in.Node)
@@ -97,9 +97,9 @@ func (s *Service) Detect(ctx context.Context, in DetectInput) (json.RawMessage, 
 	return d, err
 }
 
-// remoteRepo reports whether u is a git URL on another machine. The node's git clones it, so a
+// RemoteRepo reports whether u is a git URL on another machine. The node's git clones it, so a
 // local path or file:// would hand a hub user the node's own disk; ext:: runs a command.
-func remoteRepo(u string) bool {
+func RemoteRepo(u string) bool {
 	for _, scheme := range []string{"https://", "http://", "ssh://", "git://"} {
 		if strings.HasPrefix(strings.ToLower(u), scheme) && len(u) > len(scheme) {
 			return true
@@ -246,26 +246,35 @@ func (s *Service) SetEnv(ctx context.Context, name string, vars []EnvVar) error 
 	if err != nil {
 		return err
 	}
+	sealed, err := SealEnv(s.box, vars)
+	if err != nil {
+		return err
+	}
+	return s.store.ReplaceEnv(ctx, w.ID, sealed)
+}
+
+// SealEnv validates variables (apps use it too) and encrypts their values.
+func SealEnv(box *secretbox.Box, vars []EnvVar) ([]EnvVar, error) {
 	if len(vars) > 64 {
-		return fmt.Errorf("%w: at most 64 variables", ErrInvalid)
+		return nil, fmt.Errorf("%w: at most 64 variables", ErrInvalid)
 	}
 	seen := map[string]bool{}
 	sealed := make([]EnvVar, 0, len(vars))
 	for _, v := range vars {
 		if !envKeyRe.MatchString(v.Key) || seen[v.Key] {
-			return fmt.Errorf("%w: %q is not a valid or unique variable name (A-Z, 0-9, _)", ErrInvalid, v.Key)
+			return nil, fmt.Errorf("%w: %q is not a valid or unique variable name (A-Z, 0-9, _)", ErrInvalid, v.Key)
 		}
 		if len(v.Value) > 32<<10 {
-			return fmt.Errorf("%w: %s is too long", ErrInvalid, v.Key)
+			return nil, fmt.Errorf("%w: %s is too long", ErrInvalid, v.Key)
 		}
 		seen[v.Key] = true
-		enc, err := s.box.Seal(v.Value)
+		enc, err := box.Seal(v.Value)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		sealed = append(sealed, EnvVar{Key: v.Key, Value: enc, Secret: v.Secret})
 	}
-	return s.store.ReplaceEnv(ctx, w.ID, sealed)
+	return sealed, nil
 }
 
 var envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)

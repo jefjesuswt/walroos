@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -73,8 +75,26 @@ func (c *Client) Info(ctx context.Context, address, tokenHash string) (Info, err
 }
 
 func (c *Client) do(ctx context.Context, method, address, tokenHash, path string, body, out any) error {
+	resp, err := c.send(ctx, c.HTTP, method, address, tokenHash, path, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if out == nil || resp.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	if b, ok := out.(*string); ok {
+		raw, err := io.ReadAll(resp.Body)
+		*b = string(raw)
+		return err
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// send makes the call and turns a non-2xx answer into an *AgentError. The caller closes the body.
+func (c *Client) send(ctx context.Context, hc *http.Client, method, address, tokenHash, path string, body any) (*http.Response, error) {
 	if address == "" {
-		return ErrNoAddress
+		return nil, ErrNoAddress
 	}
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		address = net.JoinHostPort(address, Port)
@@ -84,34 +104,71 @@ func (c *Client) do(ctx context.Context, method, address, tokenHash, path string
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rd = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+address+path, rd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+tokenHash)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.HTTP.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer resp.Body.Close()
-
 	if resp.StatusCode >= 300 {
+		defer resp.Body.Close()
 		var e struct {
 			Error string `json:"error"`
 		}
 		json.NewDecoder(resp.Body).Decode(&e)
-		return &AgentError{Status: resp.StatusCode, Msg: strings.TrimSpace(e.Error)}
+		return nil, &AgentError{Status: resp.StatusCode, Msg: strings.TrimSpace(e.Error)}
 	}
-	if out == nil || resp.StatusCode == http.StatusNoContent {
-		return nil
+	return resp, nil
+}
+
+func (c *Client) ListApps(ctx context.Context, address, tokenHash string) ([]App, error) {
+	var list []App
+	return list, c.do(ctx, http.MethodGet, address, tokenHash, "/v1/apps", nil, &list)
+}
+
+func (c *Client) AppLogs(ctx context.Context, address, tokenHash, name string, lines int) (string, error) {
+	var logs string
+	return logs, c.do(ctx, http.MethodGet, address, tokenHash, "/v1/apps/"+name+"/logs?lines="+strconv.Itoa(lines), nil, &logs)
+}
+
+func (c *Client) DeleteApp(ctx context.Context, address, tokenHash, name string) error {
+	return c.do(ctx, http.MethodDelete, address, tokenHash, "/v1/apps/"+name, nil, nil)
+}
+
+// DeployApp runs a deploy on the node, calling onLog with each line of output as it comes.
+// It ignores c.HTTP's timeout (a build takes minutes); ctx bounds it.
+func (c *Client) DeployApp(ctx context.Context, address, tokenHash string, spec AppSpec, onLog func(string)) (Release, error) {
+	hc := *c.HTTP
+	hc.Timeout = 0
+	resp, err := c.send(ctx, &hc, http.MethodPost, address, tokenHash, "/v1/apps/"+spec.Name+"/deploy", spec)
+	if err != nil {
+		return Release{}, err
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	defer resp.Body.Close()
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var line DeployLine
+		if err := dec.Decode(&line); err != nil {
+			return Release{}, fmt.Errorf("deploy stream ended early: %w", err)
+		}
+		switch {
+		case line.Release != nil:
+			return *line.Release, nil
+		case line.Error != "":
+			return Release{}, errors.New(line.Error)
+		default:
+			onLog(line.Log)
+		}
+	}
 }

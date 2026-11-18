@@ -134,11 +134,40 @@ Límites conocidos (sin arreglar):
 - Un `member` ve y para/arranca workspaces de otros por la API y MCP (por SSH no). En v1 no hay forma de crear members.
 - Un devcontainer inválido se detecta al crear en el nodo (estado `failed`), no al llamar.
 
+## M3.1 — Apps y deploy en un nodo ✅ (2026-11-18)
+
+Una app es un repo con `Dockerfile` en un nodo `prod`. El hub (`internal/app`, migración `004_apps`) guarda la app, su env cifrado y el historial de deployments; una cola (una goroutine, un deploy a la vez en todo el hub) llama al agente y guarda el log que va llegando (NDJSON, últimos 1 MB). Al arrancar, los deployments que quedaron `running` pasan a `failed`.
+
+En el nodo (`internal/agent/apps.go`):
+- Clona (`--single-branch`, `sha` opcional), `podman build` a `localhost/walroos-app-<app>:<sha12>`.
+- Cada release es un Quadlet `<app>-<deployment id>.container` en `~/.config/containers/systemd`, red `walroos`, sin puertos al host, env en un archivo `0600`. systemd lo reinicia, lo arranca al boot y sus logs van al journal.
+- Healthcheck: `GET` al puerto desde el netns del contenedor con el propio binario (`walroos node relay`), sin `curl` en la imagen. 2xx/3xx en 90 s.
+- Sin downtime: el nuevo arranca junto al viejo; si sana, se para el viejo; si no, se borra el nuevo y el viejo sigue sirviendo.
+- Rollback: corre una imagen guardada, sin build. Se guardan las 3 últimas por app.
+- `DefaultDependencies=false` en el Quadlet: si no, cada arranque espera `network-online.target`, que en WSL nunca llega (90 s por deploy).
+
+API: `/api/apps` (crear, listar, ver, borrar), `/env`, `/deploy {sha}`, `/deployments`, `/deployments/{id}` (con log), `/deployments/{id}/rollback`, `/logs`.
+
+Probado: test de integración con agente falso; test de podman en WSL (deploy, release rota que no reemplaza a la buena, deploy por sha, rollback, borrar); y **de punta a punta por la tailnet**: hub en Windows, nodo `dev,prod` en WSL, repo por `git daemon`: v1, v2, otro contenedor llega a la app por nombre en la red `walroos`, rollback a v1, logs y borrado limpio.
+
+Caminos tristes (atacado el hub y el nodo reales por la tailnet). Arreglado:
+- **Inyección de opciones en git**: `sha` llegaba a `git checkout` (`--orphan=x` pasó como opción; git lo frenó por suerte). Ahora `sha` es hex de 7 a 40.
+- **`health_path` con CRLF**: se metía en la petición HTTP del healthcheck y falsificaba líneas del log (`health check: 200`). Ahora es una ruta URL sin espacios ni control.
+- `branch` y `dockerfile` sin espacios ni `-` inicial; la imagen de un rollback tiene que ser un build de esa misma app.
+- **Hub caído a mitad de deploy**: la limpieza usaba el contexto ya cancelado y la release nueva quedaba huérfana (con una vieja, dos corriendo). Ahora la limpieza no se cancela.
+- **Delete durante un deploy**: si caía en el build, el deploy arrancaba la release después → app huérfana sin fila en el hub. Ahora deploy y delete toman el mismo lock por app (409).
+
+Ya estaba bien: `Dockerfile` symlink fuera del repo, `dockerfile: ../../etc/passwd`, `COPY` por un symlink del contexto a `/home`, `--upload-pack` en `branch`.
+
+Límite conocido: si el hub muere sin cerrar la conexión (tsnet no manda FIN), el nodo termina el deploy por su cuenta y el hub lo marca `failed` al arrancar. La release viva del nodo es la verdad; M3.3 la mostrará.
+
+Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), UI y herramientas MCP (M3.3), nodo `build` + registry (M3.4), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
+
 ## Después
 
 | Hito | Resumen |
 |---|---|
-| M3 Deploy | Apps, build + registry en el nodo `build`, Quadlets, red `walroos`, Cloudflare Tunnel, zero-downtime, rollback. |
+| M3 Deploy | Resto: Cloudflare Tunnel (M3.2), UI + MCP (M3.3), build + registry en el nodo `build` (M3.4). |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 
