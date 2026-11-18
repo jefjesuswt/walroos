@@ -28,6 +28,7 @@ internal/auth/          Tailscale WhoIs + users allowlist middleware
 internal/agent/         node agent: hub API (:7070), workspaces on podman, SSH gateway (:2222)
 internal/fleet/         nodes: models, store, service, handlers, integration tests
 internal/sshkeys/       users' SSH keys + the node-facing ssh-auth check
+internal/mcp/           MCP at /mcp (go-sdk, stateless): tools over the fleet and workspace services
 internal/web/           serves the embedded SPA (SPA fallback, JSON 404 for /api/*)
 internal/version/
 shared/whttp/           router + JSON helpers

@@ -109,6 +109,14 @@ Clients on that machine then reach the tailnet through the proxy, for example `w
 
 </details>
 
+**3. Use it from Claude Code (MCP).** The hub serves MCP at `/mcp`, behind the same Tailscale login as the UI (no token):
+
+```bash
+claude mcp add --transport http walroos http://walroos-hub/mcp
+```
+
+Tools: `list_nodes`, `list_workspaces`, `detect_stack`, `create_workspace`, `get_workspace`, `start_workspace`, `stop_workspace`, `workspace_ssh_info`. Ask "create a workspace for github.com/you/app" and Claude detects the stack, creates it, waits until it's running and gives you the `ssh` line.
+
 ## Development
 
 ```bash
@@ -136,7 +144,7 @@ Conventions (minimal code, one pattern per domain, migrations, commits) are in [
 |---|---|---|---|
 | **M0 Base** | Nodes join with a one-time token, heartbeat with telemetry, Tailscale auth, web UI with live nodes | The UI lists nodes with live telemetry | ✅ Done |
 | **M1 Workspaces** | Create from a repo + `devcontainer.json`, persistent volumes, SSH gateway, `walroos ssh-config`, UI | `ssh myproject.walroos` from the laptop and `claude` runs inside | ✅ Done |
-| **M2 MCP** | `/mcp` on the hub with node and workspace tools | Claude Code creates a workspace and connects to it | Planned |
+| **M2 MCP** | `/mcp` on the hub with node and workspace tools | Claude Code creates a workspace and connects to it | In progress |
 | **M3 Deploy** | Apps, build + registry, Quadlets, Cloudflare Tunnel ingress, zero-downtime, logs, rollback | A "Deploy" button and `app.example.com` answers with TLS from behind CGNAT | Planned |
 | **M4 CI/CD** | Git providers, webhooks via Tailscale Funnel, deploy on push or on CI, deploy tokens | Merge a PR on GitHub and the app updates by itself | Planned |
 | **M5** | Preview deploys per PR, compose, devcontainer features, Caddy for nodes with a public IP, notifications | | Later |
@@ -146,7 +154,7 @@ M1 progress:
 - [x] Database schema for workspaces and SSH keys
 - [x] Agent creates, starts, stops and deletes workspaces (clone, `devcontainer.json`, build or pull)
 - [x] walroos base image for repos without a devcontainer (Debian, git, mise, sftp-server; user `dev`)
-- [ ] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`, agent forwarding for `git push`)
+- [x] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`, agent forwarding for `git push`)
 - [x] Workspace service on the hub (pick a node, call its agent, keep the state)
 - [x] `walroos ssh-config` (add `--proxy` on machines with userspace tailscaled)
 - [x] Workspaces page and SSH keys in the UI

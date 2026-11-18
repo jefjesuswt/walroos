@@ -199,11 +199,11 @@ trigger (webhook | botón UI | API | MCP)
 
 ## 6. MCP
 
-El hub sirve MCP (streamable HTTP) en `/mcp`, autenticado con API token. Con `modelcontextprotocol/go-sdk` es una capa fina sobre los mismos servicios que usa la API.
+El hub sirve MCP (streamable HTTP, stateless) en `/mcp`. Con `modelcontextprotocol/go-sdk` es una capa fina sobre los mismos servicios que usa la API. En M2 se autentica igual que la UI y la API (WhoIs + allowlist): los clientes MCP están en la tailnet. Los API tokens llegan con M4, cuando CI los necesita.
 
 Herramientas iniciales:
 - `list_nodes`
-- `list_workspaces`, `create_workspace`, `start_workspace`, `stop_workspace`, `workspace_ssh_info`
+- `list_workspaces`, `detect_stack`, `create_workspace`, `get_workspace`, `start_workspace`, `stop_workspace`, `workspace_ssh_info` (M2)
 - `list_apps`, `deploy_app`, `get_deployment`, `get_deployment_logs`, `rollback_app`
 
 Con esto, Claude Code en la laptop puede decir "crea un workspace para este repo", conectarse por SSH, trabajar, y después "despliega `main` a prod y muéstrame los logs".
