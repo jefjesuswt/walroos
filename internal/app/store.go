@@ -114,6 +114,28 @@ func (s *Store) Deployments(ctx context.Context, appID string, limit int) ([]Dep
 	return list, rows.Err()
 }
 
+// AllDeployments lists the newest deployments across apps, with their app's name.
+func (s *Store) AllDeployments(ctx context.Context, limit int) ([]Deployment, error) {
+	rows, err := s.db.Read.QueryContext(ctx,
+		`SELECT d.id, d.app_id, d.sha, d.image, d.state, d.error, d.created_at, d.finished_at, a.name
+		 FROM deployments d JOIN apps a ON a.id = d.app_id ORDER BY d.created_at DESC, d.rowid DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []Deployment{}
+	for rows.Next() {
+		var name string
+		d, err := scanDeploy(rows, &name)
+		if err != nil {
+			return nil, err
+		}
+		d.AppName = name
+		list = append(list, d)
+	}
+	return list, rows.Err()
+}
+
 // Deployment returns one deployment with its log.
 func (s *Store) Deployment(ctx context.Context, appID, id string) (Deployment, error) {
 	var log string

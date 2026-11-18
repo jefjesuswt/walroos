@@ -158,7 +158,7 @@ and --owner with your tailnet login so you can use the UI.
 			keysHandler.UserRoutes(r)
 			wsHandler.Routes(r)
 			app.NewHandler(appSvc).Routes(r)
-			mcpHandler := mcp.Handler(fleetSvc, wsSvc).ServeHTTP
+			mcpHandler := mcp.Handler(fleetSvc, wsSvc, appSvc).ServeHTTP
 			r.Post("/mcp", mcpHandler)
 			r.Get("/mcp", mcpHandler) // 405 from the SDK (stateless), not the SPA's index.html
 			r.Delete("/mcp", mcpHandler)
