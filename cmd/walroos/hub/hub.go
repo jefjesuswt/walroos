@@ -81,6 +81,7 @@ and --owner with your tailnet login so you can use the UI.
 			identify auth.Identify
 			hubURL   string
 			hubID    string // our tailnet StableNodeID; agents only accept calls from it
+			hosts    = []string{"localhost"} // Host names we answer to, besides IPs (DNS rebinding)
 			agents   = &agent.Client{HTTP: &http.Client{Timeout: 30 * time.Second}}
 		)
 
@@ -124,6 +125,7 @@ and --owner with your tailnet login so you can use the UI.
 			identify = auth.Tailscale(lc)
 			hubURL = "http://" + hostname
 			hubID = string(status.Self.ID)
+			hosts = []string{hostname, strings.TrimSuffix(status.Self.DNSName, ".")}
 			// The full MagicDNS name and IP work when the short name doesn't resolve (phones
 			// with "Use Tailscale DNS" off, other search domains).
 			slog.Info("On the tailnet", "dns", strings.TrimSuffix(status.Self.DNSName, "."), "ips", status.TailscaleIPs)
@@ -154,7 +156,11 @@ and --owner with your tailnet login so you can use the UI.
 		})
 		router.Get("/", web.Handler())
 
-		srv := &http.Server{Handler: router, ReadHeaderTimeout: 10 * time.Second}
+		// Auth is by network identity, so the browser must not be a way in: CrossOriginProtection
+		// refuses cross-site writes (CSRF from any page you visit), AllowHosts refuses other
+		// names that resolve here (DNS rebinding). No request body needs more than 4 MB.
+		handler := whttp.AllowHosts(http.NewCrossOriginProtection().Handler(http.MaxBytesHandler(router, 4<<20)), hosts...)
+		srv := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 		go func() {
 			<-ctx.Done()
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
