@@ -231,10 +231,12 @@ func tailnet(ctx context.Context, name string) (*tsnet.Server, error) {
 		Logf:     func(string, ...any) {}, // backend noise; UserLogf still prints the login URL
 	}
 	slog.Info("Connecting to the tailnet...", "hostname", ts.Hostname)
-	if _, err := ts.Up(ctx); err != nil {
+	status, err := ts.Up(ctx)
+	if err != nil {
 		ts.Close()
 		return nil, ui.WrapError("tailscale up: %w", err)
 	}
+	slog.Info("On the tailnet", "dns", strings.TrimSuffix(status.Self.DNSName, "."), "ips", status.TailscaleIPs)
 	client = ts.HTTPClient()
 	client.Timeout = 10 * time.Second
 	return ts, nil
