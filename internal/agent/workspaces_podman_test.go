@@ -475,3 +475,63 @@ func TestWorkspaceMiseToolPersists(t *testing.T) {
 		t.Fatalf("after restart (non-interactive, via shims): %q, %v", out, err)
 	}
 }
+
+// TestWorkspaceRebuild: the container and the built image are recreated, while the clone and
+// $HOME survive; it also picks up a devcontainer change (a different remoteUser/uid).
+func TestWorkspaceRebuild(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	repo := gitRepo(t, map[string]string{
+		".devcontainer/Dockerfile":        "FROM docker.io/library/alpine:3.22\nRUN adduser -D -u 1001 dev\n",
+		".devcontainer/devcontainer.json": `{"build":{"dockerfile":"Dockerfile"},"remoteUser":"dev"}`,
+		"README.md":                       "x\n",
+	})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		t.Fatal(err)
+	}
+	before := waitState(t, w, name, "running")
+	idBefore, err := podman(ctx, "inspect", "--format", "{{.Id}}", "ws-"+name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Something in $HOME that must survive, and a devcontainer change to pick up.
+	sh := func(script string) (string, error) {
+		return podman(ctx, "exec", "--user", before.User, "ws-"+name, "/bin/sh", "-c", script)
+	}
+	if _, err := sh("echo keep > ~/marker"); err != nil {
+		t.Fatal(err)
+	}
+	dc, err := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", "ws-"+name+"-src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dc, ".devcontainer/Dockerfile"), "FROM docker.io/library/alpine:3.22\nRUN adduser -D -u 1002 dev2\n")
+	writeFile(t, filepath.Join(dc, ".devcontainer/devcontainer.json"), `{"build":{"dockerfile":"Dockerfile"},"remoteUser":"dev2"}`)
+
+	if _, err := w.Rebuild(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	after := waitState(t, w, name, "running", 5*time.Minute)
+	if after.User != "1002:1002" {
+		t.Fatalf("after rebuild user = %s, want the new remoteUser (1002)", after.User)
+	}
+	idAfter, _ := podman(ctx, "inspect", "--format", "{{.Id}}", "ws-"+name)
+	if idAfter == idBefore {
+		t.Error("the container wasn't recreated")
+	}
+	out, err := podman(ctx, "exec", "--user", after.User, "ws-"+name, "/bin/sh", "-c", "cat ~/marker; test -f /workspaces/"+repoName(repo)+"/README.md && echo repo-ok")
+	if err != nil || !strings.Contains(out, "keep") || !strings.Contains(out, "repo-ok") {
+		t.Fatalf("after rebuild: %q, %v (want $HOME and the clone)", out, err)
+	}
+}
+
+// TestWorkspaceRebuildUnknown: a name with no volumes is not a workspace.
+func TestWorkspaceRebuildUnknown(t *testing.T) {
+	needPodman(t)
+	if _, err := NewWorkspaces().Rebuild(context.Background(), testName()); !errors.Is(err, ErrWorkspaceNotFound) {
+		t.Fatalf("rebuild unknown: %v, want ErrWorkspaceNotFound", err)
+	}
+}

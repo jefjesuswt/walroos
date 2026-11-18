@@ -148,7 +148,7 @@ M1 progress:
 - [x] Workspace service on the hub (pick a node, call its agent, keep the state)
 - [x] `walroos ssh-config` (add `--proxy` on machines with userspace tailscaled)
 - [x] Workspaces page and SSH keys in the UI
-- [ ] Rebuild a workspace without losing `$HOME`
+- [x] Rebuild a workspace without losing `$HOME`
 - [ ] Per-workspace environment variables and secrets
 - [ ] Reach services running on the node (e.g. a database) from a workspace
 
