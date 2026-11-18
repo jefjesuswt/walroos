@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { api, ROLES, type JoinToken, type Node, type Role } from './api';
-import { ago, Badge, Chip, Cmd, EmptyState, Icon, Meter, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Chip, Cmd, Confirm, EmptyState, Icon, Meter, Modal, usePoll, useToast } from './ui';
 
 export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpen: (v: boolean) => void }) {
   const toast = useToast();
@@ -59,11 +59,9 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
       {addOpen && <AddNodeModal known={nodes ?? []} onClose={() => setAddOpen(false)} onJoined={load} />}
 
       {removing && (
-        <Modal title={`Remove ${removing.name}?`} onClose={() => setRemoving(null)}
-          foot={<><button className="btn" onClick={() => setRemoving(null)}>Cancel</button>
-            <button className="btn btn-danger" autoFocus onClick={() => remove(removing)}>Remove node</button></>}>
+        <Confirm title={`Remove ${removing.name}?`} confirmLabel="Remove node" danger onClose={() => setRemoving(null)} onConfirm={() => remove(removing)}>
           <p className="muted">Its token stops working and the agent exits on the next heartbeat. Containers on the machine keep running. To bring it back, join it again with a new token.</p>
-        </Modal>
+        </Confirm>
       )}
     </>
   );
@@ -120,8 +118,7 @@ function AddNodeModal({ known, onClose, onJoined }: { known: Node[]; onClose: ()
 
   return (
     <Modal title="Add node" wide onClose={onClose}
-      sub="Run this on the machine you want to join. It needs Tailscale up; Podman for workspaces and apps."
-      foot={<button className="btn" onClick={onClose}>Close</button>}>
+      sub="Run this on the machine you want to join. It needs Tailscale up; Podman for workspaces and apps.">
       {error ? (
         <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't create a join token</strong><span className="muted">{error}</span></div></div>
       ) : (

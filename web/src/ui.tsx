@@ -99,8 +99,10 @@ export const Cmd = ({ text }: { text: string }) => (
 );
 
 /* ---------- modal ---------- */
+// Modal owns the single close affordance: the X in the head, always. The footer exists only for
+// actions (Cancel + something), so content-only modals have no second way to close.
 export function Modal({ title, sub, wide, onClose, children, foot }: {
-  title: string; sub?: string; wide?: boolean; onClose: () => void; children: ReactNode; foot: ReactNode;
+  title: string; sub?: string; wide?: boolean; onClose: () => void; children: ReactNode; foot?: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -121,10 +123,36 @@ export function Modal({ title, sub, wide, onClose, children, foot }: {
           <button type="button" className="btn-icon" aria-label="Close" onClick={onClose}><Icon n="x" /></button>
         </div>
         <div className="m-body">{children}</div>
-        <div className="m-foot">{foot}</div>
+        {foot && <div className="m-foot">{foot}</div>}
       </div>
     </div>,
     document.body,
+  );
+}
+
+// Confirm is a Modal with Cancel and one action: the shape every destructive question repeats.
+export function Confirm({ title, confirmLabel, danger, onConfirm, onClose, children }: {
+  title: string; confirmLabel: string; danger?: boolean; onConfirm: () => void; onClose: () => void; children: ReactNode;
+}) {
+  return (
+    <Modal title={title} onClose={onClose}
+      foot={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className={danger ? 'btn btn-danger' : 'btn btn-primary'} autoFocus onClick={onConfirm}>{confirmLabel}</button>
+      </>}>
+      {children}
+    </Modal>
+  );
+}
+
+// Field is label + control + hint, the block every form in the app repeats.
+export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <label className="field">
+      <span className="label">{label}</span>
+      {children}
+      {hint && <span className="help">{hint}</span>}
+    </label>
   );
 }
 
