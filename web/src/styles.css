@@ -201,8 +201,8 @@ body.sb-collapsed .sb-foot { padding-inline: 0; align-items: center; }
 kbd { font-size: 11px; padding: 1px 6px; border: 1px solid var(--bd2); border-radius: 4px; color: var(--tx2); background: var(--s2); white-space: nowrap; }
 .menu-btn { display: none; }
 
-#view { outline: none; flex: 1 1 auto; }
-.content { width: 100%; max-width: var(--max); margin: 0 auto; padding: var(--sp2) var(--sp6) var(--sp8); display: flex; flex-direction: column; gap: var(--sp4); }
+#view { outline: none; flex: 1 1 auto; display: flex; flex-direction: column; }
+.content { flex: 1 0 auto; width: 100%; max-width: var(--max); margin: 0 auto; padding: var(--sp2) var(--sp6) var(--sp8); display: flex; flex-direction: column; gap: var(--sp4); }
 
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp4); flex-wrap: wrap; }
 .ph-text { display: grid; gap: var(--sp1); min-width: 0; }
@@ -439,6 +439,11 @@ a.link { color: var(--ac); }
 .spark { display: block; color: var(--ac); }
 
 /* states */
+/* A page-level empty state sits in the middle of the free space and carries the page's
+   primary action, so the top bar (or card header) doesn't repeat it. */
+.content > .state { margin-block: auto; }
+body:has(.content > .state:not(.state-err)) .tb-primary,
+.card-head:has(~ .state:not(.state-err)) > .btn-primary { display: none; }
 .state { display: grid; justify-items: center; text-align: center; gap: var(--sp3); padding: var(--sp10) var(--sp4); border-radius: var(--r4); background: var(--s1); }
 .state > * { display: block; }
 .state p { max-width: 46ch; } .state h3 { font-size: var(--fs-lg); font-weight: 400; line-height: 28px; } .state .mascot { width: 112px; height: auto; margin-bottom: var(--sp2); }
@@ -734,3 +739,9 @@ body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0;
   .m-foot { position: sticky; bottom: 0; background: var(--s3); padding-top: var(--sp3); }
 }
 @keyframes sheet { from { transform: translateY(40%); opacity: .4; } }
+
+/* ---------- sidebar resize handle (App.tsx) ---------- */
+.sb-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; user-select: none; outline: none; }
+.sb-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 3px; border-radius: 2px; transition: background var(--dur) var(--ease-out); }
+.sb-resize:hover::after, .sb-resize:focus-visible::after, .sb-resize:active::after { background: var(--ac); }
+@media (max-width: 767px) { .sb-resize { display: none; } }
