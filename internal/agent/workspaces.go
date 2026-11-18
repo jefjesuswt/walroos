@@ -599,11 +599,22 @@ var folderRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // inside resolves p and fails if it escapes root (e.g. "dockerfile": "../../etc/passwd").
 // Errors show the path relative to the repo, never the host's volume path.
 func inside(root, p string) (string, error) {
-	rel, err := filepath.Rel(root, p)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s points outside the repo", rel)
+	// Resolve symlinks first: a repo can commit "ctx -> ../../../.." and point a build context or
+	// a Dockerfile at the node's home. The resolved path is what callers use.
+	name, _ := filepath.Rel(root, p)
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
 	}
-	return p, nil
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", name, err)
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s points outside the repo", name)
+	}
+	return real, nil
 }
 
 func cmpOr(s, fallback string) string {
