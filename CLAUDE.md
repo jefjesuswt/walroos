@@ -14,7 +14,7 @@ go test ./...
 WALROOS_PODMAN_TEST=1 go test ./internal/agent -v   # + workspace lifecycle on real rootless podman
 GOOS=linux CGO_ENABLED=0 go test -c ./internal/agent # SSH tests are linux-only: run the binary in WSL
 go run ./cmd/walroos hub --dev                    # 127.0.0.1:8080, no Tailscale, user dev@localhost
-cd web && bun run dev                             # Vite :5173, proxies /api to :8080
+cd web && bun run dev                             # Vite :5173, proxies /api to :8080 (WALROOS_API=url for another hub)
 ```
 
 Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (the Windows PATH makes every podman call ~2s slower), and recreate `walroos-dev` with `podman network create --internal walroos-dev` (the WSL kernel lacks the nftables pieces netavark needs for NAT; without internet only `TestWorkspaceMiseToolPersists` fails).

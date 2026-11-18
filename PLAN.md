@@ -161,13 +161,37 @@ Ya estaba bien: `Dockerfile` symlink fuera del repo, `dockerfile: ../../etc/pass
 
 Límite conocido: si el hub muere sin cerrar la conexión (tsnet no manda FIN), el nodo termina el deploy por su cuenta y el hub lo marca `failed` al arrancar. La release viva del nodo es la verdad; M3.3 la mostrará.
 
-Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), UI y herramientas MCP (M3.3), nodo `build` + registry (M3.4), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
+Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), nodo `build` + registry (M3.4), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
+
+## M3.3 — UI y MCP de apps ✅ (2026-11-18)
+
+UI (`web/src/Apps.tsx`, portada del prototipo):
+- **Apps**: tarjetas con el estado y el último deploy.
+- **Detalle de una app**:
+  - Deploy, con un SHA opcional.
+  - Variables de entorno: el mismo `EnvModal` que los workspaces, ahora en `ui.tsx`.
+  - Borrar.
+  - Tabla de deployments: tocar una fila abre su log, en vivo mientras corre, y desde ahí se hace rollback.
+  - Logs del contenedor cada 5 s.
+  - Datos de build.
+- **Deployments**: todos, de todas las apps.
+
+El estado sale de la release que el nodo corre de verdad. `GET /api/apps` pregunta a cada agente una vez y agrega `running` y `node_down`. Así, un deploy que el hub marcó `failed` tras reiniciarse se ve corriendo igual. Los logs leen `CONTAINER_NAME=` del journal: solo la salida de la app, sin las líneas de systemd y podman.
+
+MCP: `list_apps`, `get_app`, `create_app`, `deploy_app`, `get_deployment` (últimos 8000 caracteres del log), `rollback_app`, `app_logs`. Sin `delete_app` a propósito.
+
+Probado:
+- Hub real por la tailnet: crear, deploy, deploy fallido, rollback desde la UI y logs.
+- Móvil (modales como bottom sheet, sin scroll horizontal), claro y oscuro, y Dracula.
+- Herramientas MCP con `curl` contra el hub real.
+
+Para iterar la UI contra otro hub: `WALROOS_API=http://127.0.0.1:9080 bun run dev`.
 
 ## Después
 
 | Hito | Resumen |
 |---|---|
-| M3 Deploy | Resto: Cloudflare Tunnel (M3.2), UI + MCP (M3.3), build + registry en el nodo `build` (M3.4). |
+| M3 Deploy | Resto: Cloudflare Tunnel (M3.2), build + registry en el nodo `build` (M3.4). |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 

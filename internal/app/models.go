@@ -6,6 +6,8 @@ package app
 import (
 	"errors"
 	"time"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
 )
 
 var (
@@ -32,6 +34,8 @@ type App struct {
 	HealthPath string      `json:"health_path"`
 	CreatedAt  time.Time   `json:"created_at"`
 	Last       *Deployment `json:"last_deployment,omitempty"`
+	Running    *agent.App  `json:"running,omitempty"` // the release on the node, as its agent reports it
+	NodeDown   bool        `json:"node_down,omitempty"`
 }
 
 // CreateInput is what the UI or API sends. Node is a node name or ID; "" picks one.
@@ -49,6 +53,7 @@ type CreateInput struct {
 type Deployment struct {
 	ID         string     `json:"id"`
 	AppID      string     `json:"app_id"`
+	AppName    string     `json:"app_name,omitempty"` // only in the all-apps list
 	Sha        string     `json:"sha"`
 	Image      string     `json:"image"`
 	State      string     `json:"state"`

@@ -77,8 +77,9 @@ func (s *Service) List(ctx context.Context) ([]App, error) {
 	if err != nil {
 		return nil, err
 	}
+	live := map[string][]agent.App{} // per node, asked once
 	for i := range list {
-		s.withLast(ctx, &list[i])
+		s.withLast(ctx, &list[i], live)
 	}
 	return list, nil
 }
@@ -86,16 +87,43 @@ func (s *Service) List(ctx context.Context) ([]App, error) {
 func (s *Service) Get(ctx context.Context, name string) (App, error) {
 	a, err := s.store.Get(ctx, name)
 	if err == nil {
-		s.withLast(ctx, &a)
+		s.withLast(ctx, &a, map[string][]agent.App{})
 	}
 	return a, err
 }
 
-// ponytail: one query per app for its last deployment; fine for one user's handful.
-func (s *Service) withLast(ctx context.Context, a *App) {
+// withLast adds the last deployment and the release the node is running: that one is the
+// truth, a deployment's state is only what the hub saw. An unreachable node leaves Running nil
+// and NodeDown set. ponytail: one query per app for its last deployment; fine for a handful.
+func (s *Service) withLast(ctx context.Context, a *App, live map[string][]agent.App) {
 	if d, err := s.store.Deployments(ctx, a.ID, 1); err == nil && len(d) == 1 {
 		a.Last = &d[0]
 	}
+	releases, ok := live[a.NodeID]
+	if !ok {
+		address, tokenHash, err := s.nodes.AgentTarget(ctx, a.NodeID)
+		if err == nil {
+			releases, err = s.agents.ListApps(ctx, address, tokenHash)
+		}
+		if err != nil {
+			releases = nil
+		}
+		live[a.NodeID] = releases
+	}
+	if releases == nil {
+		a.NodeDown = true
+		return
+	}
+	for _, r := range releases {
+		if r.Name == a.Name {
+			a.Running = &r
+		}
+	}
+}
+
+// AllDeployments lists the newest deployments of every app, without logs.
+func (s *Service) AllDeployments(ctx context.Context) ([]Deployment, error) {
+	return s.store.AllDeployments(ctx, 100)
 }
 
 // Delete stops the app on its node and removes it with its history.
