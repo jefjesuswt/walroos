@@ -24,6 +24,7 @@ func NewHandler(svc *Service) *Handler {
 // Routes must be mounted behind user auth.
 func (h *Handler) Routes(r *whttp.Router) {
 	r.Get("/api/apps", h.handleList)
+	r.Get("/api/deployments", h.handleAllDeployments)
 	r.Post("/api/apps", h.handleCreate)
 	r.Get("/api/apps/{name}", h.handleGet)
 	r.Delete("/api/apps/{name}", h.handleDelete)
@@ -115,6 +116,11 @@ func (h *Handler) handleDeploy(w http.ResponseWriter, r *http.Request) {
 		d, err := h.svc.Deploy(r.Context(), r.PathValue("name"), in.Sha)
 		reply(w, http.StatusAccepted, d, err)
 	}
+}
+
+func (h *Handler) handleAllDeployments(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.AllDeployments(r.Context())
+	reply(w, http.StatusOK, list, err)
 }
 
 func (h *Handler) handleDeployments(w http.ResponseWriter, r *http.Request) {

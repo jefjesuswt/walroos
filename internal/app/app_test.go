@@ -52,6 +52,13 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 			image = spec.Image
 		}
 		enc.Encode(agent.DeployLine{Release: &agent.Release{Sha: sha, Image: image, Container: spec.Name + "-" + spec.ID}})
+	case r.Method == "GET" && r.URL.Path == "/v1/apps":
+		var list []agent.App
+		if n := len(f.specs); n > 0 && f.fail == "" {
+			s := f.specs[n-1]
+			list = append(list, agent.App{Name: s.Name, Container: s.Name + "-" + s.ID, State: "active"})
+		}
+		json.NewEncoder(w).Encode(append([]agent.App{}, list...))
 	case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/logs"):
 		w.Write([]byte("GET / 200\n"))
 	case r.Method == "DELETE" && f.busy:
@@ -186,8 +193,13 @@ func TestAppDeployFlow(t *testing.T) {
 	}
 	var got app.App
 	h.call(t, "GET", "/api/apps/web", nil, &got)
-	if got.Last == nil || got.Last.ID != back.ID {
-		t.Errorf("last = %+v", got.Last)
+	if got.Last == nil || got.Last.ID != back.ID || got.NodeDown || got.Running == nil || got.Running.Container != "web-"+back.ID {
+		t.Errorf("last = %+v, running = %+v, node down %v", got.Last, got.Running, got.NodeDown)
+	}
+	var all []app.Deployment
+	h.call(t, "GET", "/api/deployments", nil, &all)
+	if len(all) != 3 || all[0].AppName != "web" {
+		t.Errorf("all deployments = %+v", all)
 	}
 
 	rec := httptest.NewRecorder()

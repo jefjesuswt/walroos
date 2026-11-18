@@ -15,6 +15,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
@@ -96,7 +97,7 @@ func newHub(t *testing.T, login string) (url string, created *agent.WorkspaceSpe
 	r := whttp.NewRouter()
 	r.Group(func(r *whttp.Router) {
 		r.Use(auth.Middleware(auth.Static(login), users))
-		r.Post("/mcp", Handler(nodes, ws).ServeHTTP)
+		r.Post("/mcp", Handler(nodes, ws, app.NewService(app.NewStore(db), nodes, agents, box)).ServeHTTP)
 	})
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -143,7 +144,8 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
 	}
-	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info"} {
+	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info",
+		"list_apps", "get_app", "create_app", "deploy_app", "get_deployment", "rollback_app", "app_logs"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("missing tool %s in %v", want, names)
 		}
@@ -188,6 +190,21 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 	}
 	if _, text, isErr := call(t, s, "create_workspace", map[string]any{"name": "Bad Name", "repo_url": "x"}); !isErr || !strings.Contains(text, "DNS label") {
 		t.Fatalf("invalid name: isErr=%v %q", isErr, text)
+	}
+}
+
+// The deploy flow itself is tested in internal/app; here, that the tools reach the service.
+func TestMCPAppTools(t *testing.T) {
+	url, _ := newHub(t, "owner@github")
+	s := connect(t, url)
+	if out, _, isErr := call(t, s, "list_apps", nil); isErr || mustJSON(out) != `{"apps":[]}` {
+		t.Fatalf("list_apps: %v", out)
+	}
+	if _, text, isErr := call(t, s, "create_app", map[string]any{"name": "web", "repo_url": "https://github.com/a/b", "port": 3000}); !isErr || !strings.Contains(text, "prod role") {
+		t.Fatalf("create_app on a dev-only hub: isErr=%v %q", isErr, text)
+	}
+	if _, text, isErr := call(t, s, "deploy_app", map[string]any{"name": "nope"}); !isErr || !strings.Contains(text, "not found") {
+		t.Fatalf("deploy unknown app: isErr=%v %q", isErr, text)
 	}
 }
 
