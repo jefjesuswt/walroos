@@ -9,6 +9,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/cmd/walroos/hub"
 	"github.com/jefjesuswt/walroos/cmd/walroos/node"
+	"github.com/jefjesuswt/walroos/cmd/walroos/sshconfig"
 	"github.com/jefjesuswt/walroos/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +17,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:           "walroos",
 	Short:         "Self-hosted dev workspaces and deploys on Podman",
-	Long:          "Walroos runs dev workspaces and deploys apps on your own machines, over a Tailscale network.\n\n  walroos hub        control plane (API + UI)\n  walroos node join  add this machine to a hub\n  walroos node run   node agent",
+	Long:          "Walroos runs dev workspaces and deploys apps on your own machines, over a Tailscale network.\n\n  walroos hub        control plane (API + UI)\n  walroos node join  add this machine to a hub\n  walroos node run   node agent\n  walroos ssh-config SSH config for your workspaces",
 	Version:       version.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -33,5 +34,5 @@ func main() {
 }
 
 func init() {
-	rootCmd.AddCommand(hub.Cmd, node.Cmd)
+	rootCmd.AddCommand(hub.Cmd, node.Cmd, sshconfig.Cmd)
 }
