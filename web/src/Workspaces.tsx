@@ -9,6 +9,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState<Workspace | null>(null);
   const [removing, setRemoving] = useState<Workspace | null>(null);
+  const [rebuilding, setRebuilding] = useState<Workspace | null>(null);
 
   const load = useCallback(() => {
     api.workspaces().then(w => { setList(w); setError(''); }, e => setError(e.message));
@@ -82,6 +83,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                     {w.state === 'stopped'
                       ? <button className="btn-icon" title="Start" aria-label={`Start ${w.name}`} disabled={busy(w)} onClick={() => op(w, api.startWorkspace)}><Icon n="deploy" /></button>
                       : <button className="btn-icon" title="Stop" aria-label={`Stop ${w.name}`} disabled={busy(w) || w.state !== 'running'} onClick={() => op(w, api.stopWorkspace)}><Icon n="x" /></button>}
+                    <button className="btn-icon" title="Rebuild (keeps the clone and $HOME)" aria-label={`Rebuild ${w.name}`} disabled={busy(w)} onClick={() => setRebuilding(w)}><Icon n="refresh" /></button>
                     <button className="btn-icon" title="Delete" aria-label={`Delete ${w.name}`} disabled={busy(w)} onClick={() => setRemoving(w)}><Icon n="trash" /></button>
                   </td>
                 </tr>
@@ -93,6 +95,16 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
 
       {newOpen && <NewWorkspaceModal nodes={nodes} onClose={() => setNewOpen(false)} onCreated={() => { setNewOpen(false); load(); }} />}
       {connecting && <ConnectModal w={connecting} onClose={() => setConnecting(null)} />}
+      {rebuilding && (
+        <Modal title={`Rebuild ${rebuilding.name}?`} onClose={() => setRebuilding(null)}
+          foot={<><button className="btn" onClick={() => setRebuilding(null)}>Cancel</button>
+            <button className="btn btn-primary" autoFocus onClick={() => {
+              const w = rebuilding; setRebuilding(null);
+              api.rebuildWorkspace(w.name).then(() => { toast(`${w.name} is rebuilding`); load(); }, e => toast(e.message, 'bad'));
+            }}>Rebuild</button></>}>
+          <p className="muted">The container and any image built from the repo are recreated; a changed <span className="mono">devcontainer.json</span> or a new base image is picked up. The clone and <span className="mono">$HOME</span> (mise runtimes, <span className="mono">~/.claude</span>, caches) stay.</p>
+        </Modal>
+      )}
       {removing && (
         <Modal title={`Delete ${removing.name}?`} onClose={() => setRemoving(null)}
           foot={<><button className="btn" onClick={() => setRemoving(null)}>Cancel</button>
