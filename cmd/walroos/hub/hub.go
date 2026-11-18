@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
@@ -123,6 +124,9 @@ and --owner with your tailnet login so you can use the UI.
 			identify = auth.Tailscale(lc)
 			hubURL = "http://" + hostname
 			hubID = string(status.Self.ID)
+			// The full MagicDNS name and IP work when the short name doesn't resolve (phones
+			// with "Use Tailscale DNS" off, other search domains).
+			slog.Info("On the tailnet", "dns", strings.TrimSuffix(status.Self.DNSName, "."), "ips", status.TailscaleIPs)
 			agents.HTTP = ts.HTTPClient()
 			agents.HTTP.Timeout = 30 * time.Second
 		}
