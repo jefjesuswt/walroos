@@ -131,11 +131,11 @@ Dos volúmenes por workspace, para que se pueda **reconstruir el contenedor sin 
 ```
 trigger (webhook | botón UI | API | MCP)
   → Deployment{status: queued}
-  → build:   git clone @sha  →  podman build -t walroos/<app>:<sha>
+  → build:   git clone @sha  →  podman build -t localhost/walroos-app-<app>:<sha12>
   → push:    podman push <build-node>:5000/<app>:<sha>      (solo si build ≠ destino)
-  → release: pull en destino → Quadlet <app>-<sha> → systemctl --user daemon-reload && start
-  → health:  GET http://<app>-<sha>:<port>/health; si falla → borrar el nuevo, el viejo sigue
-  → route:   Ingress (CF Tunnel API | Caddy) → dominio → <app>-<sha>; parar el anterior
+  → release: pull en destino → Quadlet <app>-<deployment id> → systemctl --user daemon-reload && start
+  → health:  GET 127.0.0.1:<port><path> desde el netns del contenedor (`walroos node relay`, sin curl en la imagen); si falla → borrar el nuevo, el viejo sigue
+  → route:   Ingress (CF Tunnel API | Caddy) → dominio → <app>-<deployment id>; parar el anterior
   → Deployment{status: succeeded | failed}
 ```
 
@@ -146,7 +146,7 @@ trigger (webhook | botón UI | API | MCP)
   - Si no hay ningún nodo `build`, se construye en el nodo destino y no se usa registry.
 - **Runtime = Podman Quadlet** (`~/.config/containers/systemd/<app>.container`). systemd reinicia, arranca en boot y gestiona logs con journald. Es lo nativo de Podman, no un supervisor propio. Requiere `loginctl enable-linger`.
 - **Rollback** = reescribir el Quadlet con la imagen `:<sha>` anterior. Se mantienen las N últimas imágenes.
-- **Secretos** → `podman secret create` + `Secret=` en el Quadlet. En el hub van cifrados en SQLite (AES-GCM, con la clave maestra en un archivo `0600`).
+- **Secretos** → archivo `<contenedor>.env` (`0600`) junto al Quadlet, vía `EnvironmentFile=`; nunca en argv ni en la unidad. En el hub van cifrados en SQLite (AES-GCM, con la clave maestra en un archivo `0600`).
 - **Ingress**: dos proveedores detrás de una misma interfaz (`Ingress.Apply(app, domains, port)`). Es el único caso con dos implementaciones reales.
   - **Cloudflare Tunnel (default v1).** Cubre CGNAT, el caso de Venezuela.
     - Un contenedor `cloudflared` por nodo prod, con un túnel *remote-managed*.
