@@ -56,6 +56,26 @@ export interface NewWorkspace {
   branch?: string;
   devcontainer_path?: string;
   node?: string;
+  devcontainer?: Record<string, unknown>; // inline devcontainer.json; wins over the repo's
+}
+
+// What POST /api/workspaces/detect proposes for a repo.
+export interface DetectedTool {
+  id: string;
+  label: string;
+  version?: string;
+  source: 'image' | 'postCreate';
+  install?: string; // joined with && into postCreateCommand
+}
+
+export interface Detection {
+  stack: string; // android, dotnet, bun, node, go, rust, python, java, devcontainer, none
+  branch: string;
+  image?: string;
+  remote_user?: string;
+  tools: DetectedTool[];
+  devcontainer?: Record<string, unknown>; // absent: the repo has its own, or nothing matched (base image)
+  notes?: string[];
 }
 
 export interface EnvVar {
@@ -106,6 +126,7 @@ export const api = {
   workspaces: () => req<Workspace[]>('GET', '/api/workspaces'),
   workspace: (name: string) => req<Workspace>('GET', `/api/workspaces/${name}`),
   createWorkspace: (w: NewWorkspace) => req<Workspace>('POST', '/api/workspaces', w),
+  detect: (repo_url: string, branch: string, node: string) => req<Detection>('POST', '/api/workspaces/detect', { repo_url, branch, node }),
   startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
   stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
   rebuildWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/rebuild`),
