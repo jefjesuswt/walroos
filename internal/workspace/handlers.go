@@ -27,6 +27,7 @@ func (h *Handler) Routes(r *whttp.Router) {
 	r.Get("/api/workspaces/{name}", h.handleGet)
 	r.Post("/api/workspaces/{name}/start", h.handleStart)
 	r.Post("/api/workspaces/{name}/stop", h.handleStop)
+	r.Post("/api/workspaces/{name}/rebuild", h.handleRebuild)
 	r.Delete("/api/workspaces/{name}", h.handleDelete)
 }
 
@@ -72,6 +73,15 @@ func (h *Handler) handleStart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleStop(w http.ResponseWriter, r *http.Request) {
 	h.op(w, r, h.svc.Stop)
+}
+
+func (h *Handler) handleRebuild(w http.ResponseWriter, r *http.Request) {
+	ws, err := h.svc.Rebuild(r.Context(), r.PathValue("name"))
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusAccepted, ws)
 }
 
 func (h *Handler) op(w http.ResponseWriter, r *http.Request, fn func(ctx context.Context, name string) (Workspace, error)) {

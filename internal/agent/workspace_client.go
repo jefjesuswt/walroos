@@ -44,6 +44,11 @@ func (c *Client) StopWorkspace(ctx context.Context, address, tokenHash, name str
 	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces/"+name+"/stop", nil, &ws)
 }
 
+func (c *Client) RebuildWorkspace(ctx context.Context, address, tokenHash, name string) (Workspace, error) {
+	var ws Workspace
+	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces/"+name+"/rebuild", nil, &ws)
+}
+
 func (c *Client) DeleteWorkspace(ctx context.Context, address, tokenHash, name string) error {
 	return c.do(ctx, http.MethodDelete, address, tokenHash, "/v1/workspaces/"+name, nil, nil)
 }
