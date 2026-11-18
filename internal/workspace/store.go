@@ -124,3 +124,47 @@ func randomID() string {
 	rand.Read(b) // never fails (crypto/rand, Go 1.24+)
 	return hex.EncodeToString(b)
 }
+
+// Env returns the encrypted values for a workspace, ordered by key.
+func (s *Store) Env(ctx context.Context, id string) ([]EnvVar, error) {
+	rows, err := s.db.Read.QueryContext(ctx, `SELECT key, value, secret FROM workspace_env WHERE workspace_id = ? ORDER BY key`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []EnvVar
+	for rows.Next() {
+		var v EnvVar
+		var secret int
+		if err := rows.Scan(&v.Key, &v.Value, &secret); err != nil {
+			return nil, err
+		}
+		v.Secret = secret == 1
+		list = append(list, v)
+	}
+	return list, rows.Err()
+}
+
+// ReplaceEnv swaps all of a workspace's variables in one transaction.
+func (s *Store) ReplaceEnv(ctx context.Context, id string, vars []EnvVar) error {
+	tx, err := s.db.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM workspace_env WHERE workspace_id = ?`, id); err != nil {
+		return err
+	}
+	for _, v := range vars {
+		secret := 0
+		if v.Secret {
+			secret = 1
+		}
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO workspace_env (workspace_id, key, value, secret) VALUES (?, ?, ?, ?)`,
+			id, v.Key, v.Value, secret); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

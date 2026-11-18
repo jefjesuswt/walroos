@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { api, type Node, type Workspace } from './api';
+import { api, type EnvVar, type Node, type Workspace } from './api';
 import { ago, Badge, Cmd, CopyBtn, EmptyState, Icon, Modal, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
@@ -10,6 +10,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
   const [connecting, setConnecting] = useState<Workspace | null>(null);
   const [removing, setRemoving] = useState<Workspace | null>(null);
   const [rebuilding, setRebuilding] = useState<Workspace | null>(null);
+  const [editingEnv, setEditingEnv] = useState<Workspace | null>(null);
 
   const load = useCallback(() => {
     api.workspaces().then(w => { setList(w); setError(''); }, e => setError(e.message));
@@ -83,6 +84,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                     {w.state === 'stopped'
                       ? <button className="btn-icon" title="Start" aria-label={`Start ${w.name}`} disabled={busy(w)} onClick={() => op(w, api.startWorkspace)}><Icon n="deploy" /></button>
                       : <button className="btn-icon" title="Stop" aria-label={`Stop ${w.name}`} disabled={busy(w) || w.state !== 'running'} onClick={() => op(w, api.stopWorkspace)}><Icon n="x" /></button>}
+                    <button className="btn-icon" title="Environment variables" aria-label={`Environment of ${w.name}`} onClick={() => setEditingEnv(w)}><Icon n="settings" /></button>
                     <button className="btn-icon" title="Rebuild (keeps the clone and $HOME)" aria-label={`Rebuild ${w.name}`} disabled={busy(w)} onClick={() => setRebuilding(w)}><Icon n="refresh" /></button>
                     <button className="btn-icon" title="Delete" aria-label={`Delete ${w.name}`} disabled={busy(w)} onClick={() => setRemoving(w)}><Icon n="trash" /></button>
                   </td>
@@ -95,6 +97,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
 
       {newOpen && <NewWorkspaceModal nodes={nodes} onClose={() => setNewOpen(false)} onCreated={() => { setNewOpen(false); load(); }} />}
       {connecting && <ConnectModal w={connecting} onClose={() => setConnecting(null)} />}
+      {editingEnv && <EnvModal w={editingEnv} onClose={() => setEditingEnv(null)} onSaved={() => { setEditingEnv(null); load(); }} />}
       {rebuilding && (
         <Modal title={`Rebuild ${rebuilding.name}?`} onClose={() => setRebuilding(null)}
           foot={<><button className="btn" onClick={() => setRebuilding(null)}>Cancel</button>
@@ -203,6 +206,56 @@ function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
           <span className="help mono od-truncate" title={w.repo_url}>{w.repo_url}{w.branch ? ` (${w.branch})` : ''}</span>
         </div>
       </div>
+    </Modal>
+  );
+}
+
+function EnvModal({ w, onClose, onSaved }: { w: Workspace; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [vars, setVars] = useState<EnvVar[] | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  usePoll(() => { api.workspaceEnv(w.name).then(setVars, e => setError(e.message)); }, 60000);
+
+  const set = (i: number, patch: Partial<EnvVar>) => setVars(vs => (vs ?? []).map((v, j) => j === i ? { ...v, ...patch } : v));
+  const save = () => {
+    setBusy(true);
+    api.setWorkspaceEnv(w.name, vars ?? []).then(
+      () => { toast('Variables saved: rebuild to apply them'); onSaved(); },
+      e => { setError(e.message); setBusy(false); },
+    );
+  };
+
+  return (
+    <Modal title={`Environment · ${w.name}`} wide onClose={onClose}
+      sub="Passed to the container as KEY=VALUE. Values are encrypted in the hub; they apply when the container is recreated (Rebuild)."
+      foot={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || !vars} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+      </>}>
+      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't load or save</strong><span className="muted">{error}</span></div></div>}
+      {!vars ? <div className="skel-row"><i className="skel w50" /></div> : (
+        <div className="form">
+          {vars.length === 0 && <p className="muted">No variables yet.</p>}
+          {vars.map((v, i) => (
+            <div key={i} className="env-row">
+              <input className="input mono" value={v.key} placeholder="KEY" aria-label="Name"
+                onChange={e => set(i, { key: e.target.value.toUpperCase() })} />
+              <input className="input mono" value={v.value} placeholder="value" aria-label="Value"
+                type={v.secret ? 'password' : 'text'} onChange={e => set(i, { value: e.target.value })} />
+              <label className="check" title="Mask this value in the UI">
+                <input type="checkbox" checked={v.secret} onChange={e => set(i, { secret: e.target.checked })} />secret
+              </label>
+              <button className="btn-icon" aria-label="Remove" title="Remove" onClick={() => setVars(vs => (vs ?? []).filter((_, j) => j !== i))}><Icon n="trash" /></button>
+            </div>
+          ))}
+          <div>
+            <button className="btn" onClick={() => setVars(vs => [...(vs ?? []), { key: '', value: '', secret: false }])}><Icon n="plus" />Add variable</button>
+          </div>
+          <p className="help">Names: A–Z, 0–9 and _, starting with a letter or _. The last save replaces the whole set.</p>
+        </div>
+      )}
     </Modal>
   );
 }

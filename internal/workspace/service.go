@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/secretbox"
 )
 
 // Service picks a node, calls its agent and keeps the row. It never talks to podman: the node does.
@@ -17,11 +19,12 @@ type Service struct {
 	store  *Store
 	nodes  *fleet.Service
 	agents *agent.Client
+	box    *secretbox.Box // encrypts env values at rest
 	now    func() time.Time
 }
 
-func NewService(store *Store, nodes *fleet.Service, agents *agent.Client) *Service {
-	return &Service{store: store, nodes: nodes, agents: agents, now: time.Now}
+func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
+	return &Service{store: store, nodes: nodes, agents: agents, box: box, now: time.Now}
 }
 
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
@@ -44,7 +47,7 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 
 	ws, err := s.agents.CreateWorkspace(ctx, address, tokenHash, agent.WorkspaceSpec{
 		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath,
-	})
+	}, nil)
 	if err != nil {
 		return Workspace{}, agentErr(err, "create")
 	}
@@ -158,9 +161,99 @@ func (s *Service) Stop(ctx context.Context, name string) (Workspace, error) {
 	return s.op(ctx, name, s.agents.StopWorkspace)
 }
 
-// Rebuild recreates the container on the node, keeping the clone and $HOME.
+// Rebuild recreates the container on the node, keeping the clone and $HOME. The env vars are
+// re-sent because the agent deliberately doesn't store them.
 func (s *Service) Rebuild(ctx context.Context, name string) (Workspace, error) {
-	return s.op(ctx, name, s.agents.RebuildWorkspace)
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return w, err
+	}
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, w.NodeID)
+	if err != nil {
+		return w, err
+	}
+	env, err := s.envForAgent(ctx, w.ID)
+	if err != nil {
+		return w, err
+	}
+	ws, err := s.agents.RebuildWorkspace(ctx, address, tokenHash, name, env)
+	if err != nil {
+		return w, agentErr(err, name)
+	}
+	if err := s.store.UpdateState(ctx, w.ID, ws.State, ws.Image, ws.Error); err != nil {
+		return w, err
+	}
+	w.State, w.Image, w.Error = ws.State, ws.Image, ws.Error
+	return w, nil
+}
+
+// Env returns a workspace's variables with their values decrypted (single-user hub; the UI edits them).
+func (s *Service) Env(ctx context.Context, name string) ([]EnvVar, error) {
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	return s.envList(ctx, w.ID)
+}
+
+// SetEnv validates and replaces all variables, encrypting the values.
+func (s *Service) SetEnv(ctx context.Context, name string, vars []EnvVar) error {
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	if len(vars) > 64 {
+		return fmt.Errorf("%w: at most 64 variables", ErrInvalid)
+	}
+	seen := map[string]bool{}
+	sealed := make([]EnvVar, 0, len(vars))
+	for _, v := range vars {
+		if !envKeyRe.MatchString(v.Key) || seen[v.Key] {
+			return fmt.Errorf("%w: %q is not a valid or unique variable name (A-Z, 0-9, _)", ErrInvalid, v.Key)
+		}
+		if len(v.Value) > 32<<10 {
+			return fmt.Errorf("%w: %s is too long", ErrInvalid, v.Key)
+		}
+		seen[v.Key] = true
+		enc, err := s.box.Seal(v.Value)
+		if err != nil {
+			return err
+		}
+		sealed = append(sealed, EnvVar{Key: v.Key, Value: enc, Secret: v.Secret})
+	}
+	return s.store.ReplaceEnv(ctx, w.ID, sealed)
+}
+
+var envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
+
+// envList decrypts for the API and for passing KEY=VALUE to the agent.
+func (s *Service) envList(ctx context.Context, id string) ([]EnvVar, error) {
+	stored, err := s.store.Env(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	for i := range stored {
+		if v, err := s.box.Open(stored[i].Value); err == nil {
+			stored[i].Value = v
+		} else {
+			stored[i].Value = "" // wrong key or corrupt: don't break the whole list
+		}
+	}
+	return stored, nil
+}
+
+func (s *Service) envForAgent(ctx context.Context, id string) ([]string, error) {
+	vars, err := s.envList(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(vars))
+	for _, v := range vars {
+		if v.Value != "" {
+			out = append(out, v.Key+"="+v.Value)
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) op(ctx context.Context, name string,
