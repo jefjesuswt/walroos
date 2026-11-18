@@ -142,6 +142,8 @@ func (g *SSHGateway) publicKey(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.P
 	defer cancel()
 	login, err := g.authorize(ctx, workspace, fp)
 	if err != nil {
+		// Also how an unreachable hub shows up: every login fails until it's back.
+		slog.Warn("SSH: key refused", "workspace", workspace, "fingerprint", fp, "remote", meta.RemoteAddr(), "err", err)
 		return nil, err
 	}
 	g.mu.Lock()
@@ -192,6 +194,10 @@ func (c *sshConn) session(nch ssh.NewChannel) {
 		return
 	}
 	defer ch.Close()
+	// Per session, not per connection: closing one session (VS Code and ControlMaster keep the
+	// connection open) hangs up its process.
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
 
 	var (
 		env       []string
@@ -231,7 +237,7 @@ func (c *sshConn) session(nch ssh.NewChannel) {
 			started, ok = true, true
 			req.Reply(true, nil) // before the process can send exit-status
 			req.WantReply = false
-			if ptmx, err = c.start(ch, tty, env, argv, wantAgent); err != nil {
+			if ptmx, err = c.start(ctx, ch, tty, env, argv, wantAgent); err != nil {
 				fmt.Fprintf(ch.Stderr(), "walroos: %v\r\n", err)
 				sendExit(ch, 1)
 			}
@@ -273,7 +279,7 @@ func sessionArgv(req *ssh.Request) ([]string, bool) {
 
 // start runs argv in the workspace, wired to the channel, and sends exit-status when it ends.
 // With a pty it returns the terminal's master side for window-change.
-func (c *sshConn) start(ch ssh.Channel, tty *ptyRequest, env, argv []string, agent bool) (*os.File, error) {
+func (c *sshConn) start(ctx context.Context, ch ssh.Channel, tty *ptyRequest, env, argv []string, agent bool) (*os.File, error) {
 	ws, err := c.workspace()
 	if err != nil {
 		return nil, err
@@ -291,7 +297,7 @@ func (c *sshConn) start(ch ssh.Channel, tty *ptyRequest, env, argv []string, age
 		}
 	}
 
-	cmd := c.g.command(c.ctx, ws, tty != nil, env, argv)
+	cmd := c.g.command(ctx, ws, tty != nil, env, argv)
 	// When the client goes away, hang up like a closed terminal would; kill if that's ignored.
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGHUP) }
 	cmd.WaitDelay = 5 * time.Second
@@ -491,7 +497,7 @@ func podmanRelay(ctx context.Context, ws Workspace, relay []string, addr string)
 		return nil, fmt.Errorf("workspace %s is not running", ws.Name)
 	}
 	args := append([]string{"nsenter", "--net=/proc/" + pid + "/ns/net", "--"}, relay...)
-	args = append(args, addr)
+	args = append(args, "/proc/"+pid+"/root", addr)
 	if os.Geteuid() != 0 {
 		args = append([]string{"podman", "unshare"}, args...)
 	}
@@ -500,8 +506,14 @@ func podmanRelay(ctx context.Context, ws Workspace, relay []string, addr string)
 
 // Relay connects to addr and pipes the connection to stdin/stdout. It writes one 0 byte first,
 // so the gateway knows the connection is up. `walroos node relay` runs it inside a workspace's
-// network namespace.
-func Relay(addr string) error {
+// network namespace, with root the workspace's filesystem ("" to skip): names then resolve
+// like they do in the workspace (its DNS, host.containers.internal), not like on the host.
+func Relay(root, addr string) error {
+	if root != "" {
+		if err := chroot(root); err != nil {
+			return fmt.Errorf("enter the workspace's filesystem: %w", err)
+		}
+	}
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 	if err != nil {
 		return err

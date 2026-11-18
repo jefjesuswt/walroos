@@ -46,6 +46,14 @@ func startPTY(cmd *exec.Cmd, cols, rows uint32) (*os.File, error) {
 	return ptmx, nil
 }
 
+// chroot makes dir the root, so name lookups read that filesystem's /etc/hosts and resolv.conf.
+func chroot(dir string) error {
+	if err := syscall.Chroot(dir); err != nil {
+		return err
+	}
+	return os.Chdir("/")
+}
+
 func setWinsize(ptmx *os.File, cols, rows uint32) error {
 	return unix.IoctlSetWinsize(int(ptmx.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: uint16(rows), Col: uint16(cols)})
 }
