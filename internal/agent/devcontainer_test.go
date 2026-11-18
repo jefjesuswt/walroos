@@ -49,7 +49,8 @@ func TestReadDevcontainer(t *testing.T) {
 	if want := []mount{"type=volume,source=cache,target=/cache", "type=volume,source=npm,target=/home/dev/.npm"}; !slices.Equal(dc.Mounts, want) {
 		t.Fatalf("mounts = %q, want %q", dc.Mounts, want)
 	}
-	if dc.dir != filepath.Join(repo, ".devcontainer") {
+	if real, _ := filepath.EvalSymlinks(repo); dc.dir != filepath.Join(real, ".devcontainer") { // the resolved path
+
 		t.Fatalf("dir = %q", dc.dir)
 	}
 
@@ -118,16 +119,43 @@ func TestMetadataRemoteUser(t *testing.T) {
 }
 
 func TestInsideRepo(t *testing.T) {
-	repo := "/vol/src"
-	for p, ok := range map[string]bool{
-		"/vol/src/.devcontainer/Dockerfile": true,
-		"/vol/src":                          true,
-		"/vol/src/../../etc/passwd":         false,
-		"/etc/passwd":                       false,
-		"/vol/src-other/Dockerfile":         false,
-	} {
-		if _, err := inside(repo, filepath.Clean(p)); (err == nil) != ok {
-			t.Errorf("inside(%q) ok=%v, want %v", p, err == nil, ok)
+	base := t.TempDir()
+	repo, outside := filepath.Join(base, "src"), filepath.Join(base, "home")
+	for _, d := range []string{filepath.Join(repo, ".devcontainer"), outside, filepath.Join(base, "src-other")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	os.WriteFile(filepath.Join(repo, ".devcontainer", "Dockerfile"), []byte("FROM x"), 0o644)
+	os.WriteFile(filepath.Join(outside, "node.json"), []byte("{}"), 0o600)
+	cases := map[string]bool{
+		filepath.Join(repo, ".devcontainer", "Dockerfile"): true,
+		repo: true,
+		filepath.Join(repo, "..", "home", "node.json"): false,
+		filepath.Join(base, "src-other"):               false,
+		filepath.Join(repo, "missing"):                 false,
+	}
+	// What a repo can commit: symlinks out of it (absolute and relative) and inside it.
+	if err := os.Symlink(outside, filepath.Join(repo, "ctx")); err == nil {
+		os.Symlink(filepath.Join("..", "..", "home", "node.json"), filepath.Join(repo, ".devcontainer", "devcontainer.json"))
+		os.Symlink(".devcontainer", filepath.Join(repo, "dc"))
+		cases[filepath.Join(repo, "ctx")] = false
+		cases[filepath.Join(repo, "ctx", "node.json")] = false
+		cases[filepath.Join(repo, ".devcontainer", "devcontainer.json")] = false
+		cases[filepath.Join(repo, "dc", "Dockerfile")] = true
+	} else {
+		t.Logf("no symlinks here (%v): only lexical cases", err)
+	}
+	for p, ok := range cases {
+		if _, err := inside(repo, p); (err == nil) != ok {
+			t.Errorf("inside(%q) ok=%v (%v), want %v", p, err == nil, err, ok)
+		}
+	}
+
+	// readDevcontainer goes through inside too: a symlinked devcontainer.json is refused.
+	if _, err := os.Lstat(filepath.Join(repo, ".devcontainer", "devcontainer.json")); err == nil {
+		if _, err := readDevcontainer(repo, "", nil); err == nil || !strings.Contains(err.Error(), "outside the repo") {
+			t.Errorf("symlinked devcontainer.json: %v", err)
 		}
 	}
 }
