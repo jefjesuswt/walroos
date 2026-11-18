@@ -135,7 +135,8 @@ func workspaceError(w http.ResponseWriter, err error) {
 
 func (s *Server) appRoutes(r *whttp.Router) {
 	r.Get("/v1/apps", s.handleListApps)
-	r.Post("/v1/apps/{name}/deploy", s.handleDeployApp)
+	r.Post("/v1/apps/{name}/deploy", s.handleStream(s.apps.Deploy))
+	r.Post("/v1/apps/{name}/build", s.handleStream(s.apps.Build))
 	r.Get("/v1/apps/{name}/logs", s.handleAppLogs)
 	r.Delete("/v1/apps/{name}", s.handleDeleteApp)
 }
@@ -148,24 +149,26 @@ type DeployLine struct {
 	Error   string   `json:"error,omitempty"`
 }
 
-// handleDeployApp streams the deploy as it happens. A build takes minutes; the hub stores
+// handleStream streams a deploy or build as it happens. A build takes minutes; the hub stores
 // the lines as they come, so the UI shows a live log.
-func (s *Server) handleDeployApp(w http.ResponseWriter, r *http.Request) {
-	var spec AppSpec
-	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
-		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
-		return
+func (s *Server) handleStream(op func(context.Context, AppSpec, io.Writer) (Release, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var spec AppSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		spec.Name = r.PathValue("name")
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		lw := &lineWriter{enc: json.NewEncoder(w), flush: http.NewResponseController(w).Flush}
+		rel, err := op(r.Context(), spec, lw)
+		lw.Flush()
+		if err != nil {
+			lw.send(DeployLine{Error: err.Error()})
+			return
+		}
+		lw.send(DeployLine{Release: &rel})
 	}
-	spec.Name = r.PathValue("name")
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	lw := &lineWriter{enc: json.NewEncoder(w), flush: http.NewResponseController(w).Flush}
-	rel, err := s.apps.Deploy(r.Context(), spec, lw)
-	lw.Flush()
-	if err != nil {
-		lw.send(DeployLine{Error: err.Error()})
-		return
-	}
-	lw.send(DeployLine{Release: &rel})
 }
 
 func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {

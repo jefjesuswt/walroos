@@ -3,7 +3,9 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net"
 	"regexp"
 	"slices"
 	"time"
@@ -274,10 +276,32 @@ func (s *Service) run(ctx context.Context, d Deployment) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, deployTimeout)
 	defer cancel()
-	rel, err := s.agents.DeployApp(ctx, address, tokenHash, agent.AppSpec{
+	log := func(line string) { s.store.appendLog(ctx, d.ID, line) }
+	spec := agent.AppSpec{
 		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
-		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Env: env,
-	}, func(line string) { s.store.appendLog(ctx, d.ID, line) })
+		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image,
+	}
+	if b, ok := s.builder(ctx, a.NodeID); ok && d.Image == "" {
+		baddr, bhash, err := s.nodes.AgentTarget(ctx, b.ID)
+		if err != nil {
+			fail(err)
+			return
+		}
+		log("building on " + b.Name)
+		rel, err := s.agents.BuildApp(ctx, baddr, bhash, spec, log) // no env: it's for the running app
+		if err != nil {
+			fail(fmt.Errorf("build on %s: %w", b.Name, err))
+			return
+		}
+		host, _, err := net.SplitHostPort(baddr)
+		if err != nil {
+			host = baddr
+		}
+		spec.Sha, spec.Pull, spec.PullToken = rel.Sha, net.JoinHostPort(host, agent.RegistryPort), agent.PullToken(bhash, a.Name)
+		log("deploying on " + a.NodeName)
+	}
+	spec.Env = env
+	rel, err := s.agents.DeployApp(ctx, address, tokenHash, spec, log)
 	if err != nil {
 		fail(err)
 		return
@@ -285,6 +309,28 @@ func (s *Service) run(ctx context.Context, d Deployment) {
 	if err := s.store.finish(ctx, d.ID, "succeeded", rel.Sha, rel.Image, "", s.now().UTC()); err != nil {
 		slog.Error("deployments: record success", "id", d.ID, "err", err)
 	}
+}
+
+// builder returns the online build node that builds for target. None when target has the
+// build role itself or there's no build node online: then target builds, with no registry.
+func (s *Service) builder(ctx context.Context, target string) (fleet.Node, bool) {
+	nodes, err := s.nodes.List(ctx)
+	if err != nil {
+		return fleet.Node{}, false
+	}
+	var found *fleet.Node
+	for i, n := range nodes {
+		if n.ID == target && slices.Contains(n.Roles, "build") {
+			return fleet.Node{}, false
+		}
+		if found == nil && n.ID != target && slices.Contains(n.Roles, "build") && n.Status == "online" {
+			found = &nodes[i]
+		}
+	}
+	if found == nil {
+		return fleet.Node{}, false
+	}
+	return *found, true
 }
 
 func (s *Service) Env(ctx context.Context, name string) ([]workspace.EnvVar, error) {
