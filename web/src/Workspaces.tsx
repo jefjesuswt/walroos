@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type EnvVar, type Node, type Workspace } from './api';
+import { api, type Detection, type EnvVar, type Node, type Workspace } from './api';
 import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
@@ -155,15 +155,40 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
   const [branch, setBranch] = useState('');
   const [dcPath, setDcPath] = useState('');
   const [node, setNode] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<{ title: string; msg: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [found, setFound] = useState<Detection | null>(null);
+  const [off, setOff] = useState<string[]>([]); // postCreate tools turned off
+  const [dcText, setDcText] = useState('');     // the devcontainer.json that will be sent, editable
   const dev = nodes.filter(n => n.roles.includes('dev') && n.status === 'online');
+
+  const generated = !!found?.devcontainer;
+  let dcError = '';
+  let dc: Record<string, unknown> | undefined;
+  if (generated) {
+    try { dc = JSON.parse(dcText); } catch (e) { dcError = (e as Error).message; }
+  }
+
+  const detect = () => {
+    setDetecting(true); setError(null);
+    api.detect(repo, branch, node).then(d => {
+      setFound(d); setOff([]); setDcText(devcontainerText(d, []));
+      if (!name) setName(suggestName(repo));
+      if (!branch) setBranch(d.branch);
+    }, e => setError({ title: "Couldn't detect", msg: e.message })).finally(() => setDetecting(false));
+  };
+  const toggle = (id: string) => {
+    const next = off.includes(id) ? off.filter(x => x !== id) : [...off, id];
+    setOff(next);
+    if (found) setDcText(devcontainerText(found, next));
+  };
 
   const submit = () => {
     setBusy(true);
-    api.createWorkspace({ name, repo_url: repo, branch, devcontainer_path: dcPath, node })
+    api.createWorkspace({ name, repo_url: repo, branch, devcontainer_path: generated ? '' : dcPath, node, devcontainer: dc })
       .then(w => { toast(`${w.name} is being created`); onCreated(); },
-        e => { setError(e.message); setBusy(false); });
+        e => { setError({ title: "Couldn't create it", msg: e.message }); setBusy(false); });
   };
 
   return (
@@ -171,15 +196,21 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
       sub="Cloned from a Git repo and run on a node with the dev role. A devcontainer.json is used when present, else the walroos base image."
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !name || !repo} onClick={submit}>{busy ? 'Creating…' : 'Create workspace'}</button>
+        <button className="btn btn-primary" disabled={busy || !name || !repo || !!dcError} onClick={submit}>{busy ? 'Creating…' : 'Create workspace'}</button>
       </>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't create it</strong><span className="muted">{error}</span></div></div>}
+      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>{error.title}</strong><span className="muted">{error.msg}</span></div></div>}
       <div className="form">
-        <Field label="Name" hint={<>DNS label. It's also the SSH user: <span className="mono">{name || 'myproject'}.walroos</span>.</>}>
-          <input className="input mono" value={name} onChange={e => setName(e.target.value)} placeholder="myproject" autoFocus />
+        <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read. Detect proposes a devcontainer for the stack.">
+          <div className="input-btn">
+            <input className="input mono" value={repo} onChange={e => { setRepo(e.target.value); setFound(null); }} placeholder="git@github.com:me/app.git" autoFocus />
+            <button type="button" className="btn btn-tonal" disabled={!repo || detecting} onClick={detect}>
+              {detecting ? <><Icon n="refresh" cls="spin" />Detecting…</> : 'Detect'}
+            </button>
+          </div>
         </Field>
-        <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read.">
-          <input className="input mono" value={repo} onChange={e => setRepo(e.target.value)} placeholder="git@github.com:me/app.git" />
+        {found && <DetectedPanel d={found} off={off} toggle={toggle} dcText={dcText} setDcText={setDcText} dcError={dcError} onDrop={() => setFound(null)} />}
+        <Field label="Name" hint={<>DNS label. It's also the SSH user: <span className="mono">{name || 'myproject'}.walroos</span>.</>}>
+          <input className="input mono" value={name} onChange={e => setName(e.target.value)} placeholder="myproject" />
         </Field>
         <div className="field-row">
           <Field label={<>Branch <span className="muted">(optional)</span></>}>
@@ -192,11 +223,65 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
             </select>
           </Field>
         </div>
-        <Field label={<>devcontainer.json <span className="muted">(optional)</span></>} hint="Leave empty to use the standard location, or the base image if the repo has none.">
-          <input className="input mono" value={dcPath} onChange={e => setDcPath(e.target.value)} placeholder=".devcontainer/devcontainer.json" />
-        </Field>
+        {!generated && (
+          <Field label={<>devcontainer.json <span className="muted">(optional)</span></>} hint="Leave empty to use the standard location, or the base image if the repo has none.">
+            <input className="input mono" value={dcPath} onChange={e => setDcPath(e.target.value)} placeholder=".devcontainer/devcontainer.json" />
+          </Field>
+        )}
       </div>
     </Modal>
+  );
+}
+
+// The generated config with the turned-off tools' installs left out of postCreateCommand.
+function devcontainerText(d: Detection, off: string[]): string {
+  const { postCreateCommand: _, ...dc } = d.devcontainer ?? {};
+  const cmds = d.tools.filter(t => t.install && !off.includes(t.id)).map(t => t.install);
+  return JSON.stringify(cmds.length ? { ...dc, postCreateCommand: cmds.join(' && ') } : dc, null, 2);
+}
+
+// github.com/me/My_App.git → my-app
+const suggestName = (repo: string) =>
+  (repo.replace(/\/+$/, '').split(/[/:]/).pop() ?? '').replace(/\.git$/, '').toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);
+
+function DetectedPanel({ d, off, toggle, dcText, setDcText, dcError, onDrop }: {
+  d: Detection; off: string[]; toggle: (id: string) => void; dcText: string; setDcText: (s: string) => void; dcError: string; onDrop: () => void;
+}) {
+  const title = d.stack === 'devcontainer' ? "Uses the repo's devcontainer" : d.stack === 'none' ? 'No stack detected' : `Detected ${d.stack}`;
+  return (
+    <section className="detected" aria-label="Detected stack">
+      <div className="detected-head">
+        <div className="detected-t">
+          <strong>{title}</strong>
+          {d.image && <span className="mono muted od-truncate" title={d.image}>{d.image}{d.remote_user ? ` · ${d.remote_user}` : ''}</span>}
+        </div>
+        {d.devcontainer && <button type="button" className="btn btn-ghost" onClick={onDrop}>Don't use</button>}
+      </div>
+      {d.devcontainer && d.tools.length > 0 && (
+        <ul className="tools">
+          {d.tools.map(t => (
+            <li key={t.id}>
+              <label className="check">
+                <input type="checkbox" checked={t.source === 'image' || !off.includes(t.id)} disabled={t.source === 'image'} onChange={() => toggle(t.id)} />
+                <span>{t.label}{t.version && <span className="mono muted"> {t.version}</span>}</span>
+              </label>
+              <span className="chip">{t.source === 'image' ? 'in image' : 'postCreate'}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {d.notes?.map(n => <p key={n} className="help">{n}</p>)}
+      {d.devcontainer && (
+        <details className="disclosure">
+          <summary>devcontainer.json</summary>
+          <div>
+            <textarea className="mono" rows={10} value={dcText} onChange={e => setDcText(e.target.value)} aria-invalid={!!dcError} aria-label="Generated devcontainer.json" spellCheck={false} />
+            <span className={dcError ? 'err' : 'help'}>{dcError || "Sent with the workspace, never written to the repo. Toggling a tool regenerates it."}</span>
+          </div>
+        </details>
+      )}
+    </section>
   );
 }
 

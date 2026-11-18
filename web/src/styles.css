@@ -745,3 +745,17 @@ body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0;
 .sb-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 3px; border-radius: 2px; transition: background var(--dur) var(--ease-out); }
 .sb-resize:hover::after, .sb-resize:focus-visible::after, .sb-resize:active::after { background: var(--ac); }
 @media (max-width: 767px) { .sb-resize { display: none; } }
+
+/* ---------- New workspace: detect ---------- */
+.input-btn { display: flex; gap: var(--sp2); }
+.input-btn > input { flex: 1 1 0; min-width: 0; }
+.input-btn > .btn { flex: none; height: 48px; }
+.detected { display: flex; flex-direction: column; gap: var(--sp3); padding: var(--sp4); border-radius: var(--r3); background: var(--s1); }
+.detected-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp3); }
+.detected-t { display: grid; gap: 2px; min-width: 0; }
+.detected-t .mono { font-size: var(--fs-xs); }
+.tools { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp2); }
+.tools li { display: flex; align-items: center; justify-content: space-between; gap: var(--sp3); min-height: 32px; }
+.tools .check:has(input:disabled) { cursor: default; }
+.detected .disclosure > div { display: grid; gap: var(--sp2); }
+.detected textarea { width: 100%; font-size: var(--fs-xs); }
