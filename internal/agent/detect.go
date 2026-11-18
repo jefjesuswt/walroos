@@ -58,7 +58,7 @@ func Detect(ctx context.Context, repoURL, branch string) (Detection, error) {
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
-	if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", append(args, "--", repoURL, dir)...); err != nil {
+	if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", append(args, "--", httpsURL(repoURL), dir)...); err != nil {
 		return Detection{}, fmt.Errorf("%w: %v", ErrDetectClone, err)
 	}
 	d := detectDir(dir)

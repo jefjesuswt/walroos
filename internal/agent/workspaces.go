@@ -127,10 +127,16 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 		if spec.Branch != "" {
 			args = append(args, "--branch", spec.Branch)
 		}
-		args = append(args, "--", spec.RepoURL, repo)
+		url := httpsURL(spec.RepoURL)
+		args = append(args, "--", url, repo)
 		// ponytail: no credentials yet, so only public repos (or a token in the URL) clone
 		if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", args...); err != nil {
 			return fmt.Errorf("clone %s: %w", spec.RepoURL, err)
+		}
+		if url != spec.RepoURL { // push from inside the workspace with the user's own key
+			if err := run(ctx, nil, "git", "-C", repo, "remote", "set-url", "origin", spec.RepoURL); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -426,6 +432,27 @@ func ensureNetwork(ctx context.Context) error {
 	}
 	_, err := podman(ctx, "network", "create", DevNetwork)
 	return err
+}
+
+// httpsURL turns an SSH remote (git@host:owner/repo, ssh://git@host/owner/repo) into its https
+// form; anything else comes back as is. The node has no SSH keys, and GitHub wants one even for
+// public repos over SSH.
+// ponytail: public repos only, private ones need node credentials
+func httpsURL(u string) string {
+	if rest, ok := strings.CutPrefix(u, "ssh://"); ok {
+		hostport, path, _ := strings.Cut(rest, "/")
+		if _, h, ok := strings.Cut(hostport, "@"); ok {
+			hostport = h
+		}
+		host, _, _ := strings.Cut(hostport, ":") // an SSH port means nothing to https
+		return "https://" + host + "/" + path
+	}
+	if user, rest, ok := strings.Cut(u, "@"); ok && !strings.Contains(user, "/") && !strings.Contains(u, "://") {
+		if host, path, ok := strings.Cut(rest, ":"); ok && !strings.Contains(host, "/") {
+			return "https://" + host + "/" + strings.TrimPrefix(path, "/")
+		}
+	}
+	return u
 }
 
 // gitRemote reads origin's URL from a clone without failing the rebuild if git is unhappy.
