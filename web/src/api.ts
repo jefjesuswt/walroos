@@ -1,4 +1,4 @@
-// Types mirror internal/fleet/models.go and internal/auth/auth.go.
+// Types mirror internal/fleet/models.go, internal/workspace/models.go, internal/sshkeys and internal/auth/auth.go.
 
 export type Role = 'dev' | 'build' | 'prod';
 export const ROLES: Role[] = ['dev', 'build', 'prod'];
@@ -33,6 +33,39 @@ export interface User {
   role: 'owner' | 'member';
 }
 
+export type WorkspaceState = 'creating' | 'running' | 'stopped' | 'failed' | 'deleting';
+
+export interface Workspace {
+  id: string;
+  name: string;
+  owner: string;
+  node_id: string;
+  node_name: string;
+  repo_url: string;
+  branch: string;
+  devcontainer_path: string;
+  image?: string;
+  state: WorkspaceState;
+  error?: string;
+  created_at: string;
+}
+
+export interface NewWorkspace {
+  name: string;
+  repo_url: string;
+  branch?: string;
+  devcontainer_path?: string;
+  node?: string;
+}
+
+export interface SSHKey {
+  id: string;
+  name: string;
+  public_key: string;
+  fingerprint: string;
+  created_at: string;
+}
+
 export interface JoinToken {
   token: string;
   expires_at: string;
@@ -45,8 +78,12 @@ export class ApiError extends Error {
   }
 }
 
-async function req<T>(method: string, path: string): Promise<T> {
-  const res = await fetch(path, { method, headers: { Accept: 'application/json' } });
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { Accept: 'application/json', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, body.error || `${method} ${path} → ${res.status}`);
@@ -59,4 +96,15 @@ export const api = {
   nodes: () => req<Node[]>('GET', '/api/nodes'),
   removeNode: (id: string) => req<void>('DELETE', `/api/nodes/${id}`),
   joinToken: () => req<JoinToken>('POST', '/api/nodes/join-tokens'),
+
+  workspaces: () => req<Workspace[]>('GET', '/api/workspaces'),
+  workspace: (name: string) => req<Workspace>('GET', `/api/workspaces/${name}`),
+  createWorkspace: (w: NewWorkspace) => req<Workspace>('POST', '/api/workspaces', w),
+  startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
+  stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
+  deleteWorkspace: (name: string) => req<void>('DELETE', `/api/workspaces/${name}`),
+
+  sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),
+  addSSHKey: (name: string, public_key: string) => req<SSHKey>('POST', '/api/ssh-keys', { name, public_key }),
+  removeSSHKey: (id: string) => req<void>('DELETE', `/api/ssh-keys/${id}`),
 };

@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type User } from './api';
 import { NodesPage } from './Nodes';
+import { SettingsPage } from './Settings';
+import { WorkspacesPage } from './Workspaces';
 import { EmptyState, Icon, Logo } from './ui';
 
 // [route, label, icon, milestone that brings it]
 const NAV = [
   ['overview', 'Overview', 'overview', 'M1'],
-  ['workspaces', 'Workspaces', 'workspace', 'M1'],
+  ['workspaces', 'Workspaces', 'workspace', ''],
   ['apps', 'Apps', 'apps', 'M3'],
   ['deployments', 'Deployments', 'deploy', 'M3'],
   ['nodes', 'Nodes', 'nodes', ''],
   ['integrations', 'Integrations', 'plug', 'M4'],
-  ['settings', 'Settings', 'settings', 'M2'],
+  ['settings', 'Settings', 'settings', ''],
 ] as const;
 
 // ponytail: hash routing, one level deep; add a router when pages get ids and tabs (M1)
@@ -23,6 +25,7 @@ export function App() {
   const [authError, setAuthError] = useState('');
   const [drawer, setDrawer] = useState(false);
   const [addNode, setAddNode] = useState(false);
+  const [newWorkspace, setNewWorkspace] = useState(false);
 
   useEffect(() => {
     const on = () => { setRoute(currentRoute()); setDrawer(false); };
@@ -75,12 +78,15 @@ export function App() {
           <nav className="crumbs" aria-label="Breadcrumb"><ol><li><span aria-current="page">{nav?.[1] ?? 'Not found'}</span></li></ol></nav>
           <div className="tb-primary">
             {route === 'nodes' && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
+            {route === 'workspaces' && <button className="btn btn-primary" onClick={() => setNewWorkspace(true)}><Icon n="plus" /><span className="tb-label">New workspace</span></button>}
           </div>
         </header>
         <main id="view" tabIndex={-1}>
           <div className="content">
             {route === 'nodes' ? <NodesPage addOpen={addNode} setAddOpen={setAddNode} />
-              : nav ? <EmptyState icon={nav[2]} title={`${nav[1]} land in ${nav[3]}`} text="This hub is on M0: nodes and telemetry. See ARCHITECTURE.md for the roadmap." />
+              : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
+              : route === 'settings' ? <SettingsPage />
+              : nav ? <EmptyState icon={nav[2]} title={`${nav[1]} land in ${nav[3]}`} text="See ARCHITECTURE.md for the roadmap." />
               : <EmptyState icon="alert" title="Nothing here" text="That page doesn't exist." action={<a className="btn" href="#/nodes">Back to nodes</a>} />}
           </div>
         </main>

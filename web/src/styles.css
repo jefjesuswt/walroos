@@ -265,6 +265,10 @@ input::placeholder, textarea::placeholder { color: var(--tx2); opacity: .7; }
 input.mono, textarea.mono { font-family: var(--f-mono); }
 input[type=checkbox], input[type=radio] { accent-color: var(--ac); width: 16px; height: 16px; margin: 0; }
 .form { display: flex; flex-direction: column; gap: var(--sp4); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp4); }
+@media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+.card-body, .card-pad { min-width: 0; }
+.card .table-wrap { border: 0; border-radius: 0; }
 .field { display: grid; gap: 6px; min-width: 0; }
 .field > * { display: block; }
 .field > input, .field > select, .field > textarea { width: 100%; }

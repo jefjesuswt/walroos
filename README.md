@@ -147,7 +147,7 @@ M1 progress:
 - [ ] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`, agent forwarding for `git push`)
 - [x] Workspace service on the hub (pick a node, call its agent, keep the state)
 - [x] `walroos ssh-config` (add `--proxy` on machines with userspace tailscaled)
-- [ ] Workspaces page and SSH keys in the UI
+- [x] Workspaces page and SSH keys in the UI
 - [ ] Rebuild a workspace without losing `$HOME`
 - [ ] Per-workspace environment variables and secrets
 - [ ] Reach services running on the node (e.g. a database) from a workspace
