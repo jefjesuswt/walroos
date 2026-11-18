@@ -1,6 +1,7 @@
 // Small components ported 1:1 from the Open Design prototype (index.html at the repo root).
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import type { EnvVar } from './api';
 
 const P: Record<string, string> = {
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -20,6 +21,8 @@ const P: Record<string, string> = {
   alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.5-.8 1.5-1.5 0-.9-.7-1.2-.7-2 0-.8.7-1.5 1.5-1.5H17a4 4 0 0 0 4-4c0-5-4-9-9-9Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  rollback: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   more: '<circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>',
 };
 
@@ -29,7 +32,10 @@ export const Icon = ({ n, cls = '' }: { n: string; cls?: string }) => (
 
 export const Logo = () => <img src="/favicon.svg" alt="" width={24} height={24} />;
 
-const ST: Record<string, string> = { online: 'ok', running: 'ok', pending: 'busy', creating: 'busy', deleting: 'busy', offline: 'bad', failed: 'bad', stopped: 'idle' };
+const ST: Record<string, string> = {
+  online: 'ok', running: 'ok', succeeded: 'ok', active: 'ok', pending: 'busy', creating: 'busy', deleting: 'busy', deploying: 'busy', activating: 'busy',
+  offline: 'bad', failed: 'bad', stopped: 'idle', queued: 'idle',
+};
 export const Badge = ({ s, label = s }: { s: string; label?: string }) => (
   <span className={`badge s-${ST[s] || 'idle'}`}><span className="dot" aria-hidden="true" />{label}</span>
 );
@@ -186,4 +192,57 @@ export function usePoll(fn: () => void, ms: number) {
     const id = setInterval(() => !document.hidden && saved.current(), ms);
     return () => clearInterval(id);
   }, [ms]);
+}
+
+// EnvModal edits a workspace's or an app's variables; the last save replaces the whole set.
+export function EnvModal({ title, sub, savedMsg, load, save, onClose, onSaved }: {
+  title: string; sub: string; savedMsg: string; load: () => Promise<EnvVar[]>; save: (vars: EnvVar[]) => Promise<unknown>;
+  onClose: () => void; onSaved: () => void;
+}) {
+  const toast = useToast();
+  const [vars, setVars] = useState<EnvVar[] | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { load().then(setVars, e => setError(e.message)); }, []); // once: a poll would overwrite what you're typing
+
+  const set = (i: number, patch: Partial<EnvVar>) => setVars(vs => (vs ?? []).map((v, j) => j === i ? { ...v, ...patch } : v));
+  const submit = () => {
+    setBusy(true);
+    save(vars ?? []).then(
+      () => { toast(savedMsg); onSaved(); },
+      e => { setError(e.message); setBusy(false); },
+    );
+  };
+
+  return (
+    <Modal title={title} wide onClose={onClose} sub={sub}
+      foot={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || !vars} onClick={submit}>{busy ? 'Saving…' : 'Save'}</button>
+      </>}>
+      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't load or save</strong><span className="muted">{error}</span></div></div>}
+      {!vars ? <div className="skel-row"><i className="skel w50" /></div> : (
+        <div className="form">
+          {vars.length === 0 && <p className="muted">No variables yet.</p>}
+          {vars.map((v, i) => (
+            <div key={i} className="env-row">
+              <input className="input mono" value={v.key} placeholder="KEY" aria-label="Name"
+                onChange={e => set(i, { key: e.target.value.toUpperCase() })} />
+              <input className="input mono" value={v.value} placeholder="value" aria-label="Value"
+                type={v.secret ? 'password' : 'text'} onChange={e => set(i, { value: e.target.value })} />
+              <label className="check" title="Mask this value in the UI">
+                <input type="checkbox" checked={v.secret} onChange={e => set(i, { secret: e.target.checked })} />secret
+              </label>
+              <button className="btn-icon" aria-label="Remove" title="Remove" onClick={() => setVars(vs => (vs ?? []).filter((_, j) => j !== i))}><Icon n="trash" /></button>
+            </div>
+          ))}
+          <div>
+            <button className="btn" onClick={() => setVars(vs => [...(vs ?? []), { key: '', value: '', secret: false }])}><Icon n="plus" />Add variable</button>
+          </div>
+          <p className="help">Names: A–Z, 0–9 and _, starting with a letter or _. The last save replaces the whole set.</p>
+        </div>
+      )}
+    </Modal>
+  );
 }

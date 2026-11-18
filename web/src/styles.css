@@ -361,6 +361,7 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 .cell-sub { display: block; font-size: var(--fs-sm); color: var(--tx2); }
 .cell-stack { display: grid; gap: 2px; min-width: 0; }
 .cell-stack > * { display: block; }
+.cell-stack > .od-row { display: flex; }
 .row-actions { display: inline-flex; gap: var(--sp1); align-items: center; justify-content: flex-end; opacity: 0; transition: opacity var(--dur) var(--ease-out); }
 .tbl tr:hover .row-actions, .tbl tr:focus-within .row-actions, .row-actions:has(details[open]) { opacity: 1; }
 @media (hover: none) { .row-actions { opacity: 1; } }
@@ -492,6 +493,9 @@ body:has(.content > .state:not(.state-err)) .tb-primary,
 .ln.err { background: var(--bad-soft); } .ln.err .t { color: var(--bad); }
 .ln.warn .t { color: var(--busy); }
 .ln.dim .t { color: var(--tx2); }
+.ln.plain { grid-template-columns: minmax(0, 1fr); }
+.link-btn { background: none; border: 0; padding: 0; cursor: pointer; text-align: start; }
+@media (hover: hover) { .link-btn:hover { text-decoration: underline; } }
 .ln mark { background: color-mix(in srgb, var(--busy) 35%, transparent); color: inherit; border-radius: 2px; }
 .log-empty { padding: var(--sp4); color: var(--tx2); font-family: var(--f-ui); }
 

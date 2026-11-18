@@ -204,7 +204,7 @@ El hub sirve MCP (streamable HTTP, stateless) en `/mcp`. Con `modelcontextprotoc
 Herramientas iniciales:
 - `list_nodes`
 - `list_workspaces`, `detect_stack`, `create_workspace`, `get_workspace`, `start_workspace`, `stop_workspace`, `workspace_ssh_info` (M2)
-- `list_apps`, `deploy_app`, `get_deployment`, `get_deployment_logs`, `rollback_app`
+- `list_apps`, `get_app`, `create_app`, `deploy_app`, `get_deployment` (con la cola del log), `rollback_app`, `app_logs` (M3.3). Sin `delete_app`: destructivo, va por la UI.
 
 Con esto, Claude Code en la laptop puede decir "crea un workspace para este repo", conectarse por SSH, trabajar, y después "despliega `main` a prod y muéstrame los logs".
 

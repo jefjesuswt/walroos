@@ -341,7 +341,9 @@ func (a *Apps) Logs(ctx context.Context, app string, lines int) (string, error) 
 	if err != nil || len(units) == 0 {
 		return "", ErrAppNotFound
 	}
-	return journal(ctx, units[len(units)-1], lines), nil
+	// The container's own output; the unit's journal also has systemd and podman lifecycle lines.
+	out, _ := exec.CommandContext(ctx, "journalctl", "--user", "CONTAINER_NAME="+units[len(units)-1], "-n", strconv.Itoa(lines), "--no-pager", "-o", "cat").Output()
+	return strings.ReplaceAll(string(out), "\n\n", "\n"), nil // podman keeps the app's newline in MESSAGE
 }
 
 // Delete stops every release of app and removes its images.

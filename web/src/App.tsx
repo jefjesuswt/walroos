@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type User } from './api';
+import { AppDetail, AppsPage, DeploymentsPage } from './Apps';
 import { NodesPage } from './Nodes';
 import { SettingsPage } from './Settings';
 import { WorkspacesPage } from './Workspaces';
@@ -9,15 +10,16 @@ import { EmptyState, Icon, Logo } from './ui';
 const NAV = [
   ['overview', 'Overview', 'overview', 'M1'],
   ['workspaces', 'Workspaces', 'workspace', ''],
-  ['apps', 'Apps', 'apps', 'M3'],
-  ['deployments', 'Deployments', 'deploy', 'M3'],
+  ['apps', 'Apps', 'apps', ''],
+  ['deployments', 'Deployments', 'deploy', ''],
   ['nodes', 'Nodes', 'nodes', ''],
   ['integrations', 'Integrations', 'plug', 'M4'],
   ['settings', 'Settings', 'settings', ''],
 ] as const;
 
 // ponytail: hash routing, one level deep; add a router when pages get ids and tabs (M1)
-const currentRoute = () => location.hash.replace(/^#\/?/, '').split('/')[0] || 'nodes';
+const routeParts = () => location.hash.replace(/^#\/?/, '').split('/');
+const currentRoute = () => routeParts()[0] || 'nodes';
 
 // Sidebar width: drag the edge (or arrow keys on it). Under SB_SNAP it collapses to the icon rail.
 const SB_MIN = 200, SB_MAX = 420, SB_SNAP = 140, SB_DEFAULT = 264;
@@ -39,9 +41,11 @@ export function App() {
   const [drawer, setDrawer] = useState(false);
   const [addNode, setAddNode] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState(false);
+  const [newApp, setNewApp] = useState(false);
+  const [sub, setSub] = useState(() => decodeURIComponent(routeParts()[1] ?? ''));
 
   useEffect(() => {
-    const on = () => { setRoute(currentRoute()); setDrawer(false); };
+    const on = () => { setRoute(currentRoute()); setSub(decodeURIComponent(routeParts()[1] ?? '')); setDrawer(false); };
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
@@ -53,7 +57,7 @@ export function App() {
   useEffect(() => { document.body.classList.toggle('drawer-open', drawer); }, [drawer]);
 
   const nav = NAV.find(n => n[0] === route);
-  useEffect(() => { document.title = `${nav?.[1] ?? 'Not found'} · walroos`; }, [nav]);
+  useEffect(() => { document.title = `${sub || nav?.[1] || 'Not found'} · walroos`; }, [nav, sub]);
 
   if (authError) {
     return (
@@ -97,9 +101,13 @@ export function App() {
       <div className="main">
         <header className="topbar">
           <button className="btn-icon menu-btn" aria-label="Open navigation" onClick={() => setDrawer(true)}><Icon n="menu" /></button>
-          <nav className="crumbs" aria-label="Breadcrumb"><ol><li><span aria-current="page">{nav?.[1] ?? 'Not found'}</span></li></ol></nav>
+          <nav className="crumbs" aria-label="Breadcrumb"><ol>
+            {sub && nav ? <><li><a href={`#/${route}`}>{nav[1]}</a></li><li><span aria-current="page" className="mono">{sub}</span></li></>
+              : <li><span aria-current="page">{nav?.[1] ?? 'Not found'}</span></li>}
+          </ol></nav>
           <div className="tb-primary">
             {route === 'nodes' && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
+            {route === 'apps' && !sub && <button className="btn btn-primary" onClick={() => setNewApp(true)}><Icon n="plus" /><span className="tb-label">New app</span></button>}
             {route === 'workspaces' && <button className="btn btn-primary" onClick={() => setNewWorkspace(true)}><Icon n="plus" /><span className="tb-label">New workspace</span></button>}
           </div>
         </header>
@@ -107,6 +115,8 @@ export function App() {
           <div className="content">
             {route === 'nodes' ? <NodesPage addOpen={addNode} setAddOpen={setAddNode} />
               : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
+              : route === 'apps' ? (sub ? <AppDetail key={sub} name={sub} /> : <AppsPage newOpen={newApp} setNewOpen={setNewApp} />)
+              : route === 'deployments' ? <DeploymentsPage />
               : route === 'settings' ? <SettingsPage />
               : nav ? <EmptyState icon={nav[2]} title={`${nav[1]} land in ${nav[3]}`} text="See ARCHITECTURE.md for the roadmap." />
               : <EmptyState icon="alert" title="Nothing here" text="That page doesn't exist." action={<a className="btn" href="#/nodes">Back to nodes</a>} />}
