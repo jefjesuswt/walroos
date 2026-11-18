@@ -62,6 +62,16 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case r.Method == "POST" && r.URL.Path == "/v1/detect":
+		var body struct {
+			RepoURL string `json:"repo_url"`
+			Branch  string `json:"branch"`
+		}
+		if err := jsonDecode(r, &body); err != nil || strings.Contains(body.RepoURL, "missing") {
+			errJSON(422, "can't clone the repo: not found")
+			return
+		}
+		json(200, map[string]any{"stack": "go", "branch": cmpOr(body.Branch, "main"), "devcontainer": map[string]string{"image": "go"}})
 	case r.Method == "GET" && path == "":
 		list := []agent.Workspace{}
 		for _, ws := range f.ws {
@@ -455,5 +465,58 @@ func TestWorkspaceEnv(t *testing.T) {
 	h.db.Read.QueryRow(`SELECT COUNT(*) FROM workspace_env`).Scan(&n)
 	if n != 0 {
 		t.Errorf("%d env rows left after delete", n)
+	}
+}
+
+func cmpOr(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}
+
+func TestWorkspaceDetect(t *testing.T) {
+	h := newHub(t, true)
+	var d struct {
+		Stack, Branch string
+		Devcontainer  map[string]string
+	}
+	if code := h.call(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "https://github.com/me/app", "branch": "dev"}, &d); code != 200 {
+		t.Fatalf("detect: %d", code)
+	}
+	if d.Stack != "go" || d.Branch != "dev" || d.Devcontainer["image"] != "go" {
+		t.Fatalf("detect = %+v, want the agent's answer passed through", d)
+	}
+	if code, msg := h.callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "https://github.com/me/missing"}); code != 422 || !strings.Contains(msg, "not found") {
+		t.Errorf("unreachable repo: %d %q, want 422 with the clone error", code, msg)
+	}
+	if code, _ := h.callErr(t, "POST", "/api/workspaces/detect", map[string]string{}); code != 400 {
+		t.Errorf("no repo_url: %d, want 400", code)
+	}
+	h.agent.mu.Lock()
+	h.agent.down = true
+	h.agent.mu.Unlock()
+	if code, _ := h.callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "x"}); code != 502 {
+		t.Errorf("agent down: %d, want 502", code)
+	}
+	if code, _ := newHub(t, false).callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "x"}); code != 409 {
+		t.Errorf("no dev node: %d, want 409", code)
+	}
+}
+
+// TestWorkspaceCreateWithDevcontainer: the generated devcontainer reaches the agent untouched.
+func TestWorkspaceCreateWithDevcontainer(t *testing.T) {
+	h := newHub(t, true)
+	dc := map[string]any{"image": "mcr.microsoft.com/devcontainers/go:1.27", "postCreateCommand": "go mod download"}
+	in := map[string]any{"name": "app", "repo_url": "https://github.com/me/app", "devcontainer": dc}
+	if code := h.call(t, "POST", "/api/workspaces", in, nil); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	var got map[string]any
+	h.agent.mu.Lock()
+	json.Unmarshal(h.agent.last.Devcontainer, &got)
+	h.agent.mu.Unlock()
+	if got["image"] != dc["image"] || got["postCreateCommand"] != dc["postCreateCommand"] {
+		t.Fatalf("agent got devcontainer %v, want %v", got, dc)
 	}
 }

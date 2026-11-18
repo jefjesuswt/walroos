@@ -2,7 +2,13 @@
 
 Plan de la siguiente tanda. Objetivo: al crear un workspace, walroos inspecciona el repo y propone un `devcontainer.json` (imagen + herramientas) que el usuario puede ajustar en la UI, sin modificar el proyecto y sin que mise sea obligatorio.
 
-Estado: **pendiente de implementar**. La tarea 11 (red `walroos-dev`) y el soporte de rebuild y env ya están en `main`.
+Estado (2026-11-18): **implementado** (pasos 1–4), falta la prueba real de droid con podman e internet (paso 5).
+
+- Agente: `devcontainer` en línea en el spec y `POST /v1/detect` (`internal/agent/detect.go`). Probado con podman real: el JSON en línea gana al del repo, `git status` queda limpio y el rebuild lo conserva.
+- Hub: `POST /api/workspaces/detect` y `CreateInput.devcontainer`.
+- UI: botón **Detect** en New workspace, herramientas con su origen (`in image` bloqueada, `postCreate` se puede quitar) y el `devcontainer.json` editable.
+- Detección probada contra los repos del escritorio: tres repos Android → android (JDK 17, `platforms;android-37.0`, build-tools 36.0.0); tres repos .NET → dotnet 10.0; walroos → go 1.27 con nota de `web/package.json`. Contra GitHub (droid) tarda ~1,5 s.
+- Cambios respecto al plan: los marcadores de la raíz ganan a los de subcarpetas (si no, walroos salía como bun); un segundo stack solo deja una nota; se añadió java/gradle sin Android.
 
 ---
 

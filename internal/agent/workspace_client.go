@@ -60,6 +60,12 @@ func (c *Client) DeleteWorkspace(ctx context.Context, address, tokenHash, name s
 	return c.do(ctx, http.MethodDelete, address, tokenHash, "/v1/workspaces/"+name, nil, nil)
 }
 
+func (c *Client) Detect(ctx context.Context, address, tokenHash, repoURL, branch string) (json.RawMessage, error) {
+	var d json.RawMessage // passed through to the UI as is
+	body := map[string]string{"repo_url": repoURL, "branch": branch}
+	return d, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/detect", body, &d)
+}
+
 // Info calls GET /v1/info on the agent at address (a tailnet IP, or host:port in tests).
 func (c *Client) Info(ctx context.Context, address, tokenHash string) (Info, error) {
 	var info Info
