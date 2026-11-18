@@ -137,7 +137,7 @@ func TestInsideRepo(t *testing.T) {
 	}
 	// What a repo can commit: symlinks out of it (absolute and relative) and inside it.
 	if err := os.Symlink(outside, filepath.Join(repo, "ctx")); err == nil {
-		os.Symlink(filepath.Join("..", "home", "node.json"), filepath.Join(repo, ".devcontainer", "devcontainer.json"))
+		os.Symlink(filepath.Join("..", "..", "home", "node.json"), filepath.Join(repo, ".devcontainer", "devcontainer.json"))
 		os.Symlink(".devcontainer", filepath.Join(repo, "dc"))
 		cases[filepath.Join(repo, "ctx")] = false
 		cases[filepath.Join(repo, "ctx", "node.json")] = false
