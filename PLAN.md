@@ -150,6 +150,17 @@ API: `/api/apps` (crear, listar, ver, borrar), `/env`, `/deploy {sha}`, `/deploy
 
 Probado: test de integración con agente falso; test de podman en WSL (deploy, release rota que no reemplaza a la buena, deploy por sha, rollback, borrar); y **de punta a punta por la tailnet**: hub en Windows, nodo `dev,prod` en WSL, repo por `git daemon`: v1, v2, otro contenedor llega a la app por nombre en la red `walroos`, rollback a v1, logs y borrado limpio.
 
+Caminos tristes (atacado el hub y el nodo reales por la tailnet). Arreglado:
+- **Inyección de opciones en git**: `sha` llegaba a `git checkout` (`--orphan=x` pasó como opción; git lo frenó por suerte). Ahora `sha` es hex de 7 a 40.
+- **`health_path` con CRLF**: se metía en la petición HTTP del healthcheck y falsificaba líneas del log (`health check: 200`). Ahora es una ruta URL sin espacios ni control.
+- `branch` y `dockerfile` sin espacios ni `-` inicial; la imagen de un rollback tiene que ser un build de esa misma app.
+- **Hub caído a mitad de deploy**: la limpieza usaba el contexto ya cancelado y la release nueva quedaba huérfana (con una vieja, dos corriendo). Ahora la limpieza no se cancela.
+- **Delete durante un deploy**: si caía en el build, el deploy arrancaba la release después → app huérfana sin fila en el hub. Ahora deploy y delete toman el mismo lock por app (409).
+
+Ya estaba bien: `Dockerfile` symlink fuera del repo, `dockerfile: ../../etc/passwd`, `COPY` por un symlink del contexto a `/home`, `--upload-pack` en `branch`.
+
+Límite conocido: si el hub muere sin cerrar la conexión (tsnet no manda FIN), el nodo termina el deploy por su cuenta y el hub lo marca `failed` al arrancar. La release viva del nodo es la verdad; M3.3 la mostrará.
+
 Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), UI y herramientas MCP (M3.3), nodo `build` + registry (M3.4), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
 
 ## Después

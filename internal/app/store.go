@@ -156,9 +156,11 @@ func (s *Store) finish(ctx context.Context, id, state, sha, image, msg string, a
 }
 
 // failRunning marks deployments a previous hub process left running: their stream is gone.
+// ponytail: the node may still finish one (a killed tsnet hub sends no FIN, so the agent
+// doesn't notice); the node's running release is the truth. Ask the agent here if it matters.
 func (s *Store) failRunning(ctx context.Context, at time.Time) error {
 	_, err := s.db.Write.ExecContext(ctx,
-		`UPDATE deployments SET state = 'failed', error = 'the hub restarted during the deploy', finished_at = ? WHERE state = 'running'`, at)
+		`UPDATE deployments SET state = 'failed', error = 'the hub restarted during the deploy; the node may have finished it, check the app''s logs', finished_at = ? WHERE state = 'running'`, at)
 	return err
 }
 

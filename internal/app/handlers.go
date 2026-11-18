@@ -139,7 +139,7 @@ func errorJSON(w http.ResponseWriter, err error) {
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage):
+	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy):
 		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
 	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress):
 		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())

@@ -106,6 +106,30 @@ func TestAppDeployPodman(t *testing.T) {
 		}
 	}
 
+	// The hub hangs up mid health check: the new release is removed, the old one keeps serving.
+	// Meanwhile a delete is refused, or it would race the deploy.
+	commit(`["sh", "-c", "sleep 60"]`, "slow")
+	cctx, cancel := context.WithCancel(ctx)
+	done := make(chan error)
+	go func() {
+		_, err := a.Deploy(cctx, AppSpec{Name: name, ID: "a6", RepoURL: repo, Branch: "main", Port: 8000}, io.Discard)
+		done <- err
+	}()
+	for range 100 {
+		if _, err := podman(ctx, "container", "exists", name+"-a6"); err == nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if err := a.Delete(ctx, name); err != ErrAppBusy {
+		t.Errorf("delete during deploy: %v", err)
+	}
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("canceled deploy succeeded")
+	}
+	assertLive(t, a, name, back.Container)
+
 	if err := a.Delete(ctx, name); err != nil {
 		t.Fatal(err)
 	}

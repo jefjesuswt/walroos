@@ -28,6 +28,7 @@ type fakeAgent struct {
 	mu      sync.Mutex
 	specs   []agent.AppSpec
 	fail    string
+	busy    bool // DELETE answers 409, as while a deploy runs
 	deleted []string
 }
 
@@ -53,6 +54,8 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 		enc.Encode(agent.DeployLine{Release: &agent.Release{Sha: sha, Image: image, Container: spec.Name + "-" + spec.ID}})
 	case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/logs"):
 		w.Write([]byte("GET / 200\n"))
+	case r.Method == "DELETE" && f.busy:
+		http.Error(w, `{"error":"busy"}`, 409)
 	case r.Method == "DELETE":
 		f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/v1/apps/"))
 		w.WriteHeader(204)
@@ -159,9 +162,9 @@ func TestAppDeployFlow(t *testing.T) {
 
 	// A failed deploy is recorded with its log; it can't be rolled back to.
 	h.agent.fail = "health check: no 2xx"
-	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{"sha": "def456"}, &d)
+	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{"sha": "def4567"}, &d)
 	bad := h.wait(t, "web", d.ID)
-	if bad.State != "failed" || bad.Error != "health check: no 2xx" || bad.Sha != "def456" || !strings.Contains(bad.Log, "building") {
+	if bad.State != "failed" || bad.Error != "health check: no 2xx" || bad.Sha != "def4567" || !strings.Contains(bad.Log, "building") {
 		t.Fatalf("bad = %+v", bad)
 	}
 	if code := h.call(t, "POST", "/api/apps/web/deployments/"+bad.ID+"/rollback", nil, nil); code != 409 {
@@ -208,6 +211,11 @@ func TestAppErrors(t *testing.T) {
 		{Name: "ok", RepoURL: "/etc", Port: 80},
 		{Name: "ok", RepoURL: "file:///etc", Port: 80},
 		{Name: "ok", RepoURL: "https://x/y"},
+		{Name: "ok", RepoURL: "https://x/y", Port: 80, Branch: "--upload-pack=touch /tmp/x"},
+		{Name: "ok", RepoURL: "https://x/y", Port: 80, Branch: "main\nfake log line"},
+		{Name: "ok", RepoURL: "https://x/y", Port: 80, Dockerfile: "-f/etc/passwd"},
+		{Name: "ok", RepoURL: "https://x/y", Port: 80, HealthPath: "/ HTTP/1.0\r\nX: y\r\n\r\nGET /x"}, // request and log injection
+		{Name: "ok", RepoURL: "https://x/y", Port: 80, HealthPath: "health"},
 	} {
 		if code := h.call(t, "POST", "/api/apps", in, nil); code != 400 {
 			t.Errorf("%+v: %d", in, code)
@@ -219,6 +227,15 @@ func TestAppErrors(t *testing.T) {
 	}
 	if code := h.call(t, "PUT", "/api/apps/web/env", []map[string]any{{"key": "bad key"}}, nil); code != 400 {
 		t.Errorf("bad env: %d", code)
+	}
+	for _, sha := range []string{"--orphan=x", "main", "abc"} { // option injection into git checkout
+		if code := h.call(t, "POST", "/api/apps/web/deploy", map[string]string{"sha": sha}, nil); code != 400 {
+			t.Errorf("sha %q: %d", sha, code)
+		}
+	}
+	h.agent.busy = true
+	if code := h.call(t, "DELETE", "/api/apps/web", nil, nil); code != 409 {
+		t.Errorf("delete while the node deploys: %d", code)
 	}
 	if code := h.call(t, "POST", "/api/apps/nope/deploy", nil, nil); code != 404 {
 		t.Errorf("deploy unknown: %d", code)
