@@ -39,7 +39,7 @@ Tailscale saca su tráfico por fuera de cualquier VPN (`SO_MARK` / `SO_BINDTODEV
 ## Pendiente de M0
 
 - [ ] Nodo con tag (no usuario) → rechazado. Sin probar: hace falta un dispositivo con tag en la tailnet.
-- [ ] Unit de systemd `--user` para `walroos node run` (hoy se arranca a mano).
+- [x] **`walroos node install`** (2026-11-18): escribe `~/.config/systemd/user/walroos-node.service` (`Restart=on-failure`), lo activa y arranca, e intenta `loginctl enable-linger`. `loginctl` sale con 0 aunque polkit lo rechace (sin sesión activa, p. ej. `wsl -- …`), así que se relee `Linger` y, si no quedó, imprime el `sudo loginctl enable-linger <usuario>`. Probado en WSL Arch con systemd: servicio activo, heartbeats con telemetría de podman, `kill -9` → reiniciado a los 10 s.
 
 ## M1 — Workspaces ✅ (2026-11-17)
 
@@ -55,7 +55,7 @@ Tareas, en orden:
    - Start/stop/delete síncronos; delete borra contenedor, volúmenes e imagen construida.
    - Usuario: `remoteUser` de `devcontainer.json`, si no el de la label `devcontainer.metadata` de la imagen (las `mcr.microsoft.com/devcontainers/*` declaran p. ej. `node` ahí), si no el usuario por defecto de la imagen. De la label solo se toma el usuario.
    - `mounts` del devcontainer: solo `type=volume` y `type=tmpfs`; `bind` se rechaza para que un repo no pueda montar rutas del host.
-   - Límites (`ponytail:`): sin credenciales de git (solo repos públicos o token en la URL), `postCreateCommand` en forma objeto no soportado, sin docker compose, estado `failed` se pierde si reinicia el agente.
+   - Límites (`ponytail:`): sin credenciales de git (solo repos públicos o token en la URL; las URLs SSH `git@host:…` se clonan por https y el workspace deja la SSH como `origin`), `postCreateCommand` en forma objeto no soportado, sin docker compose, estado `failed` se pierde si reinicia el agente.
    - Tests con podman real: `WALROOS_PODMAN_TEST=1 go test ./internal/agent -v`.
 4. ✅ **Imagen base** (`internal/agent/base/Containerfile`, embebida): Debian 13 slim + git, curl, ssh, `openssh-sftp-server`, sudo y mise (versión fija, sha256 verificado, amd64/arm64). Usuario `dev` (uid 1000, sudo sin contraseña) declarado en `devcontainer.metadata`, así que corre como `dev` sin código extra.
    - El agente la construye en local la primera vez que un repo no trae devcontainer (~1 min, una vez por nodo), con un mutex para creaciones simultáneas. Tag `localhost/walroos-base:<hash del Containerfile>`: si el Containerfile cambia, se reconstruye y se borran las versiones viejas que ningún workspace usa.
