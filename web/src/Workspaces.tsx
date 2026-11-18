@@ -11,6 +11,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
   const [removing, setRemoving] = useState<Workspace | null>(null);
   const [rebuilding, setRebuilding] = useState<Workspace | null>(null);
   const [editingEnv, setEditingEnv] = useState<Workspace | null>(null);
+  const [acting, setActing] = useState<Workspace | null>(null); // phones: the row's actions in a bottom sheet
 
   const load = useCallback(() => {
     api.workspaces().then(w => { setList(w); setError(''); }, e => setError(e.message));
@@ -61,25 +62,28 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
           <table className="tbl">
             <thead><tr>
               <th>Workspace</th><th className="hide-sm">Node</th><th>State</th>
-              <th className="hide-md">Image</th><th className="hide-sm">Created</th>
-              <th><span className="sr-only">Actions</span></th>
+              <th className="hide-lg">Image</th><th className="hide-sm">Created</th>
+              <th className="hide-xs"><span className="sr-only">Actions</span></th><th className="show-xs"><span className="sr-only">More</span></th>
             </tr></thead>
             <tbody>
               {list.map(w => (
                 <tr key={w.id}>
-                  <td><div className="cell-stack">
-                    <span className="cell-title mono od-nowrap">{w.name}</span>
-                    <span className="cell-sub mono od-truncate" title={w.repo_url}>{repoLabel(w.repo_url)}{w.branch ? ` · ${w.branch}` : ''}</span>
+                  <td><div className="cell-lead">
+                    <span className={`lead${w.state === 'running' ? '' : ' off'}`} aria-hidden="true"><Icon n="workspace" /></span>
+                    <div className="cell-stack">
+                      <span className="cell-title mono od-nowrap">{w.name}</span>
+                      <span className="cell-sub mono od-truncate" title={w.repo_url}>{repoLabel(w.repo_url)}{w.branch ? ` · ${w.branch}` : ''}</span>
+                    </div>
                   </div></td>
                   <td className="hide-sm mono">{w.node_name}</td>
                   <td><Badge s={w.state} />
                     {w.state === 'failed' && w.error && (
-                      <div className="cell-sub od-truncate" style={{ maxWidth: 220, color: 'var(--bad)' }} title={w.error}>{w.error}</div>
+                      <div className="cell-sub od-truncate err-line" title={w.error}>{w.error}</div>
                     )}
                   </td>
-                  <td className="hide-md mono od-truncate" style={{ maxWidth: 220 }} title={w.image}>{w.image || <span className="muted">—</span>}</td>
+                  <td className="hide-lg mono od-truncate" style={{ maxWidth: 220 }} title={w.image}>{w.image || <span className="muted">—</span>}</td>
                   <td className="hide-sm muted od-nowrap">{ago(w.created_at)}</td>
-                  <td className="ta-r od-nowrap">
+                  <td className="ta-r od-nowrap hide-xs">
                     <button className="btn-icon" title="Connect" aria-label={`Connect to ${w.name}`} onClick={() => setConnecting(w)}><Icon n="plug" /></button>
                     {w.state === 'stopped'
                       ? <button className="btn-icon" title="Start" aria-label={`Start ${w.name}`} disabled={busy(w)} onClick={() => op(w, api.startWorkspace)}><Icon n="deploy" /></button>
@@ -87,6 +91,9 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                     <button className="btn-icon" title="Environment variables" aria-label={`Environment of ${w.name}`} onClick={() => setEditingEnv(w)}><Icon n="settings" /></button>
                     <button className="btn-icon" title="Rebuild (keeps the clone and $HOME)" aria-label={`Rebuild ${w.name}`} disabled={busy(w)} onClick={() => setRebuilding(w)}><Icon n="refresh" /></button>
                     <button className="btn-icon" title="Delete" aria-label={`Delete ${w.name}`} disabled={busy(w)} onClick={() => setRemoving(w)}><Icon n="trash" /></button>
+                  </td>
+                  <td className="ta-r show-xs">
+                    <button className="btn-icon" aria-label={`Actions for ${w.name}`} onClick={() => setActing(w)}><Icon n="more" /></button>
                   </td>
                 </tr>
               ))}
@@ -96,6 +103,25 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
       )}
 
       {newOpen && <NewWorkspaceModal nodes={nodes} onClose={() => setNewOpen(false)} onCreated={() => { setNewOpen(false); load(); }} />}
+      {acting && (
+        <Modal title={acting.name} sub={`${acting.node_name} · ${acting.state}`} onClose={() => setActing(null)}>
+          <div className="sheet-list">
+            {([
+              ['plug', 'Connect', () => setConnecting(acting), false],
+              acting.state === 'stopped'
+                ? ['deploy', 'Start', () => op(acting, api.startWorkspace), busy(acting)]
+                : ['x', 'Stop', () => op(acting, api.stopWorkspace), busy(acting) || acting.state !== 'running'],
+              ['settings', 'Environment variables', () => setEditingEnv(acting), false],
+              ['refresh', 'Rebuild', () => setRebuilding(acting), busy(acting)],
+              ['trash', 'Delete', () => setRemoving(acting), busy(acting)],
+            ] as [string, string, () => void, boolean][]).map(([icon, label, run, off]) => (
+              <button key={label} className={label === 'Delete' ? 'danger' : ''} disabled={off} onClick={() => { setActing(null); run(); }}>
+                <Icon n={icon} />{label}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
       {connecting && <ConnectModal w={connecting} onClose={() => setConnecting(null)} />}
       {editingEnv && <EnvModal w={editingEnv} onClose={() => setEditingEnv(null)} onSaved={() => { setEditingEnv(null); load(); }} />}
       {rebuilding && (

@@ -1,5 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { api, type SSHKey } from './api';
+import { addCustomTheme, allThemes, applyTheme, contrastWarnings, parseTheme, pick, removeCustomTheme, savedPref, type Mode, type Theme } from './theme';
 import { ago, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function SettingsPage() {
@@ -21,7 +22,9 @@ export function SettingsPage() {
 
   return (
     <>
-      <h1>Settings</h1>
+      <h1 className="sr-only">Settings</h1>
+
+      <AppearanceCard />
 
       <section className="card" aria-labelledby="keys-h">
         <div className="card-head">
@@ -95,6 +98,100 @@ function AddKeyModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =>
         <Field label="Public key" hint={<>Find it with <span className="mono">cat ~/.ssh/id_ed25519.pub</span>.</>}>
           <textarea className="input mono" rows={4} value={pub} onChange={e => setPub(e.target.value)} placeholder="ssh-ed25519 AAAA… you@laptop" />
         </Field>
+      </div>
+    </Modal>
+  );
+}
+
+const MODES: [Mode, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
+
+function AppearanceCard() {
+  const toast = useToast();
+  const [pref, setPref] = useState(savedPref);
+  const [themes, setThemes] = useState(allThemes);
+  const [importing, setImporting] = useState(false);
+
+  const choose = (id: string, mode: Mode = pref.mode) => { applyTheme(id, mode); setPref({ id, mode }); };
+  const remove = (t: Theme) => {
+    removeCustomTheme(t.id);
+    setThemes(allThemes());
+    if (pref.id === t.id) choose('walroos');
+    toast(`Theme "${t.name}" removed`);
+  };
+
+  return (
+    <section className="card" aria-labelledby="look-h">
+      <div className="card-head">
+        <div>
+          <h2 id="look-h">Appearance</h2>
+          <p className="muted">Themes fill Material 3 color roles, so any palette works. Saved in this browser.</p>
+        </div>
+        <button className="btn" onClick={() => setImporting(true)}><Icon n="upload" />Import theme</button>
+      </div>
+      <div className="card-body">
+        <div className="seg" role="group" aria-label="Light or dark">
+          {MODES.map(([m, label]) => (
+            <button key={m} aria-pressed={pref.mode === m} onClick={() => choose(pref.id, m)}>
+              {pref.mode === m && <Icon n="check" />}{label}
+            </button>
+          ))}
+        </div>
+        <div className="swatches">
+          {themes.map(t => {
+            const { scheme } = pick(t, pref.mode);
+            const modes = t.schemes.light && t.schemes.dark ? 'Light and dark' : t.schemes.dark ? 'Dark only' : 'Light only';
+            return (
+              <div key={t.id} className="swatch-wrap">
+                <button className="swatch" aria-pressed={pref.id === t.id} onClick={() => choose(t.id)}
+                  style={{ '--sw-bg': scheme.surfaceContainer ?? scheme.surface, '--sw-tx': scheme.onSurface } as React.CSSProperties}>
+                  <span className="swatch-chips" aria-hidden="true">
+                    {[scheme.primary, scheme.secondaryContainer ?? scheme.primaryContainer, scheme.success, scheme.error].filter(Boolean)
+                      .map((c, i) => <i key={i} style={{ background: c }} />)}
+                  </span>
+                  <span className="swatch-name">{pref.id === t.id && <Icon n="check" />}{t.name}</span>
+                  <span className="swatch-sub">{t.custom ? 'Imported · ' : ''}{modes}</span>
+                </button>
+                {t.custom && <button className="btn-icon" aria-label={`Remove ${t.name}`} title="Remove theme" onClick={() => remove(t)}><Icon n="trash" /></button>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {importing && <ImportThemeModal onClose={() => setImporting(false)}
+        onImported={t => { addCustomTheme(t); setThemes(allThemes()); choose(t.id); setImporting(false); toast(`Theme "${t.name}" added`); }} />}
+    </section>
+  );
+}
+
+function ImportThemeModal({ onClose, onImported }: { onClose: () => void; onImported: (t: Theme) => void }) {
+  const [name, setName] = useState('');
+  const [json, setJson] = useState('');
+  const parsed = useMemo(() => {
+    if (!json.trim()) return null;
+    try { const t = parseTheme(json, name); return { t, warnings: contrastWarnings(t) }; }
+    catch (e) { return { error: (e as Error).message }; }
+  }, [json, name]);
+
+  const readFile = (f?: File) => f?.text().then(text => { setJson(text); if (!name) setName(f.name.replace(/\.json$/i, '')); });
+
+  return (
+    <Modal title="Import theme" wide onClose={onClose}
+      sub="Paste or pick the JSON that Material Theme Builder exports. Roles it leaves out are derived from the ones it has."
+      foot={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={!parsed || !('t' in parsed)} onClick={() => parsed && 't' in parsed && parsed.t && onImported(parsed.t)}>Import</button>
+      </>}>
+      <div className="form">
+        <Field label="Name"><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Catppuccin Frappé" autoFocus /></Field>
+        <Field label="Theme JSON" hint={<>Needs <span className="mono">schemes.light</span> and/or <span className="mono">schemes.dark</span> with at least primary, onPrimary, surface and onSurface. <a className="link" href="https://material-foundation.github.io/material-theme-builder/" target="_blank" rel="noreferrer">Material Theme Builder</a> exports this.</>}>
+          <textarea className="input mono" rows={8} value={json} onChange={e => setJson(e.target.value)} placeholder='{"schemes": {"dark": {"primary": "#CBA6F7", "onPrimary": "#11111B", "surface": "#1E1E2E", "onSurface": "#CDD6F4"}}}' />
+        </Field>
+        <div><label className="btn"><Icon n="upload" />Pick a .json file<input type="file" accept=".json,application/json" hidden onChange={e => readFile(e.target.files?.[0])} /></label></div>
+        {parsed && 'error' in parsed && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Can't use this JSON</strong><span className="muted">{parsed.error}</span></div></div>}
+        {parsed && 'warnings' in parsed && parsed.warnings && parsed.warnings.length > 0 && (
+          <div className="alert alert-busy"><Icon n="alert" /><div className="alert-text"><strong>Some text may be hard to read</strong>
+            <span className="muted">Below WCAG AA (4.5:1): {parsed.warnings.join('; ')}. You can import it anyway.</span></div></div>
+        )}
       </div>
     </Modal>
   );

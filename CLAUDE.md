@@ -42,16 +42,18 @@ index.html (root)       Open Design prototype the UI is ported from; reference f
 - **Tokens** are random and only their sha256 is stored. Prefixes: `wlr_join_*`, `wlr_node_*`.
 - **Podman** goes through the CLI (`exec.Command("podman", ...)`). The podman/v4 Go bindings don't build on Windows and were removed.
 - **UI:**
-  - Plain CSS with tokens in `web/src/styles.css`. No Tailwind.
-  - Reuse components from `web/src/ui.tsx` (Modal, Cmd, CopyBtn, Badge, Meter, EmptyState, usePoll, toasts).
-  - Port new screens from the prototype `index.html`.
-  - Check every change at mobile width (no horizontal scroll) and in both themes.
+  - Material 3 look, plain CSS in `web/src/styles.css`. No Tailwind, no MUI or `@material/web`.
+  - Colors are only M3 roles (`--md-*`, via the aliases at the top of `styles.css`), never a hex: themes swap them.
+  - Themes live in `web/src/theme.ts`: presets (Walroos, Catppuccin, Dracula, Aura) plus imported Material Theme Builder JSON. Presets must pass `contrastWarnings` (WCAG AA).
+  - Reuse components from `web/src/ui.tsx` (Modal, Confirm, Field, Cmd, CopyBtn, Badge, Meter, EmptyState, usePoll, toasts). On phones, modals are bottom sheets and row actions go in a ⋮ sheet.
+  - Port new screens from the prototype `index.html`, restyled to M3.
+  - Check every change at mobile width (no horizontal scroll), in light and dark, and with a non-default theme.
 - **Commits:** conventional style (`feat:`, `fix:` …). Work on a branch, not `main`.
 
 ## Brand
 
 - **Magenta is the primary color.** Brand magenta is `#E3337C`.
-- **UI accent:** dark theme `--ac: #EE5A96` (text on it `#1A0510`), light theme `--ac: #C21F65` (white text). Both are WCAG AA.
+- **Default theme (Walroos):** dark `primary #EE5A96` (text on it `#1A0510`), light `primary #C21F65` (white text). Both are WCAG AA. Other themes change the accent; the logo stays magenta.
 - **Logo:** a cute flat baby walrus, three-quarter view, head tilted. The SVGs live in `web/public/`.
 - **Don't redo the logo** without being asked. It went through many rejected attempts: single-color silhouettes and negative-space faces read as skulls.
 
