@@ -141,8 +141,8 @@ trigger (webhook | botón UI | API | MCP)
 
 - **Cola**: tabla `deployments` y una goroutine worker en el hub. No hace falta un broker. El techo es un worker por hub; se paraleliza por nodo cuando duela.
 - **Build en el nodo con rol `build` + registry en ese mismo nodo** (v1, porque el setup real separa build y prod).
-  - El nodo de build corre un contenedor `registry` (distribution), escuchando solo en la tailnet (`<build-node>:5000`).
-  - Flujo: `podman build` → `podman push <build-node>:5000/<app>:<sha>` → el agente de prod hace `podman pull`.
+  - El nodo de build corre un contenedor `registry` (distribution) en `127.0.0.1:7075`. El agente lo expone en la tailnet (`<build-node>:5000`), solo para pulls y con un token HMAC por app.
+  - Flujo: `podman build` → `podman push` al registry local → el agente de prod hace `podman pull` por un proxy local que marca por tsnet.
   - Si no hay ningún nodo `build`, se construye en el nodo destino y no se usa registry.
 - **Runtime = Podman Quadlet** (`~/.config/containers/systemd/<app>.container`). systemd reinicia, arranca en boot y gestiona logs con journald. Es lo nativo de Podman, no un supervisor propio. Requiere `loginctl enable-linger`.
 - **Rollback** = reescribir el Quadlet con la imagen `:<sha>` anterior. Se mantienen las N últimas imágenes.

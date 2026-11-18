@@ -161,7 +161,7 @@ Ya estaba bien: `Dockerfile` symlink fuera del repo, `dockerfile: ../../etc/pass
 
 Límite conocido: si el hub muere sin cerrar la conexión (tsnet no manda FIN), el nodo termina el deploy por su cuenta y el hub lo marca `failed` al arrancar. La release viva del nodo es la verdad; M3.3 la mostrará.
 
-Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), nodo `build` + registry (M3.4), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
+Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
 
 ## M3.3 — UI y MCP de apps ✅ (2026-11-18)
 
@@ -187,11 +187,39 @@ Probado:
 
 Para iterar la UI contra otro hub: `WALROOS_API=http://127.0.0.1:9080 bun run dev`.
 
+## M3.4 — Nodo build + registry ✅ (2026-11-18)
+
+Si hay un nodo `build` online y el destino no tiene ese rol, el deploy va en dos fases. Si no, el destino construye como antes.
+1. El hub llama a `POST /v1/apps/{name}/build` en el nodo build. Ese nodo clona, construye y hace `podman push` a su registry. No recibe las variables: son de la app corriendo.
+2. El hub llama al deploy del nodo prod con `pull` y `pull_token`. El nodo prod hace el pull, retaguea a `localhost/walroos-app-<app>:<sha12>` y sigue igual: Quadlet, health check, swap.
+
+Detalles:
+- **Registry**:
+  - Contenedor `walroos-registry` (`registry:2`) con red host, atado a `127.0.0.1:7075`, volumen `walroos-registry`.
+  - Se arranca en el primer build. Red host porque el port forwarding rootless necesita NAT que WSL no tiene.
+- **Tailnet**:
+  - Cada agente escucha `:5000` en tsnet. Solo pasa GET/HEAD de `/v2/walroos-app-<app>/{manifests,blobs}/<ref>`.
+  - Exige un token `HMAC(token_hash del nodo build, app)`. El hub y el nodo build lo calculan sin guardar nada. El token no llega al registry.
+- **Pull en prod**: el podman del host no ve la tailnet (tsnet vive en el proceso). Por eso el agente abre un proxy efímero en `127.0.0.1:<random>`, que marca al nodo build por tsnet y pone el token. El tag `127.0.0.1:<port>/...` se borra después.
+- **Rollback**: usa la imagen que ya está en prod, sin build ni pull.
+- **Logs**: el log del deployment junta las dos fases ("building on X" … "deploying on Y").
+
+Límites (`ponytail:`):
+- El registry no hace GC: cada build suma solo sus capas propias.
+- El token no expira, pero sirve solo para las imágenes de esa app.
+- Con un nodo build caído se construye en el destino sin avisar.
+
+Probado:
+- Hub con agentes falsos: orden de las llamadas, sin env en el build, `pull`/`pull_token` correctos, rollback sin build, un build fallido no llega a prod, y un nodo `build,prod` construye para sí.
+- Handler del registry: token de otra app, `tags/list`, `..`, `%2F` y PUT rechazados.
+- Podman real en WSL: build, push a `registry:2`, `rmi` local, pull por el handler con token malo (falla) y bueno (live), sin tags sobrantes.
+- No probado de punta a punta con dos nodos reales: hay uno solo.
+
 ## Después
 
 | Hito | Resumen |
 |---|---|
-| M3 Deploy | Resto: Cloudflare Tunnel (M3.2), build + registry en el nodo `build` (M3.4). |
+| M3 Deploy | Resto: Cloudflare Tunnel (M3.2). |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 

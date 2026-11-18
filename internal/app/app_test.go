@@ -30,13 +30,28 @@ type fakeAgent struct {
 	fail    string
 	busy    bool // DELETE answers 409, as while a deploy runs
 	deleted []string
+	calls   []string // "<host> <op>" of each build and deploy
+	builds  []agent.AppSpec
 }
 
 func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/build"):
+		var spec agent.AppSpec
+		json.NewDecoder(r.Body).Decode(&spec)
+		f.builds = append(f.builds, spec)
+		f.calls = append(f.calls, r.Host+" build")
+		enc := json.NewEncoder(w)
+		enc.Encode(agent.DeployLine{Log: "pushing"})
+		if f.fail != "" {
+			enc.Encode(agent.DeployLine{Error: f.fail})
+			return
+		}
+		enc.Encode(agent.DeployLine{Release: &agent.Release{Sha: "abc1234567890", Image: "localhost/walroos-app-" + spec.Name + ":abc123456789"}})
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/deploy"):
+		f.calls = append(f.calls, r.Host+" deploy")
 		var spec agent.AppSpec
 		json.NewDecoder(r.Body).Decode(&spec)
 		f.specs = append(f.specs, spec)
@@ -74,6 +89,7 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 type hub struct {
 	http  http.Handler
 	agent *fakeAgent
+	db    *config.Database
 }
 
 func newHub(t *testing.T, roles string) *hub {
@@ -112,7 +128,7 @@ func newHub(t *testing.T, roles string) *hub {
 		r.Use(auth.Middleware(auth.Static("owner@github"), users))
 		app.NewHandler(svc).Routes(r)
 	})
-	return &hub{http: r, agent: fa}
+	return &hub{http: r, agent: fa, db: db}
 }
 
 func (h *hub) call(t *testing.T, method, path string, body, out any) int {
@@ -262,5 +278,54 @@ func TestAppErrors(t *testing.T) {
 	}
 	if code := dev.call(t, "POST", "/api/apps", app.CreateInput{Name: "web", RepoURL: "https://x/y", Port: 80, Node: "prod-1"}, nil); code != 409 {
 		t.Errorf("node without prod role: %d", code)
+	}
+}
+
+// With a build node, the build runs there and the prod node pulls it from its registry.
+func TestAppBuildNode(t *testing.T) {
+	h := newHub(t, "prod")
+	now := time.Now().UTC()
+	if _, err := h.db.Write.Exec(`INSERT INTO nodes (id, name, roles, token_hash, address, created_at, last_seen)
+		VALUES ('b1', 'builder', 'build', 'hb', '100.64.0.9', ?, ?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	h.call(t, "POST", "/api/apps", app.CreateInput{Name: "web", RepoURL: "https://example.com/web.git", Port: 8000}, nil)
+	h.call(t, "PUT", "/api/apps/web/env", []map[string]any{{"key": "DB_URL", "value": "postgres://x"}}, nil)
+
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{}, &d)
+	v1 := h.wait(t, "web", d.ID)
+	if v1.State != "succeeded" || v1.Log != "building on builder\npushing\ndeploying on prod-1\nbuilding web\nhealth check: 200\n" {
+		t.Fatalf("v1 = %+v", v1)
+	}
+	if strings.Join(h.agent.calls, ",") != "100.64.0.9:7070 build,100.64.0.1:7070 deploy" {
+		t.Fatalf("calls = %v", h.agent.calls)
+	}
+	if b := h.agent.builds[0]; b.Env != nil || b.RepoURL != "https://example.com/web.git" || b.Pull != "" {
+		t.Errorf("build spec = %+v", b) // secrets are for the running app, not the build node
+	}
+	if p := h.agent.specs[0]; p.Pull != "100.64.0.9:5000" || p.PullToken != agent.PullToken("hb", "web") || p.Sha != "abc1234567890" || len(p.Env) != 1 {
+		t.Errorf("deploy spec = %+v", p)
+	}
+
+	// Rollback runs the image already on the prod node: no build.
+	h.call(t, "POST", "/api/apps/web/deployments/"+v1.ID+"/rollback", nil, &d)
+	if back := h.wait(t, "web", d.ID); back.State != "succeeded" || len(h.agent.builds) != 1 || h.agent.specs[1].Pull != "" {
+		t.Fatalf("rollback = %+v, builds %d", back, len(h.agent.builds))
+	}
+
+	// A failed build never reaches the prod node.
+	h.agent.fail = "podman build: exit 1"
+	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{}, &d)
+	if bad := h.wait(t, "web", d.ID); bad.State != "failed" || bad.Error != "build on builder: podman build: exit 1" || len(h.agent.specs) != 2 {
+		t.Fatalf("failed build = %+v, deploys %d", bad, len(h.agent.specs))
+	}
+
+	// A prod node that also builds builds for itself.
+	h.db.Write.Exec(`UPDATE nodes SET roles = 'build,prod' WHERE id = 'n1'`)
+	h.agent.fail = ""
+	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{}, &d)
+	if h.wait(t, "web", d.ID); len(h.agent.builds) != 2 || h.agent.specs[2].Pull != "" {
+		t.Fatalf("builds %d, spec %+v", len(h.agent.builds), h.agent.specs[2])
 	}
 }
