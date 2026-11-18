@@ -16,6 +16,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/web"
 	"github.com/jefjesuswt/walroos/internal/workspace"
@@ -129,7 +130,11 @@ and --owner with your tailnet login so you can use the UI.
 		fleetSvc := fleet.NewService(fleet.NewStore(db))
 		fleetHandler := fleet.NewHandler(fleetSvc, hubURL, hubID, agents)
 		keysHandler := sshkeys.NewHandler(sshkeys.NewStore(db), fleetSvc.Authenticate)
-		wsSvc := workspace.NewService(workspace.NewStore(db), fleetSvc, agents)
+		box, err := secretbox.LoadOrCreate(filepath.Join(dataDir, "secret.key"))
+		if err != nil {
+			return ui.WrapError("workspace env key: %w", err)
+		}
+		wsSvc := workspace.NewService(workspace.NewStore(db), fleetSvc, agents, box)
 		wsHandler := workspace.NewHandler(wsSvc)
 
 		router := whttp.NewRouter()
