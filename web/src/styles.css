@@ -140,11 +140,11 @@ code { font-size: .92em; }
 .ico-t { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
 /* ---------- shell ---------- */
-.app { display: grid; grid-template-columns: var(--sb) minmax(0, 1fr); min-height: 100vh; }
+.app { display: grid; grid-template-columns: var(--sb) minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; }
 body.sb-collapsed .app { grid-template-columns: var(--sb-c) minmax(0, 1fr); }
 
 .sidebar {
-  position: sticky; top: 0; height: 100vh;
+  position: sticky; top: 0; height: 100vh; height: 100dvh;
   display: flex; flex-direction: column; gap: var(--sp2);
   padding: var(--sp3);
   background: var(--s1);
@@ -733,7 +733,7 @@ body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0;
   .tbl td.show-xs { padding-right: var(--sp1); }
   /* dialogs are bottom sheets on phones */
   .ov-modal { align-items: flex-end; padding: var(--sp10) 0 0; }
-  .modal, .modal.wide { max-width: none; border-radius: var(--r4) var(--r4) 0 0; max-height: 92vh; overflow-y: auto; animation: sheet var(--dur) var(--ease-out); }
+  .modal, .modal.wide { max-width: none; border-radius: var(--r4) var(--r4) 0 0; max-height: 92vh; max-height: 92dvh; overflow-y: auto; animation: sheet var(--dur) var(--ease-out); }
   .modal::before { content: ''; display: block; width: 32px; height: 4px; margin: var(--sp4) auto 0; border-radius: 2px; background: color-mix(in srgb, var(--tx2) 40%, transparent); }
   .m-head { padding-top: var(--sp4); }
   .m-foot { position: sticky; bottom: 0; background: var(--s3); padding-top: var(--sp3); }
