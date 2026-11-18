@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api, type EnvVar, type Node, type Workspace } from './api';
-import { ago, Badge, Cmd, CopyBtn, EmptyState, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
   const toast = useToast();
@@ -99,21 +99,18 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
       {connecting && <ConnectModal w={connecting} onClose={() => setConnecting(null)} />}
       {editingEnv && <EnvModal w={editingEnv} onClose={() => setEditingEnv(null)} onSaved={() => { setEditingEnv(null); load(); }} />}
       {rebuilding && (
-        <Modal title={`Rebuild ${rebuilding.name}?`} onClose={() => setRebuilding(null)}
-          foot={<><button className="btn" onClick={() => setRebuilding(null)}>Cancel</button>
-            <button className="btn btn-primary" autoFocus onClick={() => {
-              const w = rebuilding; setRebuilding(null);
-              api.rebuildWorkspace(w.name).then(() => { toast(`${w.name} is rebuilding`); load(); }, e => toast(e.message, 'bad'));
-            }}>Rebuild</button></>}>
+        <Confirm title={`Rebuild ${rebuilding.name}?`} confirmLabel="Rebuild" onClose={() => setRebuilding(null)}
+          onConfirm={() => {
+            const w = rebuilding; setRebuilding(null);
+            api.rebuildWorkspace(w.name).then(() => { toast(`${w.name} is rebuilding`); load(); }, e => toast(e.message, 'bad'));
+          }}>
           <p className="muted">The container and any image built from the repo are recreated; a changed <span className="mono">devcontainer.json</span> or a new base image is picked up. The clone and <span className="mono">$HOME</span> (mise runtimes, <span className="mono">~/.claude</span>, caches) stay.</p>
-        </Modal>
+        </Confirm>
       )}
       {removing && (
-        <Modal title={`Delete ${removing.name}?`} onClose={() => setRemoving(null)}
-          foot={<><button className="btn" onClick={() => setRemoving(null)}>Cancel</button>
-            <button className="btn btn-danger" autoFocus onClick={() => remove(removing)}>Delete workspace</button></>}>
+        <Confirm title={`Delete ${removing.name}?`} confirmLabel="Delete workspace" danger onClose={() => setRemoving(null)} onConfirm={() => remove(removing)}>
           <p className="muted">This removes the container <strong>and</strong> its volumes: the clone and everything in <span className="mono">$HOME</span> (mise runtimes, <span className="mono">~/.claude</span>, caches). It can't be undone.</p>
-        </Modal>
+        </Confirm>
       )}
     </>
   );
@@ -152,30 +149,26 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
       </>}>
       {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't create it</strong><span className="muted">{error}</span></div></div>}
       <div className="form">
-        <label className="field"><span className="label">Name</span>
+        <Field label="Name" hint={<>DNS label. It's also the SSH user: <span className="mono">{name || 'myproject'}.walroos</span>.</>}>
           <input className="input mono" value={name} onChange={e => setName(e.target.value)} placeholder="myproject" autoFocus />
-          <span className="help">DNS label. It's also the SSH user: <span className="mono">{name || 'myproject'}.walroos</span>.</span>
-        </label>
-        <label className="field"><span className="label">Repository</span>
+        </Field>
+        <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read.">
           <input className="input mono" value={repo} onChange={e => setRepo(e.target.value)} placeholder="git@github.com:me/app.git" />
-          <span className="help">The node clones with its own git: public repos, or ones its SSH agent can read.</span>
-        </label>
+        </Field>
         <div className="field-row">
-          <label className="field"><span className="label">Branch <span className="muted">(optional)</span></span>
+          <Field label={<>Branch <span className="muted">(optional)</span></>}>
             <input className="input mono" value={branch} onChange={e => setBranch(e.target.value)} placeholder="default branch" />
-          </label>
-          <label className="field"><span className="label">Node</span>
+          </Field>
+          <Field label="Node" hint={dev.length === 0 ? <span style={{ color: 'var(--bad)' }}>No online node with the dev role.</span> : undefined}>
             <select className="input" value={node} onChange={e => setNode(e.target.value)}>
               <option value="">Auto (least loaded)</option>
               {dev.map(n => <option key={n.id} value={n.name}>{n.name}</option>)}
             </select>
-            {dev.length === 0 && <span className="help" style={{ color: 'var(--bad)' }}>No online node with the dev role.</span>}
-          </label>
+          </Field>
         </div>
-        <label className="field"><span className="label">devcontainer.json <span className="muted">(optional)</span></span>
+        <Field label={<>devcontainer.json <span className="muted">(optional)</span></>} hint="Leave empty to use the standard location, or the base image if the repo has none.">
           <input className="input mono" value={dcPath} onChange={e => setDcPath(e.target.value)} placeholder=".devcontainer/devcontainer.json" />
-          <span className="help">Leave empty to use the standard location, or the base image if the repo has none.</span>
-        </label>
+        </Field>
       </div>
     </Modal>
   );
@@ -184,7 +177,7 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
 function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
   const alias = `${w.name}.walroos`;
   return (
-    <Modal title={`Connect to ${w.name}`} wide onClose={onClose} foot={<button className="btn" onClick={onClose}>Close</button>}>
+    <Modal title={`Connect to ${w.name}`} wide onClose={onClose}>
       <div className="form">
         <div className="field">
           <span className="label">1 · SSH config, once per machine</span>
@@ -216,7 +209,7 @@ function EnvModal({ w, onClose, onSaved }: { w: Workspace; onClose: () => void; 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  usePoll(() => { api.workspaceEnv(w.name).then(setVars, e => setError(e.message)); }, 60000);
+  useEffect(() => { api.workspaceEnv(w.name).then(setVars, e => setError(e.message)); }, [w.name]); // once: a poll would overwrite what you're typing
 
   const set = (i: number, patch: Partial<EnvVar>) => setVars(vs => (vs ?? []).map((v, j) => j === i ? { ...v, ...patch } : v));
   const save = () => {
