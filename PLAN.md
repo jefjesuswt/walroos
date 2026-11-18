@@ -91,6 +91,10 @@ Notas de uso (para el README cuando haya flujo completo):
 Decisiones abiertas de M1:
 - Podman por CLI (como en M0) o por la API REST del socket. Default: seguir con CLI hasta que duela.
 
+## Siguiente tanda — detección de stack
+
+Plan completo en [docs/devcontainer-detection.md](docs/devcontainer-detection.md): detectar el stack del repo (bun/node, dotnet, android, go, rust, python), generar un `devcontainer.json` y dejar que la UI ajuste las herramientas, con el origen de cada una (`image` o `postCreate`). El JSON va en línea en el spec, así el repo no se ensucia. Incluye la receta de Android ya probada con droid.
+
 ## Después
 
 | Hito | Resumen |
