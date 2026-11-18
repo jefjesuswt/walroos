@@ -18,6 +18,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/web"
+	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 	"github.com/spf13/cobra"
@@ -128,6 +129,8 @@ and --owner with your tailnet login so you can use the UI.
 		fleetSvc := fleet.NewService(fleet.NewStore(db))
 		fleetHandler := fleet.NewHandler(fleetSvc, hubURL, hubID, agents)
 		keysHandler := sshkeys.NewHandler(sshkeys.NewStore(db), fleetSvc.Authenticate)
+		wsSvc := workspace.NewService(workspace.NewStore(db), fleetSvc, agents)
+		wsHandler := workspace.NewHandler(wsSvc)
 
 		router := whttp.NewRouter()
 		router.Use(withLogger, withRecoverer)
@@ -138,6 +141,7 @@ and --owner with your tailnet login so you can use the UI.
 			r.Get("/api/me", auth.HandleMe)
 			fleetHandler.UserRoutes(r)
 			keysHandler.UserRoutes(r)
+			wsHandler.Routes(r)
 		})
 		router.Get("/", web.Handler())
 

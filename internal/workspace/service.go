@@ -1,0 +1,226 @@
+package workspace
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"regexp"
+	"slices"
+	"time"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/fleet"
+)
+
+// Service picks a node, calls its agent and keeps the row. It never talks to podman: the node does.
+type Service struct {
+	store  *Store
+	nodes  *fleet.Service
+	agents *agent.Client
+	now    func() time.Time
+}
+
+func NewService(store *Store, nodes *fleet.Service, agents *agent.Client) *Service {
+	return &Service{store: store, nodes: nodes, agents: agents, now: time.Now}
+}
+
+var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// Create picks a dev node, asks its agent to create the workspace and stores the row.
+// The agent answers 202; the workspace becomes running (or failed) in the background.
+func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Workspace, error) {
+	if !nameRe.MatchString(in.Name) || in.RepoURL == "" {
+		return Workspace{}, ErrInvalid
+	}
+
+	node, err := s.pickNode(ctx, in.Node)
+	if err != nil {
+		return Workspace{}, err
+	}
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, node.ID)
+	if err != nil {
+		return Workspace{}, err
+	}
+
+	ws, err := s.agents.CreateWorkspace(ctx, address, tokenHash, agent.WorkspaceSpec{
+		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath,
+	})
+	if err != nil {
+		return Workspace{}, agentErr(err, "create")
+	}
+
+	w := Workspace{
+		ID: randomID(), Name: in.Name, Owner: owner, NodeID: node.ID, NodeName: node.Name,
+		RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath,
+		Image: ws.Image, State: orDefault(ws.State, "creating"), Error: ws.Error, CreatedAt: s.now().UTC(),
+	}
+	if err := s.store.Insert(ctx, w); err != nil {
+		// The node has it but the hub can't record it: remove it rather than leave an orphan.
+		if derr := s.agents.DeleteWorkspace(ctx, address, tokenHash, in.Name); derr != nil {
+			slog.Error("workspace created but not recorded, and cleaning up failed", "workspace", in.Name, "node", node.Name, "err", derr)
+		}
+		return Workspace{}, err
+	}
+	return w, nil
+}
+
+// pickNode returns the requested node (name or id) if it can run workspaces, else the online
+// dev node with the fewest workspaces.
+func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
+	nodes, err := s.nodes.List(ctx)
+	if err != nil {
+		return fleet.Node{}, err
+	}
+	dev := func(n fleet.Node) bool { return slices.Contains(n.Roles, "dev") }
+
+	if want != "" {
+		for _, n := range nodes {
+			if n.ID == want || n.Name == want {
+				if !dev(n) {
+					return fleet.Node{}, ErrNodeRole
+				}
+				return n, nil
+			}
+		}
+		return fleet.Node{}, fleet.ErrNodeNotFound
+	}
+
+	usage, err := s.store.nodeUsage(ctx)
+	if err != nil {
+		return fleet.Node{}, err
+	}
+	var best *fleet.Node
+	for i, n := range nodes {
+		if !dev(n) || n.Status != "online" {
+			continue
+		}
+		if best == nil || usage[n.ID] < usage[best.ID] {
+			best = &nodes[i]
+		}
+	}
+	if best == nil {
+		return fleet.Node{}, ErrNoNode
+	}
+	return *best, nil
+}
+
+// List returns the rows, refreshed from their agents so a workspace that finished creating
+// (or failed) shows its real state. ponytail: one call per row; fine for one user's handful.
+func (s *Service) List(ctx context.Context) ([]Workspace, error) {
+	list, err := s.store.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		if ws, err := s.refresh(ctx, list[i]); err == nil {
+			list[i] = ws
+		}
+	}
+	return list, nil
+}
+
+func (s *Service) Get(ctx context.Context, name string) (Workspace, error) {
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return w, err
+	}
+	if fresh, err := s.refresh(ctx, w); err == nil {
+		return fresh, nil
+	}
+	return w, nil // agent unreachable: the last known row is still worth showing
+}
+
+// refresh asks the node for the live state and stores it when it changed.
+func (s *Service) refresh(ctx context.Context, w Workspace) (Workspace, error) {
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, w.NodeID)
+	if err != nil {
+		return w, err
+	}
+	ws, err := s.agents.GetWorkspace(ctx, address, tokenHash, w.Name)
+	if err != nil {
+		return w, err
+	}
+	if ws.State == w.State && ws.Image == w.Image && ws.Error == w.Error {
+		return w, nil
+	}
+	if err := s.store.UpdateState(ctx, w.ID, ws.State, ws.Image, ws.Error); err != nil {
+		return w, err
+	}
+	w.State, w.Image, w.Error = ws.State, ws.Image, ws.Error
+	return w, nil
+}
+
+func (s *Service) Start(ctx context.Context, name string) (Workspace, error) {
+	return s.op(ctx, name, s.agents.StartWorkspace)
+}
+
+func (s *Service) Stop(ctx context.Context, name string) (Workspace, error) {
+	return s.op(ctx, name, s.agents.StopWorkspace)
+}
+
+func (s *Service) op(ctx context.Context, name string,
+	call func(context.Context, string, string, string) (agent.Workspace, error)) (Workspace, error) {
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return w, err
+	}
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, w.NodeID)
+	if err != nil {
+		return w, err
+	}
+	ws, err := call(ctx, address, tokenHash, name)
+	if err != nil {
+		return w, agentErr(err, name)
+	}
+	if err := s.store.UpdateState(ctx, w.ID, ws.State, ws.Image, ws.Error); err != nil {
+		return w, err
+	}
+	w.State, w.Image, w.Error = ws.State, ws.Image, ws.Error
+	return w, nil
+}
+
+// Delete removes the container and volumes on the node, then the row. A workspace the agent
+// doesn't know (already deleted there) is removed from the hub too.
+func (s *Service) Delete(ctx context.Context, name string) error {
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, w.NodeID)
+	if err != nil {
+		return err
+	}
+	if err := s.agents.DeleteWorkspace(ctx, address, tokenHash, name); err != nil {
+		var ae *agent.AgentError
+		if !errors.As(err, &ae) || ae.Status != 404 {
+			return agentErr(err, name)
+		}
+	}
+	return s.store.Delete(ctx, w.ID)
+}
+
+// agentErr turns an agent's answer into an error the handlers can map to a status.
+func agentErr(err error, what string) error {
+	var ae *agent.AgentError
+	if errors.As(err, &ae) {
+		switch ae.Status {
+		case 400:
+			return ErrInvalid
+		case 404:
+			return ErrNotFound
+		case 409:
+			if ae.Msg == "workspace already exists on this node" {
+				return ErrExists
+			}
+			return ErrAgentBusy
+		}
+	}
+	return err
+}
+
+func orDefault(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}

@@ -12,6 +12,9 @@ import (
 	"github.com/jefjesuswt/walroos/config"
 )
 
+// ErrNodeHasWorkspaces: foreign keys keep a node's workspaces from being orphaned.
+var ErrNodeHasWorkspaces = errors.New("the node still has workspaces; delete them first")
+
 type Store struct {
 	db *config.Database
 }
@@ -128,6 +131,9 @@ func (s *Store) List(ctx context.Context) ([]Node, error) {
 func (s *Store) Delete(ctx context.Context, id string) error {
 	res, err := s.db.Write.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, id)
 	if err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY constraint failed") {
+			return ErrNodeHasWorkspaces
+		}
 		return fmt.Errorf("delete node: %w", err)
 	}
 	if rows, _ := res.RowsAffected(); rows == 0 {
