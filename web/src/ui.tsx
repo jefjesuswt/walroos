@@ -18,6 +18,9 @@ const P: Record<string, string> = {
   refresh: '<path d="M20 11A8 8 0 0 0 5.6 6.6L3 9M3 4v5h5M4 13a8 8 0 0 0 14.4 4.4L21 15M21 20v-5h-5"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
   alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.5-.8 1.5-1.5 0-.9-.7-1.2-.7-2 0-.8.7-1.5 1.5-1.5H17a4 4 0 0 0 4-4c0-5-4-9-9-9Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>',
+  more: '<circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>',
 };
 
 export const Icon = ({ n, cls = '' }: { n: string; cls?: string }) => (
@@ -26,7 +29,7 @@ export const Icon = ({ n, cls = '' }: { n: string; cls?: string }) => (
 
 export const Logo = () => <img src="/favicon.svg" alt="" width={24} height={24} />;
 
-const ST: Record<string, string> = { online: 'ok', running: 'ok', pending: 'busy', offline: 'bad', failed: 'bad', stopped: 'idle' };
+const ST: Record<string, string> = { online: 'ok', running: 'ok', pending: 'busy', creating: 'busy', deleting: 'busy', offline: 'bad', failed: 'bad', stopped: 'idle' };
 export const Badge = ({ s, label = s }: { s: string; label?: string }) => (
   <span className={`badge s-${ST[s] || 'idle'}`}><span className="dot" aria-hidden="true" />{label}</span>
 );
@@ -156,8 +159,12 @@ export function Field({ label, hint, children }: { label: ReactNode; hint?: Reac
   );
 }
 
+// Empty states show the mascot; only problems get an icon.
 export const EmptyState = ({ icon, title, text, action }: { icon: string; title: string; text: string; action?: ReactNode }) => (
-  <div className="state"><Icon n={icon} cls="ic-lg" /><h3>{title}</h3><p className="muted">{text}</p>{action}</div>
+  <div className="state">
+    {icon === 'alert' ? <Icon n="alert" cls="ic-lg" /> : <img className="mascot" src="/mascot.svg" alt="" width={112} height={112} />}
+    <h3>{title}</h3><p className="muted">{text}</p>{action}
+  </div>
 );
 
 export function ago(iso: string | null): string {

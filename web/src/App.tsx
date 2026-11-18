@@ -19,7 +19,20 @@ const NAV = [
 // ponytail: hash routing, one level deep; add a router when pages get ids and tabs (M1)
 const currentRoute = () => location.hash.replace(/^#\/?/, '').split('/')[0] || 'nodes';
 
+// Sidebar width: drag the edge (or arrow keys on it). Under SB_SNAP it collapses to the icon rail.
+const SB_MIN = 200, SB_MAX = 420, SB_SNAP = 140, SB_DEFAULT = 264;
+function setSidebar(x: number): number {
+  const collapsed = x < SB_SNAP, w = Math.round(Math.min(SB_MAX, Math.max(SB_MIN, x)));
+  document.body.classList.toggle('sb-collapsed', collapsed);
+  if (!collapsed) document.body.style.setProperty('--sb', `${w}px`); // not <html>: applyTheme owns its inline style
+  try { localStorage.setItem('walroos-sb', String(collapsed ? 0 : w)); } catch { /* won't stick, fine */ }
+  return collapsed ? 0 : w;
+}
+const savedSidebar = () => { try { return Number(localStorage.getItem('walroos-sb') ?? SB_DEFAULT); } catch { return SB_DEFAULT; } };
+
 export function App() {
+  const [sb, setSb] = useState(() => setSidebar(savedSidebar()));
+  const resize = (x: number) => setSb(setSidebar(x));
   const [route, setRoute] = useState(currentRoute);
   const [me, setMe] = useState<User | null>(null);
   const [authError, setAuthError] = useState('');
@@ -70,6 +83,15 @@ export function App() {
             </span>
           </div>
         )}
+        <div className="sb-resize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabIndex={0}
+          aria-valuemin={0} aria-valuemax={SB_MAX} aria-valuenow={sb} title="Drag to resize, double-click to reset"
+          onPointerDown={e => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerMove={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) resize(e.clientX); }}
+          onDoubleClick={() => resize(SB_DEFAULT)}
+          onKeyDown={e => {
+            if (e.key === 'ArrowRight') resize(sb ? sb + 16 : SB_MIN);
+            else if (e.key === 'ArrowLeft') resize(sb - 16 < SB_MIN ? 0 : sb - 16);
+          }} />
       </aside>
       <div className="scrim" onClick={() => setDrawer(false)} />
       <div className="main">

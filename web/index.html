@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,11 +8,12 @@
   <!-- ponytail: Google Fonts like the prototype; falls back to system fonts offline. Self-host if that matters. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script>
+    // The last applied theme (src/theme.ts), so the first paint already has its colors.
     try {
-      var t = localStorage.getItem('walroos-theme');
-      if (t) document.documentElement.dataset.theme = t;
+      var css = localStorage.getItem('walroos-theme-css');
+      if (css) document.documentElement.style.cssText = css;
     } catch (e) {}
   </script>
 </head>
