@@ -268,7 +268,7 @@ El diseño visual se hace con Open Design a partir de estas pantallas.
 | Hito | Entrega | Prueba de "hecho" |
 |---|---|---|
 | **M0 Base** ✅ | join por token de un solo uso, heartbeat con telemetría, migraciones, auth con Tailscale (WhoIs + allowlist), UI React embebida con la página de nodos | la UI lista nodos con telemetría en vivo |
-| **M1 Workspaces** | crear desde repo + subconjunto de devcontainer, volúmenes, SSH gateway, `ssh-config` | desde la laptop, `ssh proyecto.walroos` y `claude` corre dentro sin nada instalado localmente |
+| **M1 Workspaces** ✅ | crear desde repo + subconjunto de devcontainer, volúmenes, SSH gateway, `ssh-config` | desde la laptop, `ssh proyecto.walroos` y `claude` corre dentro sin nada instalado localmente |
 | **M2 MCP** | `/mcp` con herramientas de nodos y workspaces | Claude Code crea un workspace y se conecta a él |
 | **M3 Deploy manual** | apps, build + registry en el nodo de build, Quadlet, red `walroos`, ingress con Cloudflare Tunnel, zero-downtime, logs, rollback | botón "Deploy" → `app.walroos.com` responde con TLS desde detrás del CGNAT |
 | **M4 CI/CD** | proveedores Git, webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens | merge de PR en GitHub → app actualizada sin tocar nada |
