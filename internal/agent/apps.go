@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,8 @@ type AppSpec struct {
 	HealthPath string   `json:"health_path"` // default /
 	Image      string   `json:"image"`
 	Env        []string `json:"env"`
+	Pull       string   `json:"pull,omitempty"`       // build node's registry (tailnet host:port): pull Sha from it, don't build
+	PullToken  string   `json:"pull_token,omitempty"` // PullToken for this app on that node
 }
 
 // Release is what a successful deploy left running.
@@ -69,6 +72,7 @@ type Apps struct {
 	busy  map[string]bool
 	relay []string // `walroos node relay`, for health checks inside the container's netns
 	dir   string   // where the Quadlet files go; systemd's generator reads it
+	dial  func(ctx context.Context, network, addr string) (net.Conn, error) // to the tailnet, for pulls
 }
 
 func NewApps() *Apps {
@@ -81,6 +85,7 @@ var (
 	shaRe        = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 	refRe        = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,199}$`)    // branch, dockerfile: no leading "-" (git/podman options)
 	healthPathRe = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,511}$`) // goes into the raw HTTP request line
+	tokenRe      = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // Valid reports whether spec is safe to hand to git, podman and the health check. The hub
@@ -92,10 +97,16 @@ func (spec AppSpec) Valid() bool {
 	return workspaceNameRe.MatchString(spec.Name) && deployIDRe.MatchString(spec.ID) && spec.Port >= 1 && spec.Port <= 65535 &&
 		(spec.RepoURL != "" || spec.Image != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
-		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) // rollback runs only this app's own builds
+		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) && // rollback runs only this app's own builds
+		(spec.Pull == "" || validHostPort(spec.Pull) && tokenRe.MatchString(spec.PullToken) && len(spec.Sha) >= 12 && spec.Image == "")
 }
 
-// Deploy builds (unless spec.Image is set), starts the new container next to the old one,
+func validHostPort(v string) bool {
+	host, port, err := net.SplitHostPort(v)
+	return err == nil && host != "" && !strings.ContainsAny(host, "/@") && port != ""
+}
+
+// Deploy builds (or pulls from spec.Pull; nothing if spec.Image is set), starts the new container next to the old one,
 // waits for it to answer on its port, then stops the old one. If the new one never gets
 // healthy it is removed and the old one keeps serving. Progress goes to log.
 func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release, error) {
@@ -114,8 +125,11 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 		return Release{}, err
 	}
 	rel := Release{Image: spec.Image, Container: spec.Name + "-" + spec.ID}
-	if spec.Image == "" {
-		var err error
+	if spec.Pull != "" {
+		if rel.Sha, rel.Image, err = a.pull(ctx, spec, log); err != nil {
+			return Release{}, err
+		}
+	} else if spec.Image == "" {
 		if rel.Sha, rel.Image, err = build(ctx, spec, log); err != nil {
 			return Release{}, err
 		}
