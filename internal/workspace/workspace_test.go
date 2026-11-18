@@ -17,6 +17,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -28,6 +29,7 @@ type fakeAgent struct {
 	down bool   // answer 500 to everything
 	fail string // if set, POST /v1/workspaces answers 400 with it
 	last agent.WorkspaceSpec
+	env  []string // last env the hub sent
 }
 
 func newFakeAgent(t *testing.T) (*fakeAgent, *httptest.Server) {
@@ -67,12 +69,16 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		json(200, list)
 	case r.Method == "POST" && path == "":
-		var spec agent.WorkspaceSpec
+		var spec struct {
+			agent.WorkspaceSpec
+			Env []string `json:"env"`
+		}
 		if err := jsonDecode(r, &spec); err != nil {
 			errJSON(400, "invalid JSON body")
 			return
 		}
-		f.last = spec
+		f.last = spec.WorkspaceSpec
+		f.env = spec.Env
 		if f.fail != "" {
 			errJSON(400, f.fail)
 			return
@@ -109,6 +115,9 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 		f.ws[name] = ws
 		json(200, ws)
 	case r.Method == "POST" && sub == "rebuild":
+		var body struct{ Env []string }
+		jsonDecode(r, &body)
+		f.env = body.Env
 		ws, ok := f.ws[name]
 		if !ok {
 			errJSON(404, "workspace not found")
@@ -178,7 +187,11 @@ func newHub(t *testing.T, withDevNode bool) *hub {
 
 	fleetSvc := fleet.NewService(fleet.NewStore(db))
 	fleetHandler := fleet.NewHandler(fleetSvc, "http://walroos-hub", "nHub", h.agentsC)
-	wsHandler := workspace.NewHandler(workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC))
+	box, err := secretbox.LoadOrCreate(filepath.Join(t.TempDir(), "secret.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wsHandler := workspace.NewHandler(workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box))
 
 	r := whttp.NewRouter()
 	fleetHandler.NodeRoutes(r)
@@ -387,5 +400,60 @@ func TestWorkspaceRebuild(t *testing.T) {
 	}
 	if code := h.call(t, "POST", "/api/workspaces/ghost/rebuild", nil, nil); code != 404 {
 		t.Fatalf("rebuild unknown: %d, want 404", code)
+	}
+}
+
+func TestWorkspaceEnv(t *testing.T) {
+	h := newHub(t, true)
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+
+	vars := []workspace.EnvVar{{Key: "DB_URL", Value: "postgres://u:p@db/app", Secret: true}, {Key: "LOG", Value: "debug"}}
+	var got []workspace.EnvVar
+	if code := h.call(t, "PUT", "/api/workspaces/app/env", vars, &got); code != 200 || len(got) != 2 {
+		t.Fatalf("put env: %d %+v", code, got)
+	}
+	if got[0].Key != "DB_URL" || got[0].Value != "postgres://u:p@db/app" || !got[0].Secret {
+		t.Fatalf("env = %+v", got)
+	}
+
+	// Stored encrypted, not as written.
+	var stored string
+	h.db.Read.QueryRow(`SELECT value FROM workspace_env WHERE key = 'DB_URL'`).Scan(&stored)
+	if stored == "postgres://u:p@db/app" || !strings.HasPrefix(stored, "") || stored == "" {
+		t.Fatalf("value stored in clear: %q", stored)
+	}
+
+	// Validation: bad name, duplicates, and unknown workspace.
+	if code := h.call(t, "PUT", "/api/workspaces/app/env", []workspace.EnvVar{{Key: "bad-key", Value: "x"}}, nil); code != 400 {
+		t.Errorf("bad key: %d, want 400", code)
+	}
+	if code := h.call(t, "PUT", "/api/workspaces/app/env", []workspace.EnvVar{{Key: "A", Value: "1"}, {Key: "A", Value: "2"}}, nil); code != 400 {
+		t.Errorf("duplicate: %d, want 400", code)
+	}
+	if code := h.call(t, "PUT", "/api/workspaces/ghost/env", vars, nil); code != 404 {
+		t.Errorf("unknown workspace: %d, want 404", code)
+	}
+
+	// Rebuild carries the env to the agent, and replace-on-PUT removes what's gone.
+	if code := h.call(t, "POST", "/api/workspaces/app/rebuild", nil, nil); code != 202 {
+		t.Fatalf("rebuild: %d", code)
+	}
+	if want := []string{"DB_URL=postgres://u:p@db/app", "LOG=debug"}; strings.Join(h.agent.env, ",") != strings.Join(want, ",") {
+		t.Fatalf("agent env = %v, want %v", h.agent.env, want)
+	}
+	h.call(t, "PUT", "/api/workspaces/app/env", []workspace.EnvVar{{Key: "LOG", Value: "info"}}, nil)
+	h.call(t, "GET", "/api/workspaces/app/env", nil, &got)
+	if len(got) != 1 || got[0].Key != "LOG" || got[0].Value != "info" {
+		t.Fatalf("after replace: %+v", got)
+	}
+
+	// Deleting the workspace removes its variables (FK cascade).
+	h.call(t, "DELETE", "/api/workspaces/app", nil, nil)
+	var n int
+	h.db.Read.QueryRow(`SELECT COUNT(*) FROM workspace_env`).Scan(&n)
+	if n != 0 {
+		t.Errorf("%d env rows left after delete", n)
 	}
 }

@@ -71,7 +71,7 @@ func NewWorkspaces() *Workspaces {
 var workspaceNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // Create starts creating a workspace in the background; poll Get for the outcome.
-func (w *Workspaces) Create(ctx context.Context, spec WorkspaceSpec) (Workspace, error) {
+func (w *Workspaces) Create(ctx context.Context, spec WorkspaceSpec, env []string) (Workspace, error) {
 	if !workspaceNameRe.MatchString(spec.Name) || spec.RepoURL == "" {
 		return Workspace{}, ErrInvalidWorkspace
 	}
@@ -91,7 +91,7 @@ func (w *Workspaces) Create(ctx context.Context, spec WorkspaceSpec) (Workspace,
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), createTimeout)
 		defer cancel()
-		err := create(ctx, spec)
+		err := create(ctx, spec, env)
 
 		w.mu.Lock()
 		defer w.mu.Unlock()
@@ -103,7 +103,7 @@ func (w *Workspaces) Create(ctx context.Context, spec WorkspaceSpec) (Workspace,
 	return Workspace{Name: spec.Name, State: "creating"}, nil
 }
 
-func create(ctx context.Context, spec WorkspaceSpec) error {
+func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 	name := spec.Name
 	src, home := "ws-"+name+"-src", "ws-"+name+"-home"
 	for _, v := range []string{src, home} {
@@ -163,6 +163,14 @@ func create(ctx context.Context, spec WorkspaceSpec) error {
 		"--user", user, "-v", src + ":" + folder, "-v", home + ":" + homeDir, "-v", sockets + ":" + agentMount + ":z", "-w", folder}
 	if uid != "0" { // map the host user to the workspace user; rootless default already maps it to root
 		args = append(args, "--userns=keep-id:uid="+uid+",gid="+gid)
+	}
+	if len(env) > 0 {
+		f, err := writeEnvFile(env)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(f) // podman reads it at start; the values never show up in argv
+		args = append(args, "--env-file", f)
 	}
 	if dc != nil {
 		for k, v := range dc.ContainerEnv {
@@ -341,7 +349,7 @@ func (w *Workspaces) containerOp(ctx context.Context, name string, args ...strin
 // Rebuild recreates the container and any image built for it, keeping the volumes: the clone
 // and $HOME (mise runtimes, ~/.claude, caches) survive. It's how a changed devcontainer, a new
 // base image or a broken container is picked up.
-func (w *Workspaces) Rebuild(ctx context.Context, name string) (Workspace, error) {
+func (w *Workspaces) Rebuild(ctx context.Context, name string, env []string) (Workspace, error) {
 	if _, err := podman(ctx, "volume", "inspect", "ws-"+name+"-src"); err != nil {
 		return Workspace{}, ErrWorkspaceNotFound
 	}
@@ -357,7 +365,7 @@ func (w *Workspaces) Rebuild(ctx context.Context, name string) (Workspace, error
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), createTimeout)
 		defer cancel()
-		err := rebuild(ctx, name)
+		err := rebuild(ctx, name, env)
 
 		w.mu.Lock()
 		defer w.mu.Unlock()
@@ -369,7 +377,7 @@ func (w *Workspaces) Rebuild(ctx context.Context, name string) (Workspace, error
 	return Workspace{Name: name, State: "creating"}, nil
 }
 
-func rebuild(ctx context.Context, name string) error {
+func rebuild(ctx context.Context, name string, env []string) error {
 	src, home := "ws-"+name+"-src", "ws-"+name+"-home"
 	repo, err := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", src)
 	if err != nil {
@@ -398,7 +406,7 @@ func rebuild(ctx context.Context, name string) error {
 	}
 	podman(ctx, "rmi", "-f", "--ignore", "localhost/walroos-ws-"+name)
 
-	return create(ctx, spec)
+	return create(ctx, spec, env)
 }
 
 // gitRemote reads origin's URL from a clone without failing the rebuild if git is unhappy.
@@ -408,6 +416,25 @@ func gitRemote(ctx context.Context, repo string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// writeEnvFile writes KEY=VALUE lines to a 0600 temp file for podman run --env-file.
+func writeEnvFile(env []string) (string, error) {
+	f, err := os.CreateTemp("", "walroos-env-")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	os.Chmod(f.Name(), 0o600)
+	for _, kv := range env {
+		if _, _, ok := strings.Cut(kv, "="); !ok {
+			continue
+		}
+		if _, err := fmt.Fprintln(f, kv); err != nil {
+			return "", err
+		}
+	}
+	return f.Name(), nil
 }
 
 // specPath is where create remembers what it was asked for; rebuild reads it back.
