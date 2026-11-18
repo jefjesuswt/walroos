@@ -15,7 +15,7 @@ type Database struct {
 }
 
 func NewSQLite(dbPath string) (*Database, error) {
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil { // node token hashes are agent credentials
 		return nil, fmt.Errorf("could not create directory: %w", err)
 	}
 

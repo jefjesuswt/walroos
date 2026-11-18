@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -134,5 +135,17 @@ func TestHTTPSURL(t *testing.T) {
 		if got := httpsURL(in); got != want {
 			t.Errorf("httpsURL(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A repo's go.mod -> /dev/zero (or a FIFO) must not be read: it would eat the agent's memory.
+func TestDetectSkipsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(os.DevNull, filepath.Join(dir, "go.mod")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"x"}`), 0o644)
+	if d := detectDir(dir); d.Stack != "node" {
+		t.Errorf("stack = %q, want node (the go.mod symlink ignored)", d.Stack)
 	}
 }

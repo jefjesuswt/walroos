@@ -191,7 +191,13 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 			args = append(args, "-e", k+"="+v)
 		}
 		for _, m := range dc.Mounts {
-			args = append(args, "--mount", string(m))
+			opt, vol := m.scoped(name)
+			if vol != "" {
+				if err := ensureVolume(ctx, vol, name); err != nil { // labeled, so Delete removes it
+					return err
+				}
+			}
+			args = append(args, "--mount", opt)
 		}
 	}
 	// Like devcontainers' overrideCommand: keep the container alive, sessions come in via exec.

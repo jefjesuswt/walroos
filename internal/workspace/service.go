@@ -40,6 +40,11 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	if !RemoteRepo(in.RepoURL) {
 		return Workspace{}, ErrRepoURL
 	}
+	// Before the agent: a name taken on another node would only fail at the insert, after the
+	// agent started creating it, and a workspace mid-create can't be deleted.
+	if _, err := s.store.Get(ctx, in.Name); err == nil {
+		return Workspace{}, ErrExists
+	}
 
 	node, err := s.pickNode(ctx, in.Node)
 	if err != nil {
@@ -152,15 +157,25 @@ func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error)
 }
 
 // List returns the rows, refreshed from their agents so a workspace that finished creating
-// (or failed) shows its real state. ponytail: one call per row; fine for one user's handful.
+// (or failed) shows its real state. A node that fails once isn't asked again, or N rows on a
+// dead node would take N timeouts. ponytail: one call per row; fine for one user's handful.
 func (s *Service) List(ctx context.Context) ([]Workspace, error) {
 	list, err := s.store.List(ctx)
 	if err != nil {
 		return nil, err
 	}
+	down := map[string]bool{}
 	for i := range list {
-		if ws, err := s.refresh(ctx, list[i]); err == nil {
+		if down[list[i].NodeID] {
+			continue
+		}
+		ws, err := s.refresh(ctx, list[i])
+		var ae *agent.AgentError
+		switch {
+		case err == nil:
 			list[i] = ws
+		case !errors.As(err, &ae): // unreachable, not an answer about this workspace
+			down[list[i].NodeID] = true
 		}
 	}
 	return list, nil

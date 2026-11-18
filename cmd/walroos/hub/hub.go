@@ -82,7 +82,7 @@ and --owner with your tailnet login so you can use the UI.
 			ln       net.Listener
 			identify auth.Identify
 			hubURL   string
-			hubID    string // our tailnet StableNodeID; agents only accept calls from it
+			hubID    string                  // our tailnet StableNodeID; agents only accept calls from it
 			hosts    = []string{"localhost"} // Host names we answer to, besides IPs (DNS rebinding)
 			agents   = &agent.Client{HTTP: &http.Client{Timeout: 30 * time.Second}}
 		)
@@ -138,7 +138,16 @@ and --owner with your tailnet login so you can use the UI.
 		fleetSvc := fleet.NewService(fleet.NewStore(db))
 		fleetHandler := fleet.NewHandler(fleetSvc, hubURL, hubID, agents)
 		keysHandler := sshkeys.NewHandler(sshkeys.NewStore(db), fleetSvc.Authenticate)
-		box, err := secretbox.LoadOrCreate(filepath.Join(dataDir, "secret.key"))
+		keyPath := filepath.Join(dataDir, "secret.key")
+		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+			// A new key can't open the old values: deploys would run without their secrets.
+			var sealed int
+			db.Read.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM workspace_env) + (SELECT count(*) FROM app_env)`).Scan(&sealed)
+			if sealed > 0 {
+				return ui.WrapError("%s is missing but the database has %d encrypted variables: restore the key next to hub.db", keyPath, sealed)
+			}
+		}
+		box, err := secretbox.LoadOrCreate(keyPath)
 		if err != nil {
 			return ui.WrapError("workspace env key: %w", err)
 		}

@@ -640,3 +640,34 @@ func TestWorkspaceReachesServiceOnDevNetwork(t *testing.T) {
 		t.Fatalf("workspace -> service: %q, %v", out, err)
 	}
 }
+
+// A repo's named volume is the workspace's own (ws-<name>-v-<source>), and goes with it.
+func TestWorkspaceMountsScoped(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	name := testName()
+	victim := "ws-" + name + "x-home" // shaped like another workspace's home
+	if _, err := podman(ctx, "volume", "create", victim); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { podman(context.Background(), "volume", "rm", "-f", victim) })
+	repo := gitRepo(t, map[string]string{
+		".devcontainer/devcontainer.json": `{"image":"docker.io/library/alpine:3.22","mounts":["type=volume,source=cache,target=/cache","type=volume,source=` + victim + `,target=/v"]}`,
+	})
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w, name, "running", 5*time.Minute)
+	podman(ctx, "exec", "ws-"+name, "touch", "/v/written")
+	if out, _ := podman(ctx, "unshare", "sh", "-c", "ls \"$(podman volume inspect --format '{{.Mountpoint}}' "+victim+")\""); out != "" {
+		t.Errorf("wrote into %s: %s", victim, out)
+	}
+	if err := w.Delete(ctx, name); err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := podman(ctx, "volume", "ls", "-q", "--filter", "name=ws-"+name+"-v-"); out != "" {
+		t.Errorf("volumes left: %s", out)
+	}
+}
