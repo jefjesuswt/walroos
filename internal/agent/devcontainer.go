@@ -64,23 +64,57 @@ func (m *mount) UnmarshalJSON(b []byte) error {
 	if o.Type == "" {
 		o.Type = "volume"
 	}
+	if strings.ContainsAny(o.Type+o.Source+o.Target, ",\"") { // would add options: "x,volume-opt=device=/"
+		return errors.New("mounts: type, source and target can't contain commas or quotes")
+	}
 	*m = mount(fmt.Sprintf("type=%s,source=%s,target=%s", o.Type, o.Source, o.Target))
 	return nil
 }
 
-// safe reports whether the mount stays off the host filesystem: type=volume or type=tmpfs.
-// A mount without type is rejected too (podman requires it anyway).
+// mountKeys are the options a repo may set. Not volume-opt (device=/ o=bind mounts a host
+// path) nor anything else podman may add later.
+var mountKeys = map[string]bool{"type": true, "source": true, "src": true, "target": true, "dst": true, "destination": true,
+	"ro": true, "readonly": true, "tmpfs-size": true, "tmpfs-mode": true}
+
+// safe reports whether the mount stays off the host filesystem: exactly one type, volume or
+// tmpfs, and only plain options. A mount without type is rejected too (podman requires it).
 func (m mount) safe() bool {
-	typed := false
+	if strings.Contains(string(m), `"`) { // podman reads --mount as CSV: quotes could hide commas
+		return false
+	}
+	types := 0
 	for _, kv := range strings.Split(string(m), ",") {
-		if k, v, _ := strings.Cut(strings.TrimSpace(kv), "="); k == "type" { // every type= counts: "type=volume,type=bind"
+		k, v, _ := strings.Cut(strings.TrimSpace(kv), "=")
+		if !mountKeys[k] {
+			return false
+		}
+		if k == "type" {
 			if v != "volume" && v != "tmpfs" {
 				return false
 			}
-			typed = true
+			types++
 		}
 	}
-	return typed
+	return types == 1
+}
+
+// scoped names a volume after the workspace (ws-<name>-v-<source>), so a repo can't mount
+// another workspace's volumes, or the registry's.
+func (m mount) scoped(workspace string) (opt, volume string) {
+	parts := strings.Split(string(m), ",")
+	tmpfs := false
+	for i, kv := range parts {
+		k, v, _ := strings.Cut(strings.TrimSpace(kv), "=")
+		tmpfs = tmpfs || k == "type" && v == "tmpfs"
+		if (k == "source" || k == "src") && v != "" {
+			volume = "ws-" + workspace + "-v-" + v
+			parts[i] = k + "=" + volume
+		}
+	}
+	if tmpfs {
+		volume = ""
+	}
+	return strings.Join(parts, ","), volume
 }
 
 // metadataRemoteUser reads the user from an image's devcontainer.metadata label, a JSON array

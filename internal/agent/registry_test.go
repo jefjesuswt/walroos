@@ -1,27 +1,41 @@
 package agent
 
 import (
-	"net"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
 func TestRegistryHandlerAuth(t *testing.T) {
-	ln, err := net.Listen("tcp", registryAddr) // stands in for the registry container
-	if err != nil {
-		t.Skipf("%s busy: %v", registryAddr, err)
-	}
-	backend := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "" {
-			w.WriteHeader(500) // the token must not reach the registry
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); !ok || u != "walroos" || p != "pw" {
+			w.WriteHeader(500) // the registry gets its own password, never the pull token
 		}
-	})}
-	go backend.Serve(ln)
+	}))
 	defer backend.Close()
+	old := registryAddr
+	registryAddr = backend.Listener.Addr().String()
+	defer func() { registryAddr = old }()
 
-	srv := httptest.NewServer(NewServer(nil, "tok").RegistryHandler())
+	node := NewServer(nil, "tok")
+	srv := httptest.NewServer(node.RegistryHandler())
 	defer srv.Close()
+	get := func(path, auth string) int {
+		req, _ := http.NewRequest("GET", srv.URL+path, nil)
+		req.Header.Set("Authorization", auth)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := get("/v2/", ""); code != 503 {
+		t.Errorf("before any build: %d, want 503", code)
+	}
+	node.apps.regPass = "pw"
 	good := "Bearer " + PullToken(TokenHash("tok"), "web")
 	for _, c := range []struct {
 		method, path, auth string
@@ -48,5 +62,18 @@ func TestRegistryHandlerAuth(t *testing.T) {
 		if resp.StatusCode != c.want {
 			t.Errorf("%s %s: %d, want %d", c.method, c.path, resp.StatusCode, c.want)
 		}
+	}
+}
+
+func TestLineWriterCapsLines(t *testing.T) {
+	var out strings.Builder
+	lw := &lineWriter{enc: json.NewEncoder(&out), flush: func() error { return nil }}
+	lw.Write([]byte(strings.Repeat("a", 3*maxLine+5))) // no newline, ever
+	lw.Write([]byte("b\n"))
+	if len(lw.buf) != 0 {
+		t.Errorf("%d bytes left buffered", len(lw.buf))
+	}
+	if n := strings.Count(out.String(), "\n"); n != 4 {
+		t.Errorf("%d lines, want 3 cut ones and the rest", n)
 	}
 }

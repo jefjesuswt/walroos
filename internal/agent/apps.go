@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,9 +71,12 @@ type App struct {
 type Apps struct {
 	mu    sync.Mutex
 	busy  map[string]bool
-	relay []string // `walroos node relay`, for health checks inside the container's netns
-	dir   string   // where the Quadlet files go; systemd's generator reads it
+	relay []string                                                          // `walroos node relay`, for health checks inside the container's netns
+	dir   string                                                            // where the Quadlet files go; systemd's generator reads it
 	dial  func(ctx context.Context, network, addr string) (net.Conn, error) // to the tailnet, for pulls
+
+	regMu   sync.Mutex
+	regPass string // the registry's password, made when this process (re)starts it; never on disk
 }
 
 func NewApps() *Apps {
@@ -174,9 +178,10 @@ func build(ctx context.Context, spec AppSpec, log io.Writer) (sha, image string,
 	if spec.Branch != "" {
 		args = append(args, "--branch", spec.Branch)
 	}
-	fmt.Fprintf(log, "cloning %s %s\n", spec.RepoURL, spec.Branch)
+	fmt.Fprintf(log, "cloning %s %s\n", redact(spec.RepoURL), spec.Branch)
 	if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", append(args, "--", httpsURL(spec.RepoURL), dir)...); err != nil {
-		return "", "", err
+		msg := strings.ReplaceAll(err.Error(), httpsURL(spec.RepoURL), redact(httpsURL(spec.RepoURL)))
+		return "", "", errors.New(strings.ReplaceAll(msg, spec.RepoURL, redact(spec.RepoURL)))
 	}
 	if spec.Sha != "" {
 		if err := run(ctx, nil, "git", "-C", dir, "checkout", "--quiet", "--detach", spec.Sha); err != nil {
@@ -228,6 +233,7 @@ Network=%[5]s
 Label=%[6]s=%[1]s
 Label=%[7]s=%[3]s
 EnvironmentFile=%[8]s
+NoNewPrivileges=true
 
 [Quadlet]
 # The default waits for network-online.target, which many hosts (WSL) never reach.
@@ -288,14 +294,23 @@ func (a *Apps) get(ctx context.Context, container, addr, path string) (int, erro
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdin = strings.NewReader("GET " + path + " HTTP/1.0\r\nHost: localhost\r\nUser-Agent: walroos-health\r\n\r\n")
-	out, err := cmd.Output()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		return 0, err
+	}
+	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("connect: %w", err)
 	}
+	out, _ := io.ReadAll(io.LimitReader(stdout, 4096)) // the status line is enough; an endless body must not fill memory
+	stdout.Close()                                     // the relay gets EPIPE and exits
+	werr := cmd.Wait()
 	out = bytes.TrimPrefix(out, []byte{0}) // the relay's "connected" byte
 	status, _, _ := bufio.NewReader(bytes.NewReader(out)).ReadLine()
 	if f := strings.Fields(string(status)); len(f) >= 2 && strings.HasPrefix(f[0], "HTTP/") {
 		return strconv.Atoi(f[1])
+	}
+	if werr != nil {
+		return 0, fmt.Errorf("connect: %w", werr)
 	}
 	return 0, fmt.Errorf("not an HTTP answer: %q", string(status))
 }
@@ -410,6 +425,15 @@ func pruneImages(ctx context.Context, app, keep string) {
 			podman(ctx, "rmi", "--ignore", img)
 		}
 	}
+}
+
+// redact hides the token in an https://user:token@host URL: the log goes to the UI and MCP.
+func redact(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.User != nil {
+		u.User = url.User("***")
+		return u.String()
+	}
+	return raw
 }
 
 func unitValue(unit []byte, prefix string) string {
