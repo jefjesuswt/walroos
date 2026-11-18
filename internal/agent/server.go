@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -62,6 +63,11 @@ func NewServer(identify Identify, nodeToken string) *Server {
 
 // SetRelay sets the command that runs Relay (`walroos node relay`); app health checks use it.
 func (s *Server) SetRelay(relay []string) { s.apps.relay = relay }
+
+// SetDial sets how to reach other nodes (tsnet's Dial); a prod node pulls builds with it.
+func (s *Server) SetDial(dial func(ctx context.Context, network, addr string) (net.Conn, error)) {
+	s.apps.dial = dial
+}
 
 // SetHubID pins the hub's StableNodeID. Until it's set every request gets 503.
 func (s *Server) SetHubID(id string) {

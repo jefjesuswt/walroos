@@ -114,6 +114,16 @@ var runCmd = &cobra.Command{
 		go srv.Serve(ln)
 		defer srv.Close()
 
+		// Prod nodes pull builds from a build node's registry over the tailnet.
+		api.SetDial(ts.Dial)
+		regLn, err := ts.Listen("tcp", ":"+agent.RegistryPort)
+		if err != nil {
+			return ui.WrapError("registry listen: %w", err)
+		}
+		reg := &http.Server{Handler: api.RegistryHandler(), ReadHeaderTimeout: 10 * time.Second}
+		go reg.Serve(regLn)
+		defer reg.Close()
+
 		if sshAddr != "" {
 			sshLn, err := startSSH(ts, api, st)
 			if err != nil {

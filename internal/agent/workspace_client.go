@@ -149,9 +149,18 @@ func (c *Client) DeleteApp(ctx context.Context, address, tokenHash, name string)
 // DeployApp runs a deploy on the node, calling onLog with each line of output as it comes.
 // It ignores c.HTTP's timeout (a build takes minutes); ctx bounds it.
 func (c *Client) DeployApp(ctx context.Context, address, tokenHash string, spec AppSpec, onLog func(string)) (Release, error) {
+	return c.streamApp(ctx, address, tokenHash, "deploy", spec, onLog)
+}
+
+// BuildApp builds on a build node and pushes to its registry, streaming like DeployApp.
+func (c *Client) BuildApp(ctx context.Context, address, tokenHash string, spec AppSpec, onLog func(string)) (Release, error) {
+	return c.streamApp(ctx, address, tokenHash, "build", spec, onLog)
+}
+
+func (c *Client) streamApp(ctx context.Context, address, tokenHash, op string, spec AppSpec, onLog func(string)) (Release, error) {
 	hc := *c.HTTP
 	hc.Timeout = 0
-	resp, err := c.send(ctx, &hc, http.MethodPost, address, tokenHash, "/v1/apps/"+spec.Name+"/deploy", spec)
+	resp, err := c.send(ctx, &hc, http.MethodPost, address, tokenHash, "/v1/apps/"+spec.Name+"/"+op, spec)
 	if err != nil {
 		return Release{}, err
 	}
@@ -160,7 +169,7 @@ func (c *Client) DeployApp(ctx context.Context, address, tokenHash string, spec 
 	for {
 		var line DeployLine
 		if err := dec.Decode(&line); err != nil {
-			return Release{}, fmt.Errorf("deploy stream ended early: %w", err)
+			return Release{}, fmt.Errorf("%s stream ended early: %w", op, err)
 		}
 		switch {
 		case line.Release != nil:

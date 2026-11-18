@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -162,4 +164,57 @@ func appsNamed(list []App, name string) []App {
 		}
 	}
 	return out
+}
+
+// A build node builds and pushes to its registry; a prod node pulls through RegistryHandler.
+// Both are this host here, so the local image is removed between the two.
+func TestAppBuildPullPodman(t *testing.T) {
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1")
+	}
+	ctx := context.Background()
+	t.Setenv("WALROOS_TEST_RELAY", "1")
+	a := NewApps()
+	a.relay = []string{os.Args[0]}
+	a.dial = (&net.Dialer{}).DialContext
+	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
+	t.Cleanup(func() { a.Delete(context.Background(), name) })
+
+	repo := t.TempDir()
+	os.WriteFile(filepath.Join(repo, "Dockerfile"), []byte("FROM docker.io/library/python:3-alpine\nWORKDIR /srv\nRUN echo built > index.html\nCMD [\"python3\", \"-m\", \"http.server\", \"8000\"]\n"), 0o644)
+	if out, err := exec.Command("sh", "-c", "cd "+repo+" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm v1").CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+
+	var log strings.Builder
+	spec := AppSpec{Name: name, ID: "b1", RepoURL: repo, Branch: "main", Port: 8000}
+	rel, err := a.Build(ctx, spec, &log)
+	if err != nil {
+		t.Fatalf("build: %v\n%s", err, log.String())
+	}
+	if _, err := podman(ctx, "rmi", rel.Image); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := NewServer(nil, "build-node-token")
+	reg := httptest.NewServer(srv.RegistryHandler())
+	t.Cleanup(reg.Close)
+	spec.Pull, spec.Sha = strings.TrimPrefix(reg.URL, "http://"), rel.Sha
+
+	spec.PullToken = PullToken(TokenHash("build-node-token"), "other")
+	if _, err := a.Deploy(ctx, spec, &log); err == nil {
+		t.Fatal("pulled with another app's token")
+	}
+	spec.PullToken = PullToken(TokenHash("build-node-token"), name)
+	got, err := a.Deploy(ctx, spec, &log)
+	if err != nil {
+		t.Fatalf("deploy: %v\n%s", err, log.String())
+	}
+	if got.Image != rel.Image || got.Sha != rel.Sha {
+		t.Fatalf("release %+v, built %+v", got, rel)
+	}
+	assertLive(t, a, name, name+"-b1")
+	if out, _ := podman(ctx, "images", "--format", "{{.Repository}}", "--filter", "reference=*/walroos-app-"+name); strings.TrimSpace(out) != "localhost/walroos-app-"+name {
+		t.Errorf("images left: %q", out) // no 127.0.0.1:<port>/... tags
+	}
 }
