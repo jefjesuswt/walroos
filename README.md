@@ -144,7 +144,7 @@ Conventions (minimal code, one pattern per domain, migrations, commits) are in [
 |---|---|---|---|
 | **M0 Base** | Nodes join with a one-time token, heartbeat with telemetry, Tailscale auth, web UI with live nodes | The UI lists nodes with live telemetry | ✅ Done |
 | **M1 Workspaces** | Create from a repo + `devcontainer.json`, persistent volumes, SSH gateway, `walroos ssh-config`, UI | `ssh myproject.walroos` from the laptop and `claude` runs inside | ✅ Done |
-| **M2 MCP** | `/mcp` on the hub with node and workspace tools | Claude Code creates a workspace and connects to it | In progress |
+| **M2 MCP** | `/mcp` on the hub with node and workspace tools | Claude Code creates a workspace and connects to it | ✅ Done |
 | **M3 Deploy** | Apps, build + registry, Quadlets, Cloudflare Tunnel ingress, zero-downtime, logs, rollback | A "Deploy" button and `app.example.com` answers with TLS from behind CGNAT | Planned |
 | **M4 CI/CD** | Git providers, webhooks via Tailscale Funnel, deploy on push or on CI, deploy tokens | Merge a PR on GitHub and the app updates by itself | Planned |
 | **M5** | Preview deploys per PR, compose, devcontainer features, Caddy for nodes with a public IP, notifications | | Later |
