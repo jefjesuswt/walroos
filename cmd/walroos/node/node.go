@@ -103,6 +103,9 @@ var runCmd = &cobra.Command{
 
 		// Only reachable over the tailnet (tsnet listener); anything not from the hub fails WhoIs.
 		api := agent.NewServer(agent.Tailscale(lc), st.Token)
+		if exe, err := os.Executable(); err == nil {
+			api.SetRelay([]string{exe, "node", "relay"}) // app health checks run it in the app's netns
+		}
 		ln, err := ts.Listen("tcp", listenAddr)
 		if err != nil {
 			return ui.WrapError("agent listen %s: %w", listenAddr, err)

@@ -1,0 +1,384 @@
+package agent
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+var (
+	ErrInvalidApp  = errors.New("app name must be a DNS label, deploy id 1-16 of [a-z0-9], port 1-65535, and repo_url or image is required")
+	ErrAppBusy     = errors.New("a deploy of this app is already running on this node")
+	ErrAppNotFound = errors.New("app not found on this node")
+)
+
+const (
+	AppNetwork = "walroos" // apps and cloudflared meet here by container name; apps publish no host ports
+	labelApp   = "walroos.app"
+	labelSha   = "walroos.sha"
+	keepImages = 3 // per app, for rollback
+)
+
+var healthTimeout = 90 * time.Second // tests shorten it
+
+// AppSpec is one deploy. Image set means rollback: run that image, skip clone and build.
+type AppSpec struct {
+	Name       string   `json:"name"`
+	ID         string   `json:"id"` // deployment id from the hub; the container is <name>-<id>
+	RepoURL    string   `json:"repo_url"`
+	Branch     string   `json:"branch"`
+	Sha        string   `json:"sha"`        // "" deploys the branch head
+	Dockerfile string   `json:"dockerfile"` // relative to the repo; default Dockerfile
+	Port       int      `json:"port"`
+	HealthPath string   `json:"health_path"` // default /
+	Image      string   `json:"image"`
+	Env        []string `json:"env"`
+}
+
+// Release is what a successful deploy left running.
+type Release struct {
+	Sha       string `json:"sha"`
+	Image     string `json:"image"`
+	Container string `json:"container"`
+}
+
+// App is an app's state on this node: the release that's running, if any.
+type App struct {
+	Name      string `json:"name"`
+	Container string `json:"container"`
+	Sha       string `json:"sha"`
+	Image     string `json:"image"`
+	State     string `json:"state"` // systemd ActiveState: active, activating, failed...
+}
+
+// Apps runs apps as Podman Quadlets: systemd restarts them, starts them on boot and keeps
+// their logs in the journal.
+type Apps struct {
+	mu    sync.Mutex
+	busy  map[string]bool
+	relay []string // `walroos node relay`, for health checks inside the container's netns
+	dir   string   // where the Quadlet files go; systemd's generator reads it
+}
+
+func NewApps() *Apps {
+	cfg, _ := os.UserConfigDir()
+	return &Apps{busy: map[string]bool{}, dir: filepath.Join(cfg, "containers", "systemd")}
+}
+
+var deployIDRe = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+
+// Deploy builds (unless spec.Image is set), starts the new container next to the old one,
+// waits for it to answer on its port, then stops the old one. If the new one never gets
+// healthy it is removed and the old one keeps serving. Progress goes to log.
+func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release, error) {
+	if !workspaceNameRe.MatchString(spec.Name) || !deployIDRe.MatchString(spec.ID) || spec.Port < 1 || spec.Port > 65535 ||
+		(spec.RepoURL == "" && spec.Image == "") {
+		return Release{}, ErrInvalidApp
+	}
+	a.mu.Lock()
+	if a.busy[spec.Name] {
+		a.mu.Unlock()
+		return Release{}, ErrAppBusy
+	}
+	a.busy[spec.Name] = true
+	a.mu.Unlock()
+	defer func() { a.mu.Lock(); delete(a.busy, spec.Name); a.mu.Unlock() }()
+
+	if err := ensureAppNetwork(ctx); err != nil {
+		return Release{}, err
+	}
+	rel := Release{Image: spec.Image, Container: spec.Name + "-" + spec.ID}
+	if spec.Image == "" {
+		var err error
+		if rel.Sha, rel.Image, err = build(ctx, spec, log); err != nil {
+			return Release{}, err
+		}
+	} else {
+		_, rel.Sha, _ = strings.Cut(spec.Image, ":")
+		fmt.Fprintf(log, "rollback: running %s, no build\n", spec.Image)
+	}
+
+	old, err := a.units(spec.Name)
+	if err != nil {
+		return Release{}, err
+	}
+	fmt.Fprintf(log, "starting %s\n", rel.Container)
+	if err := a.start(ctx, spec, rel); err != nil {
+		a.remove(ctx, rel.Container)
+		return Release{}, err
+	}
+	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmpOr(spec.HealthPath, "/"), log); err != nil {
+		fmt.Fprintf(log, "%s never got healthy, removing it; the previous release keeps serving\n%s", rel.Container, journal(ctx, rel.Container, 20))
+		a.remove(ctx, rel.Container)
+		return Release{}, err
+	}
+	// ponytail: no ingress yet (M3.2); this is where traffic switches to rel.Container.
+	for _, c := range old {
+		fmt.Fprintf(log, "stopping previous release %s\n", c)
+		a.remove(ctx, c)
+	}
+	pruneImages(ctx, spec.Name, rel.Image)
+	fmt.Fprintf(log, "%s is live (%s)\n", rel.Container, rel.Sha)
+	return rel, nil
+}
+
+// build clones the repo at spec.Sha (or the branch head) and builds its Dockerfile.
+func build(ctx context.Context, spec AppSpec, log io.Writer) (sha, image string, err error) {
+	dir, err := os.MkdirTemp("", "walroos-build-")
+	if err != nil {
+		return "", "", err
+	}
+	defer os.RemoveAll(dir)
+
+	args := []string{"clone", "--single-branch"}
+	if spec.Branch != "" {
+		args = append(args, "--branch", spec.Branch)
+	}
+	fmt.Fprintf(log, "cloning %s %s\n", spec.RepoURL, spec.Branch)
+	if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", append(args, "--", httpsURL(spec.RepoURL), dir)...); err != nil {
+		return "", "", err
+	}
+	if spec.Sha != "" {
+		if err := run(ctx, nil, "git", "-C", dir, "checkout", "--quiet", "--detach", spec.Sha); err != nil {
+			return "", "", err
+		}
+	}
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		return "", "", fmt.Errorf("git rev-parse: %w", err)
+	}
+	sha = strings.TrimSpace(string(out))
+	dockerfile, err := inside(dir, filepath.Join(dir, cmpOr(spec.Dockerfile, "Dockerfile")))
+	if err != nil {
+		return "", "", fmt.Errorf("dockerfile: %w", err)
+	}
+	image = "localhost/walroos-app-" + spec.Name + ":" + sha[:12]
+	fmt.Fprintf(log, "building %s at %s\n", image, sha[:12])
+	cmd := exec.CommandContext(ctx, "podman", "build", "--label", labelApp+"="+spec.Name, "-t", image, "-f", dockerfile, dir)
+	cmd.Stdout, cmd.Stderr = log, log
+	if err := cmd.Run(); err != nil {
+		return "", "", fmt.Errorf("podman build: %w", err)
+	}
+	return sha, image, nil
+}
+
+// start writes the Quadlet for rel (and its env file) and starts the unit systemd generates.
+func (a *Apps) start(ctx context.Context, spec AppSpec, rel Release) error {
+	if err := os.MkdirAll(a.dir, 0o755); err != nil {
+		return err
+	}
+	envFile := filepath.Join(a.dir, rel.Container+".env")
+	var env bytes.Buffer
+	for _, kv := range spec.Env {
+		if k, _, ok := strings.Cut(kv, "="); ok && k != "" && !strings.ContainsAny(kv, "\n\r") {
+			fmt.Fprintln(&env, kv)
+		}
+	}
+	if err := os.WriteFile(envFile, env.Bytes(), 0o600); err != nil { // values never reach argv or the unit
+		return err
+	}
+	unit := fmt.Sprintf(`# Written by walroos. Rollback and redeploy replace it; don't edit.
+[Unit]
+Description=walroos app %[1]s (%[3]s)
+
+[Container]
+Image=%[4]s
+ContainerName=%[2]s
+Network=%[5]s
+Label=%[6]s=%[1]s
+Label=%[7]s=%[3]s
+EnvironmentFile=%[8]s
+
+[Quadlet]
+# The default waits for network-online.target, which many hosts (WSL) never reach.
+DefaultDependencies=false
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
+`, spec.Name, rel.Container, rel.Sha, rel.Image, AppNetwork, labelApp, labelSha, envFile)
+	if err := os.WriteFile(filepath.Join(a.dir, rel.Container+".container"), []byte(unit), 0o644); err != nil {
+		return err
+	}
+	if err := run(ctx, nil, "systemctl", "--user", "daemon-reload"); err != nil {
+		return err
+	}
+	return run(ctx, nil, "systemctl", "--user", "start", rel.Container+".service")
+}
+
+// waitHealthy GETs path on the container's port from inside its network namespace until it
+// answers 2xx/3xx. The app's image needs no curl: the relay is our own binary.
+func (a *Apps) waitHealthy(ctx context.Context, container string, port int, path string, log io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, healthTimeout)
+	defer cancel()
+	addr := "127.0.0.1:" + strconv.Itoa(port)
+	fmt.Fprintf(log, "health check: GET %s%s\n", addr, path)
+	var last error
+	for i := 0; ; i++ {
+		code, err := a.get(ctx, container, addr, path)
+		if err == nil && code >= 200 && code < 400 {
+			fmt.Fprintf(log, "health check: %d\n", code)
+			return nil
+		}
+		if last = err; err == nil {
+			last = fmt.Errorf("answered %d", code)
+		}
+		if i%10 == 9 {
+			fmt.Fprintf(log, "health check: still waiting (%v)\n", last)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("health check: no 2xx/3xx on %s%s within %s: %v", addr, path, healthTimeout, last)
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func (a *Apps) get(ctx context.Context, container, addr, path string) (int, error) {
+	pid, err := podman(ctx, "inspect", "--format", "{{.State.Pid}}", container)
+	if err != nil || pid == "" || pid == "0" {
+		return 0, fmt.Errorf("%s is not running", container)
+	}
+	args := append([]string{"nsenter", "--net=/proc/" + pid + "/ns/net", "--"}, a.relay...)
+	args = append(args, "", addr) // no chroot: 127.0.0.1 needs no name lookup
+	if os.Geteuid() != 0 {
+		args = append([]string{"podman", "unshare"}, args...)
+	}
+	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdin = strings.NewReader("GET " + path + " HTTP/1.0\r\nHost: localhost\r\nUser-Agent: walroos-health\r\n\r\n")
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("connect: %w", err)
+	}
+	out = bytes.TrimPrefix(out, []byte{0}) // the relay's "connected" byte
+	status, _, _ := bufio.NewReader(bytes.NewReader(out)).ReadLine()
+	if f := strings.Fields(string(status)); len(f) >= 2 && strings.HasPrefix(f[0], "HTTP/") {
+		return strconv.Atoi(f[1])
+	}
+	return 0, fmt.Errorf("not an HTTP answer: %q", string(status))
+}
+
+// units lists the Quadlet containers of app, by file name.
+func (a *Apps) units(app string) ([]string, error) {
+	files, err := filepath.Glob(filepath.Join(a.dir, app+"-*.container"))
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err == nil && bytes.Contains(b, []byte("\nLabel="+labelApp+"="+app+"\n")) { // not another app's "<app>-x"
+			names = append(names, strings.TrimSuffix(filepath.Base(f), ".container"))
+		}
+	}
+	return names, nil
+}
+
+// remove stops a release and deletes its unit and env file. The image stays, for rollback.
+func (a *Apps) remove(ctx context.Context, container string) {
+	run(ctx, nil, "systemctl", "--user", "stop", container+".service")
+	os.Remove(filepath.Join(a.dir, container+".container"))
+	os.Remove(filepath.Join(a.dir, container+".env"))
+	run(ctx, nil, "systemctl", "--user", "daemon-reload")
+	run(ctx, nil, "systemctl", "--user", "reset-failed", container+".service")
+	podman(ctx, "rm", "-f", "--ignore", container)
+}
+
+// List returns the running release of every app on this node.
+func (a *Apps) List(ctx context.Context) ([]App, error) {
+	files, err := filepath.Glob(filepath.Join(a.dir, "*.container"))
+	if err != nil {
+		return nil, err
+	}
+	list := []App{}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		app, sha, image := unitValue(b, "Label="+labelApp+"="), unitValue(b, "Label="+labelSha+"="), unitValue(b, "Image=")
+		if app == "" {
+			continue // not ours
+		}
+		c := strings.TrimSuffix(filepath.Base(f), ".container")
+		state, _ := exec.CommandContext(ctx, "systemctl", "--user", "show", "-p", "ActiveState", "--value", c+".service").Output()
+		list = append(list, App{Name: app, Container: c, Sha: sha, Image: image, State: strings.TrimSpace(string(state))})
+	}
+	return list, nil
+}
+
+// Logs returns the last lines of the app's running release.
+func (a *Apps) Logs(ctx context.Context, app string, lines int) (string, error) {
+	units, err := a.units(app)
+	if err != nil || len(units) == 0 {
+		return "", ErrAppNotFound
+	}
+	return journal(ctx, units[len(units)-1], lines), nil
+}
+
+// Delete stops every release of app and removes its images.
+func (a *Apps) Delete(ctx context.Context, app string) error {
+	units, err := a.units(app)
+	if err != nil {
+		return err
+	}
+	for _, c := range units {
+		a.remove(ctx, c)
+	}
+	pruneImages(ctx, app, "")
+	return nil
+}
+
+func journal(ctx context.Context, container string, lines int) string {
+	out, _ := exec.CommandContext(ctx, "journalctl", "--user", "-u", container+".service", "-n", strconv.Itoa(lines), "--no-pager", "-o", "cat").Output()
+	return string(out)
+}
+
+// pruneImages keeps the newest keepImages images of app (and keep), for rollback.
+func pruneImages(ctx context.Context, app, keep string) {
+	out, err := podman(ctx, "images", "--filter", "reference=localhost/walroos-app-"+app, "--format", "{{.Repository}}:{{.Tag}}", "--sort", "created")
+	if err != nil {
+		return
+	}
+	imgs := strings.Fields(out) // podman lists newest first
+	n := keepImages
+	if keep == "" {
+		n = 0
+	}
+	for i, img := range imgs {
+		if i >= n && img != keep {
+			podman(ctx, "rmi", "--ignore", img)
+		}
+	}
+}
+
+func unitValue(unit []byte, prefix string) string {
+	for _, l := range strings.Split(string(unit), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), prefix); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// ensureAppNetwork creates the apps' network the first time.
+func ensureAppNetwork(ctx context.Context) error {
+	if _, err := podman(ctx, "network", "exists", AppNetwork); err == nil {
+		return nil
+	}
+	_, err := podman(ctx, "network", "create", AppNetwork)
+	return err
+}
