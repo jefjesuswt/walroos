@@ -37,7 +37,7 @@ func (s *Store) Insert(ctx context.Context, w Workspace) error {
 
 // get loads one row; name != "" filters by name, id != "" by id.
 func (s *Store) get(ctx context.Context, id, name string) (Workspace, error) {
-	q := `SELECT w.id, w.name, w.owner, w.node_id, n.name, w.repo_url, w.branch, w.devcontainer_path, w.image, w.state, w.error, w.created_at
+	q := `SELECT w.id, w.name, w.owner, w.node_id, n.name, n.address, w.repo_url, w.branch, w.devcontainer_path, w.image, w.state, w.error, w.created_at
 	      FROM workspaces w JOIN nodes n ON n.id = w.node_id WHERE `
 	args := []any{}
 	if id != "" {
@@ -48,7 +48,7 @@ func (s *Store) get(ctx context.Context, id, name string) (Workspace, error) {
 		args = append(args, name)
 	}
 	var w Workspace
-	err := s.db.Read.QueryRowContext(ctx, q, args...).Scan(&w.ID, &w.Name, &w.Owner, &w.NodeID, &w.NodeName,
+	err := s.db.Read.QueryRowContext(ctx, q, args...).Scan(&w.ID, &w.Name, &w.Owner, &w.NodeID, &w.NodeName, &w.NodeAddress,
 		&w.RepoURL, &w.Branch, &w.DevcontainerPath, &w.Image, &w.State, &w.Error, &w.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return w, ErrNotFound
@@ -62,7 +62,7 @@ func (s *Store) Get(ctx context.Context, name string) (Workspace, error) {
 
 func (s *Store) List(ctx context.Context) ([]Workspace, error) {
 	rows, err := s.db.Read.QueryContext(ctx,
-		`SELECT w.id, w.name, w.owner, w.node_id, n.name, w.repo_url, w.branch, w.devcontainer_path, w.image, w.state, w.error, w.created_at
+		`SELECT w.id, w.name, w.owner, w.node_id, n.name, n.address, w.repo_url, w.branch, w.devcontainer_path, w.image, w.state, w.error, w.created_at
 		 FROM workspaces w JOIN nodes n ON n.id = w.node_id ORDER BY w.name`)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func (s *Store) List(ctx context.Context) ([]Workspace, error) {
 	var list []Workspace
 	for rows.Next() {
 		var w Workspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Owner, &w.NodeID, &w.NodeName, &w.RepoURL, &w.Branch,
+		if err := rows.Scan(&w.ID, &w.Name, &w.Owner, &w.NodeID, &w.NodeName, &w.NodeAddress, &w.RepoURL, &w.Branch,
 			&w.DevcontainerPath, &w.Image, &w.State, &w.Error, &w.CreatedAt); err != nil {
 			return nil, err
 		}

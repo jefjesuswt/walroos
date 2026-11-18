@@ -54,7 +54,7 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	}
 
 	w := Workspace{
-		ID: randomID(), Name: in.Name, Owner: owner, NodeID: node.ID, NodeName: node.Name,
+		ID: randomID(), Name: in.Name, Owner: owner, NodeID: node.ID, NodeName: node.Name, NodeAddress: node.Address,
 		RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath,
 		Image: ws.Image, State: orDefault(ws.State, "creating"), Error: ws.Error, CreatedAt: s.now().UTC(),
 	}
