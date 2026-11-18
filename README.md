@@ -85,25 +85,25 @@ go build -o bin/walroos ./cmd/walroos
 # or: TS_AUTHKEY=tskey-auth-... ./bin/walroos hub --owner you@github
 ```
 
-**2. Add a node.** Open `http://walroos-hub` from any device on your tailnet, then go to **Nodes → Add node** and copy the join command. On the node (with Tailscale up):
+**2. Add a node.** Open `http://walroos-hub` from any device on your tailnet, then go to **Nodes → Add node** and copy the join command. On the node:
 
 ```bash
 walroos node join --hub walroos-hub --token wlr_join_... --roles dev,build
 walroos node run
 ```
 
-The node shows up in the UI with live CPU, memory, disk and Podman telemetry.
+The node joins the tailnet by itself as `walroos-<name>` (embedded Tailscale, like the hub): the first `join` prints a login URL, or set `TS_AUTHKEY`. It doesn't need Tailscale installed on the machine. It shows up in the UI with live CPU, memory, disk and Podman telemetry.
 
 <details>
 <summary><b>Running next to another VPN (NordVPN, etc.)</b></summary>
 
-Tailscale sends its own traffic around other VPNs, and some VPN firewalls (NordVPN's, for one) drop that traffic, so the login hangs. The hub already handles this. For the host's `tailscaled`, run it in userspace mode, in `/etc/default/tailscaled`:
+Tailscale sends its own traffic around other VPNs, and some VPN firewalls (NordVPN's, for one) drop that traffic, so the login hangs. The hub and the node already handle this: both embed Tailscale in userspace mode. Only a machine where you use the host's `tailscaled` as a client (say, your laptop running `ssh` and `walroos ssh-config`) needs userspace mode, in `/etc/default/tailscaled`:
 
 ```bash
 FLAGS="--tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055"
 ```
 
-Clients on that machine then reach the tailnet through the proxy, for example `HTTP_PROXY=http://localhost:1055 walroos node run`.
+Clients on that machine then reach the tailnet through the proxy, for example `walroos ssh-config --proxy localhost:1055`.
 
 </details>
 

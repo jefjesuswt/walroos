@@ -27,10 +27,14 @@ go run ./cmd/walroos hub --dev        # http://127.0.0.1:8080
 ### Tailscale detrás de otra VPN (NordVPN, etc.)
 
 Tailscale saca su tráfico por fuera de cualquier VPN (`SO_MARK` / `SO_BINDTODEVICE` a la interfaz por defecto) y el firewall de NordVPN lo descarta: el login se queda colgado.
-- **Hub:** ya resuelto en código (`netns.SetEnabled(false)`; tsnet es userspace y no lo necesita).
-- **`tailscaled` del host:** usar modo userspace en `/etc/default/tailscaled`:
+- **Hub y nodo:** resuelto en código. Los dos llevan Tailscale embebido (`tsnet`, userspace) con `netns.SetEnabled(false)`. El nodo es `walroos-<nombre>` en la tailnet y guarda su estado en `~/.config/walroos/tsnet-node`; no hace falta `tailscaled` en la máquina.
+- **`tailscaled` del host como cliente** (la laptop desde la que haces `ssh`): usar modo userspace en `/etc/default/tailscaled`:
   `FLAGS="--tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055"`.
-  Sin interfaz `tailscale0`, así que los clientes van por el proxy: `HTTP_PROXY=http://localhost:1055 walroos node run`, `curl -x http://localhost:1055 http://walroos-hub/api/me`.
+  Sin interfaz `tailscale0`, así que los clientes van por el proxy: `walroos ssh-config --proxy localhost:1055`, `curl -x http://localhost:1055 http://walroos-hub/api/me`.
+
+## Nodo con tsnet (2026-11-18)
+
+`node join` y `node run` levantan su propio `tsnet` (como el hub) en vez de usar el `tailscaled` del host: un binario, sin instalar Tailscale y funciona con NordVPN. API del agente (`:7070`) y gateway SSH (`:2222`) escuchan solo en la tailnet. `ssh-config` usa la IP de tailnet del nodo (la del heartbeat) como `HostName`, porque el nombre en la tailnet ahora es `walroos-<nombre>`. Los nodos que ya existían tienen que volver a hacer `join` (cambia su identidad en la tailnet).
 
 ## Pendiente de M0
 

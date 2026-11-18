@@ -19,7 +19,8 @@ import (
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
-	"tailscale.com/client/local"
+	"tailscale.com/net/netns"
+	"tailscale.com/tsnet"
 )
 
 // state is what `node join` saves and `node run` reads.
@@ -49,6 +50,11 @@ var joinCmd = &cobra.Command{
 	Short: "Join this machine to a hub using a join token from the UI",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		hub := normalizeHub(hubURL)
+		ts, err := tailnet(cmd.Context(), nodeName)
+		if err != nil {
+			return err
+		}
+		defer ts.Close() // `node run` comes back up with the same identity: same state dir
 		body, _ := json.Marshal(map[string]any{"token": joinToken, "name": nodeName, "roles": roles})
 
 		var out struct {
@@ -82,12 +88,20 @@ var runCmd = &cobra.Command{
 		}
 
 		ctx := cmd.Context()
+		ts, err := tailnet(ctx, st.Name)
+		if err != nil {
+			return err
+		}
+		defer ts.Close()
+		lc, err := ts.LocalClient()
+		if err != nil {
+			return ui.WrapError("tailscale local client: %w", err)
+		}
 		slog.Info("Node agent starting", "name", st.Name, "hub", st.Hub, "listen", listenAddr)
 
-		// ponytail: listens on all interfaces because in userspace mode tailnet traffic arrives on
-		// loopback; anything not from the hub fails WhoIs and is rejected.
-		api := agent.NewServer(agent.Tailscale(&local.Client{}), st.Token)
-		ln, err := net.Listen("tcp", listenAddr)
+		// Only reachable over the tailnet (tsnet listener); anything not from the hub fails WhoIs.
+		api := agent.NewServer(agent.Tailscale(lc), st.Token)
+		ln, err := ts.Listen("tcp", listenAddr)
 		if err != nil {
 			return ui.WrapError("agent listen %s: %w", listenAddr, err)
 		}
@@ -96,7 +110,7 @@ var runCmd = &cobra.Command{
 		defer srv.Close()
 
 		if sshAddr != "" {
-			sshLn, err := startSSH(api, st)
+			sshLn, err := startSSH(ts, api, st)
 			if err != nil {
 				return err
 			}
@@ -133,8 +147,8 @@ func init() {
 	joinCmd.Flags().StringVar(&nodeName, "name", strings.ToLower(host), "Node name (DNS label)")
 	joinCmd.Flags().StringSliceVar(&roles, "roles", []string{"dev"}, "Roles: dev, build, prod")
 	joinCmd.MarkFlagRequired("token")
-	runCmd.Flags().StringVar(&listenAddr, "listen", ":"+agent.Port, "Address for the agent API the hub calls")
-	runCmd.Flags().StringVar(&sshAddr, "ssh-listen", ":"+agent.SSHPort, "Address for the workspaces' SSH gateway (empty disables it)")
+	runCmd.Flags().StringVar(&listenAddr, "listen", ":"+agent.Port, "Tailnet port for the agent API the hub calls")
+	runCmd.Flags().StringVar(&sshAddr, "ssh-listen", ":"+agent.SSHPort, "Tailnet port for the workspaces' SSH gateway (empty disables it)")
 
 	Cmd.AddCommand(joinCmd, runCmd, relayCmd)
 }
@@ -151,7 +165,7 @@ var relayCmd = &cobra.Command{
 
 // startSSH serves the SSH gateway. Keys are checked with the hub; the host key lives next to
 // node.json so clients see the same one across restarts.
-func startSSH(api *agent.Server, st state) (net.Listener, error) {
+func startSSH(ts *tsnet.Server, api *agent.Server, st state) (net.Listener, error) {
 	hostKey, err := agent.LoadOrCreateHostKey(filepath.Join(filepath.Dir(statePath()), "ssh_host_ed25519_key"))
 	if err != nil {
 		return nil, ui.WrapError("ssh host key: %w", err)
@@ -170,9 +184,7 @@ func startSSH(api *agent.Server, st state) (net.Listener, error) {
 	}
 	gw := api.SSHGateway(authorize, hostKey, []string{exe, "node", "relay"})
 
-	// ponytail: all interfaces, like the agent API; connections that aren't from the tailnet
-	// are dropped before the SSH handshake.
-	ln, err := net.Listen("tcp", sshAddr)
+	ln, err := ts.Listen("tcp", sshAddr) // tailnet only, like the agent API
 	if err != nil {
 		return nil, ui.WrapError("ssh listen %s: %w", sshAddr, err)
 	}
@@ -201,7 +213,32 @@ type httpError struct {
 
 func (e *httpError) Error() string { return fmt.Sprintf("%d: %s", e.status, e.msg) }
 
-var client = &http.Client{Timeout: 10 * time.Second}
+var client = &http.Client{Timeout: 10 * time.Second} // tailnet() swaps in tsnet's client
+
+// tailnet brings the node up on the tailnet as walroos-<name> with an embedded tsnet, like the
+// hub: no tailscaled on the host, and it works behind host VPNs (see netns below). The first
+// time it prints a login URL, or uses TS_AUTHKEY. State lives next to node.json.
+// ponytail: userspace netstack, slower than a kernel TUN for big transfers over SSH; and the
+// machine shows up twice on the tailnet if it also runs tailscaled.
+func tailnet(ctx context.Context, name string) (*tsnet.Server, error) {
+	// tsnet is userspace-only, so its sockets don't need to bypass the host's routing; bypassing
+	// skips VPNs like NordVPN, whose firewall then drops the traffic. Same as the hub.
+	netns.SetEnabled(false)
+	// Not "tsnet": a hub on the same machine keeps its state there.
+	ts := &tsnet.Server{
+		Hostname: "walroos-" + name,
+		Dir:      filepath.Join(filepath.Dir(statePath()), "tsnet-node"),
+		Logf:     func(string, ...any) {}, // backend noise; UserLogf still prints the login URL
+	}
+	slog.Info("Connecting to the tailnet...", "hostname", ts.Hostname)
+	if _, err := ts.Up(ctx); err != nil {
+		ts.Close()
+		return nil, ui.WrapError("tailscale up: %w", err)
+	}
+	client = ts.HTTPClient()
+	client.Timeout = 10 * time.Second
+	return ts, nil
+}
 
 func post(ctx context.Context, url, token string, body []byte, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
