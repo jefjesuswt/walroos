@@ -66,4 +66,5 @@ index.html (root)       Open Design prototype the UI is ported from; reference f
   - App ingress goes through Cloudflare Tunnel.
   - Tailscale Funnel is used only for webhooks.
   - Tailscale (or Headscale) is mandatory.
+  - Hub and nodes embed Tailscale with tsnet (userspace, works behind NordVPN). Never require the host's tailscaled.
 - Walroos is not a CI engine. The forge runs the tests; walroos deploys on push or when CI calls it with a deploy token.

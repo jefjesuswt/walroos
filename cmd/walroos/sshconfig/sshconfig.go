@@ -56,8 +56,9 @@ func init() {
 // workspace is the part of the hub's answer this command needs.
 type workspace struct {
 	Name     string `json:"name"`
-	NodeName string `json:"node_name"`
-	State    string `json:"state"`
+	NodeName    string `json:"node_name"`
+	NodeAddress string `json:"node_address"` // tailnet IP from the node's heartbeats
+	State       string `json:"state"`
 }
 
 // Generate fetches the workspaces and formats the config. proxy is host:port or a URL.
@@ -132,7 +133,9 @@ func Format(list []workspace, proxy string, port int, suffix string) string {
 	var b bytes.Buffer
 	b.WriteString("# walroos workspaces — append to ~/.ssh/config\n")
 	for _, ws := range list {
-		node := ws.NodeName
+		// The tailnet IP, not the node's name: a node on tsnet is "walroos-<name>" on the tailnet,
+		// and older hubs only send the name.
+		node := cmpOr(ws.NodeAddress, ws.NodeName)
 		if node == "" { // the hub always sends it; be safe rather than print an empty HostName
 			continue
 		}
@@ -145,4 +148,11 @@ func Format(list []workspace, proxy string, port int, suffix string) string {
 		}
 	}
 	return b.String()
+}
+
+func cmpOr(s, fallback string) string {
+	if s != "" {
+		return s
+	}
+	return fallback
 }
