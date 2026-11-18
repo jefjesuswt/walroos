@@ -77,9 +77,7 @@ Tareas, en orden:
    - Borrar un nodo con workspaces → 409 con mensaje (antes era un 500 del FK).
    - Probado de punta a punta con podman real (hub dev + agente con el token del nodo): crear 201 → `running`, stop/start, delete y sin contenedores ni volúmenes. En `--dev` el agente rechaza al hub (sin identidad de tailnet): es lo esperado.
 7. ✅ **CLI `walroos ssh-config`**: imprime `Host <name>.walroos` (HostName = nombre MagicDNS del nodo, Port 2222, User = workspace) para `~/.ssh/config`. `--proxy <addr>` añade `ProxyCommand nc -X 5 -x <addr> %h %p` (openbsd-netcat) y usa el mismo proxy para hablar con el hub: la máquina en modo userspace. `--port` y `--suffix` configurables. Se autentica con la identidad de tailnet, sin token. Probado de punta a punta: workspace real, config generada, `ssh app.walroos` entra como `dev` con el repo montado.
-8. **UI**:
-   - Página Workspaces: lista, modal "crear desde repo", info de conexión (SSH / VS Code / Claude Code).
-   - Ajustes → claves SSH.
+8. ✅ **UI**: página Workspaces (lista con estado, modal "nuevo desde repo" con nombre, repo, rama, nodo y devcontainer_path, tarjeta de conexión con `ssh <name>.walroos`, VS Code y túneles, start/stop/delete con confirmación) y Ajustes → claves SSH (listar, añadir con la clave pública, borrar). Reutiliza `ui.tsx`, tabla y modales existentes. Probado con podman real y el hub dev: crear desde la UI → `running`, borrar, clave listada, ambos temas.
 
 Tareas descubiertas probando con DotnetApp (2026-11-16):
 
