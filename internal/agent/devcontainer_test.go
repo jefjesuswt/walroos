@@ -20,7 +20,7 @@ func writeFile(t *testing.T, path, body string) {
 
 func TestReadDevcontainer(t *testing.T) {
 	repo := t.TempDir()
-	if dc, err := readDevcontainer(repo, ""); dc != nil || err != nil {
+	if dc, err := readDevcontainer(repo, "", nil); dc != nil || err != nil {
 		t.Fatalf("no devcontainer: got %+v, %v; want nil, nil (base image)", dc, err)
 	}
 
@@ -36,7 +36,7 @@ func TestReadDevcontainer(t *testing.T) {
 			{ "source": "npm", "target": "/home/dev/.npm" },
 		],
 	}`)
-	dc, err := readDevcontainer(repo, "")
+	dc, err := readDevcontainer(repo, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,17 +54,29 @@ func TestReadDevcontainer(t *testing.T) {
 	}
 
 	writeFile(t, filepath.Join(repo, "custom.json"), `{"image": "alpine", "postCreateCommand": ["make", "deps"]}`)
-	dc, err = readDevcontainer(repo, "custom.json")
+	dc, err = readDevcontainer(repo, "custom.json", nil)
 	if err != nil || dc.Image != "alpine" || !slices.Equal(dc.PostCreateCommand, command{"make", "deps"}) {
 		t.Fatalf("explicit path: %+v, %v", dc, err)
 	}
 
-	if _, err := readDevcontainer(repo, "missing.json"); err == nil {
+	if _, err := readDevcontainer(repo, "missing.json", nil); err == nil {
 		t.Error("an explicit path that doesn't exist must fail, not fall back to the base image")
 	}
 	writeFile(t, filepath.Join(repo, "compose.json"), `{"dockerComposeFile": "compose.yml"}`)
-	if _, err := readDevcontainer(repo, "compose.json"); err == nil {
+	if _, err := readDevcontainer(repo, "compose.json", nil); err == nil {
 		t.Error("a config with neither image nor dockerfile must fail")
+	}
+
+	// Inline wins over the repo's file and resolves build paths from the repo root.
+	dc, err = readDevcontainer(repo, "custom.json", []byte(`{"image": "debian", /* JSONC too */ "remoteUser": "vscode",}`))
+	if err != nil || dc.Image != "debian" || dc.RemoteUser != "vscode" || dc.dir != repo {
+		t.Fatalf("inline: %+v, %v", dc, err)
+	}
+	if _, err := readDevcontainer(repo, "", []byte(`{"image": "x", "mounts": ["type=bind,source=/,target=/h"]}`)); err == nil {
+		t.Error("inline config with a host mount was accepted")
+	}
+	if dc, err := readDevcontainer(repo, "custom.json", []byte("null")); err != nil || dc.Image != "alpine" {
+		t.Errorf("inline null must fall back to the repo: %+v, %v", dc, err)
 	}
 }
 
@@ -78,12 +90,12 @@ func TestDevcontainerRejectsHostMounts(t *testing.T) {
 		`{"type": "bind", "source": "/", "target": "/host"}`,
 	} {
 		writeFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": [`+m+`]}`)
-		if _, err := readDevcontainer(repo, "dc.json"); err == nil {
+		if _, err := readDevcontainer(repo, "dc.json", nil); err == nil {
 			t.Errorf("mount %s was accepted", m)
 		}
 	}
 	writeFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": ["type=tmpfs,target=/tmp/x", {"source": "cache", "target": "/c"}]}`)
-	if _, err := readDevcontainer(repo, "dc.json"); err != nil {
+	if _, err := readDevcontainer(repo, "dc.json", nil); err != nil {
 		t.Errorf("volume and tmpfs mounts rejected: %v", err)
 	}
 }

@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -15,6 +16,7 @@ var (
 	ErrNoNode    = errors.New("no online node with the dev role; join one with `walroos node join --roles dev`")
 	ErrNodeRole  = errors.New("the chosen node doesn't have the dev role")
 	ErrAgentBusy = errors.New("the node is busy with that workspace, try again in a moment")
+	ErrRepo      = errors.New("the node couldn't read the repo")
 )
 
 // Workspace mirrors a workspace on a node.
@@ -40,6 +42,16 @@ type CreateInput struct {
 	Branch           string `json:"branch"`
 	DevcontainerPath string `json:"devcontainer_path"`
 	Node             string `json:"node"`
+	// Devcontainer is a devcontainer.json to use instead of the repo's (the one detect generates).
+	// The node keeps it with the workspace for rebuilds; the hub doesn't store it.
+	Devcontainer json.RawMessage `json:"devcontainer,omitempty"`
+}
+
+// DetectInput asks a node to propose a devcontainer for a repo. Node is a name or ID; "" picks one.
+type DetectInput struct {
+	RepoURL string `json:"repo_url"`
+	Branch  string `json:"branch"`
+	Node    string `json:"node"`
 }
 
 // EnvVar is one environment variable of a workspace. Secret only affects how the UI shows it;

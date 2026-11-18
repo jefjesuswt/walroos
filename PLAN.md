@@ -94,9 +94,11 @@ Notas de uso (para el README cuando haya flujo completo):
 Decisiones abiertas de M1:
 - Podman por CLI (como en M0) o por la API REST del socket. Default: seguir con CLI hasta que duela.
 
-## Siguiente tanda — detección de stack
+## Detección de stack ✅ (2026-11-18)
 
-Plan completo en [docs/devcontainer-detection.md](docs/devcontainer-detection.md): detectar el stack del repo (bun/node, dotnet, android, go, rust, python), generar un `devcontainer.json` y dejar que la UI ajuste las herramientas, con el origen de cada una (`image` o `postCreate`). El JSON va en línea en el spec, así el repo no se ensucia. Incluye la receta de Android ya probada con nimbo.
+Plan y estado en [docs/devcontainer-detection.md](docs/devcontainer-detection.md). El agente detecta el stack con un clon superficial (`POST /v1/detect`), genera un `devcontainer.json` y la UI lo ajusta antes de crear; el JSON va en línea en el spec y el repo no se toca.
+
+Pendiente: prueba real en casa (podman con salida a internet): crear nimbo con el devcontainer generado y que `./gradlew assemblePublicDebug` compile. En WSL no se puede: la red `walroos-dev` es `--internal`.
 
 ## Después
 
@@ -110,5 +112,4 @@ Plan completo en [docs/devcontainer-detection.md](docs/devcontainer-detection.md
 ## Backlog chico
 
 - Self-host de las fuentes (hoy Google Fonts; offline cae a fuentes del sistema).
-- Selector de tema claro/oscuro en la UI (el CSS ya soporta `data-theme="light"`).
 - Pantallas placeholder del sidebar (Overview, Apps, …) se rellenan con su hito.
