@@ -350,7 +350,7 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 .bar i.b-busy { background: var(--busy); } .bar i.b-bad { background: var(--bad); }
 
 /* tables */
-.table-wrap { overflow-x: auto; border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); }
+.table-wrap { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; border: 1px solid var(--bd); border-radius: var(--r2); background: var(--s1); }
 .tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .tbl th { text-align: left; font-weight: 500; color: var(--tx2); font-size: var(--fs-xs); padding: var(--sp2) var(--sp3); border-bottom: 1px solid var(--bd); white-space: nowrap; background: var(--s1); }
 .tbl td { padding: 6px var(--sp3); border-bottom: 1px solid var(--bd); vertical-align: middle; height: 40px; }
@@ -399,7 +399,7 @@ a.link { color: var(--ac); }
 /* code */
 .cmd, .code { position: relative; display: flex; align-items: center; gap: var(--sp2); min-width: 0; background: var(--code-bg); border: 1px solid var(--bd); border-radius: var(--r1); }
 .cmd { padding: var(--sp1) var(--sp1) var(--sp1) var(--sp3); min-height: 40px; }
-.cmd code { flex: 1 1 0; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: var(--fs-sm); scrollbar-width: thin; padding: 6px 0; }
+.cmd code { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; font-size: var(--fs-sm); padding: 6px 0; }
 .cmd .prompt { color: var(--tx2); font-family: var(--f-mono); user-select: none; }
 .code { align-items: flex-start; }
 .code pre { flex: 1 1 0; min-width: 0; margin: 0; padding: var(--sp3); overflow-x: auto; font-size: var(--fs-sm); line-height: 1.6; }
@@ -601,6 +601,10 @@ a.link { color: var(--ac); }
   .hide-md { display: none; }
   .stepper { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .step::after { display: none; }
+}
+@media (max-width: 1000px) {
+  .hide-sm { display: none; }
+  .cmd code { font-size: var(--fs-xs); }
 }
 @media (max-width: 767px) {
   .app, body.sb-collapsed .app { grid-template-columns: minmax(0, 1fr); }
