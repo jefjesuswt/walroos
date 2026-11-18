@@ -138,6 +138,8 @@ func (h *Handler) handleRemove(w http.ResponseWriter, req *http.Request) {
 	switch {
 	case errors.Is(err, ErrNodeNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrNodeHasWorkspaces):
+		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
 	case err != nil:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
 	default:
