@@ -119,3 +119,20 @@ func TestDetectClone(t *testing.T) {
 		t.Errorf("missing branch: %v, want ErrDetectClone", err)
 	}
 }
+
+func TestHTTPSURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"git@github.com:jefjesuswt/nimbo":     "https://github.com/jefjesuswt/nimbo",
+		"git@github.com:jefjesuswt/nimbo.git": "https://github.com/jefjesuswt/nimbo.git",
+		"ssh://git@gitlab.com/a/b.git":        "https://gitlab.com/a/b.git",
+		"ssh://git@git.example.com:2222/a/b":  "https://git.example.com/a/b",
+		"https://github.com/a/b":              "https://github.com/a/b",
+		"https://user:tok@github.com/a/b":     "https://user:tok@github.com/a/b",
+		"/tmp/local/repo":                     "/tmp/local/repo",
+		"file:///tmp/x":                       "file:///tmp/x",
+	} {
+		if got := httpsURL(in); got != want {
+			t.Errorf("httpsURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
