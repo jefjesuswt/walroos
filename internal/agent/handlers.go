@@ -15,6 +15,7 @@ func (s *Server) workspaceRoutes(r *whttp.Router) {
 	r.Get("/v1/workspaces/{name}", s.handleGetWorkspace)
 	r.Post("/v1/workspaces/{name}/start", s.handleStartWorkspace)
 	r.Post("/v1/workspaces/{name}/stop", s.handleStopWorkspace)
+	r.Post("/v1/workspaces/{name}/rebuild", s.handleRebuildWorkspace)
 	r.Delete("/v1/workspaces/{name}", s.handleDeleteWorkspace)
 }
 
@@ -57,6 +58,15 @@ func (s *Server) handleStartWorkspace(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
 	s.workspaceOp(w, r, s.ws.Stop)
+}
+
+func (s *Server) handleRebuildWorkspace(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.ws.Rebuild(r.Context(), r.PathValue("name"))
+	if err != nil {
+		workspaceError(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusAccepted, ws)
 }
 
 func (s *Server) handleDeleteWorkspace(w http.ResponseWriter, r *http.Request) {

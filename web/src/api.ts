@@ -102,6 +102,7 @@ export const api = {
   createWorkspace: (w: NewWorkspace) => req<Workspace>('POST', '/api/workspaces', w),
   startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
   stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
+  rebuildWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/rebuild`),
   deleteWorkspace: (name: string) => req<void>('DELETE', `/api/workspaces/${name}`),
 
   sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),

@@ -184,6 +184,7 @@ func create(ctx context.Context, spec WorkspaceSpec) error {
 			return fmt.Errorf("postCreateCommand: %w", err)
 		}
 	}
+	saveSpec(ctx, home, spec) // so rebuild knows the branch and devcontainer path, not just the remote
 	return nil
 }
 
@@ -335,6 +336,110 @@ func (w *Workspaces) containerOp(ctx context.Context, name string, args ...strin
 	}
 	_, err := podman(ctx, args...)
 	return err
+}
+
+// Rebuild recreates the container and any image built for it, keeping the volumes: the clone
+// and $HOME (mise runtimes, ~/.claude, caches) survive. It's how a changed devcontainer, a new
+// base image or a broken container is picked up.
+func (w *Workspaces) Rebuild(ctx context.Context, name string) (Workspace, error) {
+	if _, err := podman(ctx, "volume", "inspect", "ws-"+name+"-src"); err != nil {
+		return Workspace{}, ErrWorkspaceNotFound
+	}
+	w.mu.Lock()
+	if _, busy := w.busy[name]; busy {
+		w.mu.Unlock()
+		return Workspace{}, ErrWorkspaceBusy
+	}
+	w.busy[name] = "creating" // rebuild shows as creating: same state the hub allows
+	delete(w.failed, name)
+	w.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), createTimeout)
+		defer cancel()
+		err := rebuild(ctx, name)
+
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		delete(w.busy, name)
+		if err != nil {
+			w.failed[name] = err.Error()
+		}
+	}()
+	return Workspace{Name: name, State: "creating"}, nil
+}
+
+func rebuild(ctx context.Context, name string) error {
+	src, home := "ws-"+name+"-src", "ws-"+name+"-home"
+	repo, err := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", src)
+	if err != nil {
+		return ErrWorkspaceNotFound
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".git")); err != nil {
+		return fmt.Errorf("%s has no clone in its source volume", name)
+	}
+
+	spec := loadSpec(ctx, home)
+	if spec.RepoURL == "" { // created before the spec file existed: the remote is enough
+		spec.RepoURL = gitRemote(ctx, repo)
+	}
+	spec.Name = name
+	if spec.RepoURL == "" {
+		return fmt.Errorf("%s has no remote origin to rebuild from", name)
+	}
+
+	// Remove the container, not the volumes; drop the image built from the repo so it rebuilds.
+	if ids, err := podman(ctx, "ps", "-aq", "--filter", "label="+labelWorkspace+"="+name); err != nil {
+		return err
+	} else if ids != "" {
+		if _, err := podman(ctx, append([]string{"rm", "-f", "-t", "5"}, strings.Fields(ids)...)...); err != nil {
+			return err
+		}
+	}
+	podman(ctx, "rmi", "-f", "--ignore", "localhost/walroos-ws-"+name)
+
+	return create(ctx, spec)
+}
+
+// gitRemote reads origin's URL from a clone without failing the rebuild if git is unhappy.
+func gitRemote(ctx context.Context, repo string) string {
+	out, err := exec.CommandContext(ctx, "git", "-C", repo, "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// specPath is where create remembers what it was asked for; rebuild reads it back.
+// It lives in the home volume, so it survives a rebuild and never shows up in the repo.
+const specPath = ".walroos/workspace.json"
+
+func saveSpec(ctx context.Context, homeVolume string, spec WorkspaceSpec) {
+	home, err := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", homeVolume)
+	if err != nil {
+		return // best effort: rebuild falls back to the git remote
+	}
+	if err := os.MkdirAll(filepath.Join(home, filepath.Dir(specPath)), 0o700); err != nil {
+		return
+	}
+	body, err := json.Marshal(spec)
+	if err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(home, specPath), body, 0o600)
+}
+
+func loadSpec(ctx context.Context, homeVolume string) WorkspaceSpec {
+	var spec WorkspaceSpec
+	home, err := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", homeVolume)
+	if err != nil {
+		return spec
+	}
+	body, err := os.ReadFile(filepath.Join(home, specPath))
+	if err == nil {
+		json.Unmarshal(body, &spec)
+	}
+	return spec
 }
 
 // Delete removes the container, both volumes and any image built for the workspace. Idempotent.

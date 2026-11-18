@@ -158,6 +158,11 @@ func (s *Service) Stop(ctx context.Context, name string) (Workspace, error) {
 	return s.op(ctx, name, s.agents.StopWorkspace)
 }
 
+// Rebuild recreates the container on the node, keeping the clone and $HOME.
+func (s *Service) Rebuild(ctx context.Context, name string) (Workspace, error) {
+	return s.op(ctx, name, s.agents.RebuildWorkspace)
+}
+
 func (s *Service) op(ctx context.Context, name string,
 	call func(context.Context, string, string, string) (agent.Workspace, error)) (Workspace, error) {
 	w, err := s.store.Get(ctx, name)

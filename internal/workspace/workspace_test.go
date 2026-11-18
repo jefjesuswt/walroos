@@ -108,6 +108,15 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 		ws.State = "stopped"
 		f.ws[name] = ws
 		json(200, ws)
+	case r.Method == "POST" && sub == "rebuild":
+		ws, ok := f.ws[name]
+		if !ok {
+			errJSON(404, "workspace not found")
+			return
+		}
+		ws.State = "creating"
+		f.ws[name] = ws
+		json(202, ws)
 	case r.Method == "DELETE" && name != "":
 		if _, ok := f.ws[name]; !ok {
 			errJSON(404, "workspace not found")
@@ -364,5 +373,19 @@ func TestPicksLeastLoadedDevNode(t *testing.T) {
 	var byName workspace.Workspace
 	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "three", "repo_url": "x", "node": first.NodeName}, &byName); code != 201 || byName.NodeName != first.NodeName {
 		t.Fatalf("create on a named node: %d %+v", code, byName)
+	}
+}
+
+func TestWorkspaceRebuild(t *testing.T) {
+	h := newHub(t, true)
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	var ws workspace.Workspace
+	if code := h.call(t, "POST", "/api/workspaces/app/rebuild", nil, &ws); code != 202 || ws.State != "creating" {
+		t.Fatalf("rebuild: %d %+v", code, ws)
+	}
+	if code := h.call(t, "POST", "/api/workspaces/ghost/rebuild", nil, nil); code != 404 {
+		t.Fatalf("rebuild unknown: %d, want 404", code)
 	}
 }
