@@ -49,6 +49,7 @@ func Tailscale(lc *local.Client) Identify {
 
 type Server struct {
 	ws        *Workspaces
+	apps      *Apps
 	identify  Identify
 	tokenHash []byte
 	hubID     atomic.Pointer[string]
@@ -56,8 +57,11 @@ type Server struct {
 
 // NewServer serves the agent API for the node that owns nodeToken.
 func NewServer(identify Identify, nodeToken string) *Server {
-	return &Server{ws: NewWorkspaces(), identify: identify, tokenHash: []byte(TokenHash(nodeToken))}
+	return &Server{ws: NewWorkspaces(), apps: NewApps(), identify: identify, tokenHash: []byte(TokenHash(nodeToken))}
 }
+
+// SetRelay sets the command that runs Relay (`walroos node relay`); app health checks use it.
+func (s *Server) SetRelay(relay []string) { s.apps.relay = relay }
 
 // SetHubID pins the hub's StableNodeID. Until it's set every request gets 503.
 func (s *Server) SetHubID(id string) {
@@ -71,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	r.Use(s.auth)
 	r.Get("/v1/info", handleInfo)
 	s.workspaceRoutes(r)
+	s.appRoutes(r)
 	return r
 }
 

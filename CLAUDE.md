@@ -25,7 +25,8 @@ Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (
 cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, run, telemetry)
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs + users allowlist middleware
-internal/agent/         node agent: hub API (:7070), workspaces on podman, SSH gateway (:2222)
+internal/agent/         node agent: hub API (:7070), workspaces and apps (Quadlets) on podman, SSH gateway (:2222)
+internal/app/           apps: config, encrypted env, deployment queue (one at a time) and history
 internal/fleet/         nodes: models, store, service, handlers, integration tests
 internal/sshkeys/       users' SSH keys + the node-facing ssh-auth check
 internal/mcp/           MCP at /mcp (go-sdk, stateless): tools over the fleet and workspace services

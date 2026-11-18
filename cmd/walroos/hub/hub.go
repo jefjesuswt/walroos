@@ -15,6 +15,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/mcp"
@@ -143,6 +144,8 @@ and --owner with your tailnet login so you can use the UI.
 		}
 		wsSvc := workspace.NewService(workspace.NewStore(db), fleetSvc, agents, box)
 		wsHandler := workspace.NewHandler(wsSvc)
+		appSvc := app.NewService(app.NewStore(db), fleetSvc, agents, box)
+		go appSvc.Run(ctx)
 
 		router := whttp.NewRouter()
 		router.Use(withLogger, withRecoverer)
@@ -154,6 +157,7 @@ and --owner with your tailnet login so you can use the UI.
 			fleetHandler.UserRoutes(r)
 			keysHandler.UserRoutes(r)
 			wsHandler.Routes(r)
+			app.NewHandler(appSvc).Routes(r)
 			mcpHandler := mcp.Handler(fleetSvc, wsSvc).ServeHTTP
 			r.Post("/mcp", mcpHandler)
 			r.Get("/mcp", mcpHandler) // 405 from the SDK (stateless), not the SPA's index.html
