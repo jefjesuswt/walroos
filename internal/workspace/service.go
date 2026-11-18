@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
@@ -35,6 +36,9 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Workspace, error) {
 	if !nameRe.MatchString(in.Name) || in.RepoURL == "" {
 		return Workspace{}, ErrInvalid
+	}
+	if !remoteRepo(in.RepoURL) {
+		return Workspace{}, ErrRepoURL
 	}
 
 	node, err := s.pickNode(ctx, in.Node)
@@ -74,6 +78,9 @@ func (s *Service) Detect(ctx context.Context, in DetectInput) (json.RawMessage, 
 	if in.RepoURL == "" {
 		return nil, fmt.Errorf("%w: repo_url is required", ErrInvalid)
 	}
+	if !remoteRepo(in.RepoURL) {
+		return nil, ErrRepoURL
+	}
 	node, err := s.pickNode(ctx, in.Node)
 	if err != nil {
 		return nil, err
@@ -88,6 +95,20 @@ func (s *Service) Detect(ctx context.Context, in DetectInput) (json.RawMessage, 
 		return nil, fmt.Errorf("%w: %s", ErrRepo, ae.Msg)
 	}
 	return d, err
+}
+
+// remoteRepo reports whether u is a git URL on another machine. The node's git clones it, so a
+// local path or file:// would hand a hub user the node's own disk; ext:: runs a command.
+func remoteRepo(u string) bool {
+	for _, scheme := range []string{"https://", "http://", "ssh://", "git://"} {
+		if strings.HasPrefix(strings.ToLower(u), scheme) && len(u) > len(scheme) {
+			return true
+		}
+	}
+	// scp-like user@host:path, as git reads it: no "/" before the ":".
+	user, rest, ok := strings.Cut(u, "@")
+	host, path, ok2 := strings.Cut(rest, ":")
+	return ok && ok2 && user != "" && host != "" && path != "" && !strings.ContainsAny(user+host, `/\ `) && !strings.HasPrefix(u, "-")
 }
 
 // pickNode returns the requested node (name or id) if it can run workspaces, else the online

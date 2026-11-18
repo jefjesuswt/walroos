@@ -115,14 +115,17 @@ func readDevcontainer(repo, path string, inline json.RawMessage) (*devcontainer,
 		candidates = []string{path}
 	}
 	for _, p := range candidates {
-		full := filepath.Join(repo, filepath.Clean("/"+p)) // Clean("/"+p) keeps it inside repo
-		raw, err := os.ReadFile(full)
+		full, err := inside(repo, filepath.Join(repo, filepath.Clean("/"+p))) // a symlink may point anywhere
 		if errors.Is(err, os.ErrNotExist) {
 			if path == "" {
 				continue
 			}
 			return nil, fmt.Errorf("devcontainer_path %s: not found in the repo", p)
 		}
+		if err != nil {
+			return nil, err
+		}
+		raw, err := os.ReadFile(full)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}

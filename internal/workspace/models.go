@@ -17,6 +17,7 @@ var (
 	ErrNodeRole  = errors.New("the chosen node doesn't have the dev role")
 	ErrAgentBusy = errors.New("the node is busy with that workspace, try again in a moment")
 	ErrRepo      = errors.New("the node couldn't read the repo")
+	ErrRepoURL   = errors.New("repo_url must be a remote git URL: https://, ssh://, git:// or user@host:path")
 )
 
 // Workspace mirrors a workspace on a node.
