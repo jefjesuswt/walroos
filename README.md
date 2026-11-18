@@ -150,7 +150,7 @@ M1 progress:
 - [x] Workspaces page and SSH keys in the UI
 - [x] Rebuild a workspace without losing `$HOME`
 - [x] Per-workspace environment variables and secrets (encrypted at rest)
-- [ ] Reach services running on the node (e.g. a database) from a workspace
+- [x] Reach services running on the node (e.g. a database) from a workspace (shared `walroos-dev` network)
 
 ### Not planned
 
