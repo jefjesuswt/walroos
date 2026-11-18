@@ -104,6 +104,18 @@ Plan y estado en [docs/devcontainer-detection.md](docs/devcontainer-detection.md
 
 Pendiente: prueba real en casa (podman con salida a internet): crear droid con el devcontainer generado y que `./gradlew assemblePublicDebug` compile. En WSL no se puede: la red `walroos-dev` es `--internal`.
 
+## M2 — MCP ✅ (2026-11-18)
+
+`/mcp` en el hub (`internal/mcp`, `modelcontextprotocol/go-sdk` v1.8), streamable HTTP **stateless** con respuestas JSON: cada petición arma un servidor ligado al usuario de la petición (el owner al crear), sin sesiones que guardar. Va detrás del mismo middleware que la API (WhoIs + allowlist); sin API tokens: los clientes MCP ya están en la tailnet, los tokens llegan con M4 para CI. `GET`/`DELETE /mcp` responden 405 (sin eso caían en el `index.html` de la SPA).
+
+Herramientas: `list_nodes`, `list_workspaces`, `detect_stack`, `create_workspace` (acepta el devcontainer de `detect_stack`), `get_workspace`, `start_workspace`, `stop_workspace`, `workspace_ssh_info` (bloque de `~/.ssh/config` y comando `ssh`, igual que `walroos ssh-config`). Los errores del servicio vuelven como error de herramienta legible (`isError`), no como fallo de protocolo. Sin `delete_workspace`/`rebuild` a propósito: destructivos, se hacen desde la UI.
+
+Probado: test de integración con el cliente del SDK (SQLite real, router y auth reales, agente falso) y Claude Code 2.1 contra el hub dev (`claude -p --mcp-config`): lista nodos y workspaces, y el error "no online node" le llega legible.
+
+**Probado de punta a punta por la tailnet** (2026-11-18, con NordVPN): hub en Windows, nodo `dev` en WSL (servicio de systemd), Claude Code en Windows llegando a la tailnet por un puente tsnet efímero. Claude Code detectó el stack, creó `mcpdemo` desde `octocat/Hello-World`, consultó `get_workspace` hasta `running` y pidió `workspace_ssh_info`; con ese comando, `ssh` entró como `dev` en `/workspaces/Hello-World` con el repo clonado.
+
+Sin probar: desde una laptop con `tailscaled` en modo userspace, Claude Code tendría que salir por el proxy (`HTTP_PROXY=http://localhost:1055`).
+
 ## Caminos tristes y seguridad (2026-11-18)
 
 Atacado un hub y un nodo reales por la tailnet (API, MCP y SSH). Arreglado:
@@ -126,7 +138,6 @@ Límites conocidos (sin arreglar):
 
 | Hito | Resumen |
 |---|---|
-| M2 MCP | `/mcp` en el hub con herramientas de nodos y workspaces. |
 | M3 Deploy | Apps, build + registry en el nodo `build`, Quadlets, red `walroos`, Cloudflare Tunnel, zero-downtime, rollback. |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |

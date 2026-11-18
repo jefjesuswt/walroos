@@ -17,6 +17,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/mcp"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/web"
@@ -153,6 +154,10 @@ and --owner with your tailnet login so you can use the UI.
 			fleetHandler.UserRoutes(r)
 			keysHandler.UserRoutes(r)
 			wsHandler.Routes(r)
+			mcpHandler := mcp.Handler(fleetSvc, wsSvc).ServeHTTP
+			r.Post("/mcp", mcpHandler)
+			r.Get("/mcp", mcpHandler) // 405 from the SDK (stateless), not the SPA's index.html
+			r.Delete("/mcp", mcpHandler)
 		})
 		router.Get("/", web.Handler())
 
