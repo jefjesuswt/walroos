@@ -45,10 +45,10 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
 
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo, Branch: "main"}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo, Branch: "main"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); !errors.Is(err, ErrWorkspaceExists) {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); !errors.Is(err, ErrWorkspaceExists) {
 		t.Fatalf("second create: %v, want ErrWorkspaceExists", err)
 	}
 
@@ -107,7 +107,7 @@ func TestWorkspaceBaseImage(t *testing.T) {
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
 
-	if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	ws := waitState(t, w, name, "running", 10*time.Minute) // first run builds the base image
@@ -156,7 +156,7 @@ func TestWorkspaceBaseImageBuildFails(t *testing.T) {
 	name := testName()
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
-	if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	ws := waitState(t, w, name, "failed", time.Minute)
@@ -174,7 +174,7 @@ func TestWorkspaceConcurrentCreates(t *testing.T) {
 	names := []string{testName(), testName(), testName()}
 	for _, n := range names {
 		t.Cleanup(func() { w.Delete(context.Background(), n) })
-		if _, err := w.Create(context.Background(), WorkspaceSpec{Name: n, RepoURL: repo}); err != nil {
+		if _, err := w.Create(context.Background(), WorkspaceSpec{Name: n, RepoURL: repo}, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -208,7 +208,7 @@ func TestWorkspaceImageMetadataUser(t *testing.T) {
 		name := "walroos-test-" + hex.EncodeToString(b)
 		w := NewWorkspaces()
 		t.Cleanup(func() { w.Delete(context.Background(), name) })
-		if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+		if _, err := w.Create(context.Background(), WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 			t.Fatal(err)
 		}
 		if ws := waitState(t, w, name, "running"); ws.User != c.want {
@@ -228,7 +228,7 @@ func TestWorkspaceCreateFails(t *testing.T) {
 	w := NewWorkspaces()
 	ctx := context.Background()
 
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: filepath.Join(t.TempDir(), "nope")}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: filepath.Join(t.TempDir(), "nope")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Minute)
@@ -351,7 +351,7 @@ func TestWorkspaceSurvivesAgentRestart(t *testing.T) {
 	name := testName()
 	w := NewWorkspaces()
 	t.Cleanup(func() { NewWorkspaces().Delete(context.Background(), name) })
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitState(t, w, name, "running")
@@ -408,7 +408,7 @@ func TestWorkspaceDoesNotTouchForeignContainers(t *testing.T) {
 	}
 
 	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	ws := waitState(t, w, name, "failed")
@@ -431,13 +431,13 @@ func TestWorkspaceRetryAfterFailedClone(t *testing.T) {
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
 
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: filepath.Join(t.TempDir(), "nope")}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: filepath.Join(t.TempDir(), "nope")}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitState(t, w, name, "failed")
 
 	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	ws := waitState(t, w, name, "running")
@@ -455,7 +455,7 @@ func TestWorkspaceMiseToolPersists(t *testing.T) {
 	name := testName()
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	ws := waitState(t, w, name, "running")
@@ -489,7 +489,7 @@ func TestWorkspaceRebuild(t *testing.T) {
 	name := testName()
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	before := waitState(t, w, name, "running")
@@ -511,7 +511,7 @@ func TestWorkspaceRebuild(t *testing.T) {
 	writeFile(t, filepath.Join(dc, ".devcontainer/Dockerfile"), "FROM docker.io/library/alpine:3.22\nRUN adduser -D -u 1002 dev2\n")
 	writeFile(t, filepath.Join(dc, ".devcontainer/devcontainer.json"), `{"build":{"dockerfile":"Dockerfile"},"remoteUser":"dev2"}`)
 
-	if _, err := w.Rebuild(ctx, name); err != nil {
+	if _, err := w.Rebuild(ctx, name, nil); err != nil {
 		t.Fatal(err)
 	}
 	after := waitState(t, w, name, "running", 5*time.Minute)
@@ -531,7 +531,47 @@ func TestWorkspaceRebuild(t *testing.T) {
 // TestWorkspaceRebuildUnknown: a name with no volumes is not a workspace.
 func TestWorkspaceRebuildUnknown(t *testing.T) {
 	needPodman(t)
-	if _, err := NewWorkspaces().Rebuild(context.Background(), testName()); !errors.Is(err, ErrWorkspaceNotFound) {
+	if _, err := NewWorkspaces().Rebuild(context.Background(), testName(), nil); !errors.Is(err, ErrWorkspaceNotFound) {
 		t.Fatalf("rebuild unknown: %v, want ErrWorkspaceNotFound", err)
+	}
+}
+
+// TestWorkspaceEnv: env vars reach the container through an env-file, and a rebuild applies
+// the new values.
+func TestWorkspaceEnv(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, []string{"FOO=bar", "DB_URL=postgres://u:p@db/app"}); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "running")
+	env := func(k string) string {
+		out, err := podman(ctx, "exec", "--user", ws.User, "ws-"+name, "printenv", k)
+		if err != nil {
+			return ""
+		}
+		return out
+	}
+	if got := env("FOO"); got != "bar" {
+		t.Fatalf("FOO = %q, want bar", got)
+	}
+	if got := env("DB_URL"); got != "postgres://u:p@db/app" {
+		t.Fatalf("DB_URL = %q", got)
+	}
+
+	if _, err := w.Rebuild(ctx, name, []string{"FOO=baz"}); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w, name, "running", 5*time.Minute)
+	if got := env("FOO"); got != "baz" {
+		t.Fatalf("after rebuild FOO = %q, want baz", got)
+	}
+	if got := env("DB_URL"); got != "" {
+		t.Fatalf("after rebuild DB_URL = %q, want it gone (env replaced)", got)
 	}
 }

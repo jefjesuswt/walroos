@@ -41,3 +41,11 @@ type CreateInput struct {
 	DevcontainerPath string `json:"devcontainer_path"`
 	Node             string `json:"node"`
 }
+
+// EnvVar is one environment variable of a workspace. Secret only affects how the UI shows it;
+// all values are encrypted at rest either way.
+type EnvVar struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret"`
+}

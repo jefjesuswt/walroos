@@ -33,7 +33,7 @@ func TestSSHGatewayPodman(t *testing.T) {
 	name := testName()
 	w := NewWorkspaces()
 	t.Cleanup(func() { w.Delete(context.Background(), name) })
-	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}); err != nil {
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitState(t, w, name, "running", 10*time.Minute)

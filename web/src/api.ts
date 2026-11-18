@@ -58,6 +58,12 @@ export interface NewWorkspace {
   node?: string;
 }
 
+export interface EnvVar {
+  key: string;
+  value: string;
+  secret: boolean;
+}
+
 export interface SSHKey {
   id: string;
   name: string;
@@ -103,6 +109,8 @@ export const api = {
   startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
   stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
   rebuildWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/rebuild`),
+  workspaceEnv: (name: string) => req<EnvVar[]>('GET', `/api/workspaces/${name}/env`),
+  setWorkspaceEnv: (name: string, vars: EnvVar[]) => req<EnvVar[]>('PUT', `/api/workspaces/${name}/env`, vars),
   deleteWorkspace: (name: string) => req<void>('DELETE', `/api/workspaces/${name}`),
 
   sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),

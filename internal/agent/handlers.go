@@ -30,12 +30,15 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateWorkspace answers 202 right away; creation (clone, build, run) continues in the background.
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
-	var spec WorkspaceSpec
-	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+	var body struct {
+		WorkspaceSpec
+		Env []string `json:"env"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	ws, err := s.ws.Create(r.Context(), spec)
+	ws, err := s.ws.Create(r.Context(), body.WorkspaceSpec, body.Env)
 	if err != nil {
 		workspaceError(w, err)
 		return
@@ -61,7 +64,11 @@ func (s *Server) handleStopWorkspace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRebuildWorkspace(w http.ResponseWriter, r *http.Request) {
-	ws, err := s.ws.Rebuild(r.Context(), r.PathValue("name"))
+	var body struct {
+		Env []string `json:"env"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) // empty body is fine: no env
+	ws, err := s.ws.Rebuild(r.Context(), r.PathValue("name"), body.Env)
 	if err != nil {
 		workspaceError(w, err)
 		return
