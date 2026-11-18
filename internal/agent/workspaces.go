@@ -30,6 +30,7 @@ const (
 	labelUser      = "walroos.user"     // uid:gid sessions run as
 	labelFolder    = "walroos.folder"   // where the repo is mounted; sessions start here
 	labelAgentDir  = "walroos.agentdir" // where agentDir is mounted; absent on workspaces from before the SSH gateway
+	DevNetwork     = "walroos-dev"      // shared podman network: workspaces and node services meet by name
 	agentMount     = "/run/walroos"     // container path of agentDir
 	createTimeout  = 30 * time.Minute
 )
@@ -145,6 +146,10 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 	if dc != nil && dc.RemoteUser != "" {
 		remoteUser = dc.RemoteUser
 	}
+	if err := ensureNetwork(ctx); err != nil {
+		return err
+	}
+
 	uid, gid, homeDir, err := probeUser(ctx, image, remoteUser)
 	if err != nil {
 		return err
@@ -157,7 +162,7 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 
 	folder := "/workspaces/" + repoName(spec.RepoURL)
 	user := uid + ":" + gid
-	args := []string{"run", "-d", "--name", "ws-" + name, "--hostname", name,
+	args := []string{"run", "-d", "--name", "ws-" + name, "--hostname", name, "--network", DevNetwork,
 		"--label", labelWorkspace + "=" + name, "--label", labelUser + "=" + user, "--label", labelFolder + "=" + folder,
 		"--label", labelAgentDir + "=" + agentMount,
 		"--user", user, "-v", src + ":" + folder, "-v", home + ":" + homeDir, "-v", sockets + ":" + agentMount + ":z", "-w", folder}
@@ -407,6 +412,17 @@ func rebuild(ctx context.Context, name string, env []string) error {
 	podman(ctx, "rmi", "-f", "--ignore", "localhost/walroos-ws-"+name)
 
 	return create(ctx, spec, env)
+}
+
+// ensureNetwork creates the shared network the first time. Services on the node that a workspace
+// needs (a database, a broker) join it and are reachable by container name; pasta's default
+// network can't reach the host's ports at all.
+func ensureNetwork(ctx context.Context) error {
+	if _, err := podman(ctx, "network", "exists", DevNetwork); err == nil {
+		return nil
+	}
+	_, err := podman(ctx, "network", "create", DevNetwork)
+	return err
 }
 
 // gitRemote reads origin's URL from a clone without failing the rebuild if git is unhappy.
