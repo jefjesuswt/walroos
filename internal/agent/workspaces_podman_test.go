@@ -575,3 +575,29 @@ func TestWorkspaceEnv(t *testing.T) {
 		t.Fatalf("after rebuild DB_URL = %q, want it gone (env replaced)", got)
 	}
 }
+
+// TestWorkspaceReachesServiceOnDevNetwork: a service container on the shared network is
+// reachable by name from the workspace, and the workspace still reaches the internet.
+func TestWorkspaceReachesServiceOnDevNetwork(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	svc := testName()
+	if _, err := podman(ctx, "run", "-d", "--name", svc, "--network", DevNetwork, "--entrypoint", "sh",
+		"docker.io/library/python:3-alpine", "-c", `mkdir -p /s && echo svc-ok > /s/index.html && exec python3 -m http.server 8080 --directory /s`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { podman(context.Background(), "rm", "-f", "-t", "0", svc) })
+
+	repo := gitRepo(t, map[string]string{"README.md": "x\n"})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "running")
+	out, err := podman(ctx, "exec", "--user", ws.User, "ws-"+name, "curl", "-s", "-m", "5", "http://"+svc+":8080/")
+	if err != nil || !strings.Contains(out, "svc-ok") {
+		t.Fatalf("workspace -> service: %q, %v", out, err)
+	}
+}
