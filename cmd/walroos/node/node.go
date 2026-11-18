@@ -140,12 +140,13 @@ func init() {
 }
 
 // relayCmd is how the SSH gateway reaches ports inside a workspace (ssh -L, VS Code): it runs
-// in the workspace's network namespace and pipes HOST:PORT to stdin/stdout.
+// in the workspace's network namespace, chrooted to ROOT (its filesystem, for name lookups),
+// and pipes HOST:PORT to stdin/stdout.
 var relayCmd = &cobra.Command{
-	Use:    "relay HOST:PORT",
+	Use:    "relay ROOT HOST:PORT",
 	Hidden: true,
-	Args:   cobra.ExactArgs(1),
-	RunE:   func(cmd *cobra.Command, args []string) error { return agent.Relay(args[0]) },
+	Args:   cobra.ExactArgs(2),
+	RunE:   func(cmd *cobra.Command, args []string) error { return agent.Relay(args[0], args[1]) },
 }
 
 // startSSH serves the SSH gateway. Keys are checked with the hub; the host key lives next to

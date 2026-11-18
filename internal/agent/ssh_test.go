@@ -24,13 +24,13 @@ import (
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
 
-// TestMain doubles as helper processes, run as `agent.test ADDR`:
-//   - WALROOS_TEST_RELAY=1: Relay, like production runs `walroos node relay` in the workspace.
-//   - WALROOS_TEST_ECHO=1: a TCP echo server, the app a forwarded port reaches.
+// TestMain doubles as helper processes:
+//   - WALROOS_TEST_RELAY=1 (`agent.test ROOT ADDR`): Relay, like `walroos node relay` in production.
+//   - WALROOS_TEST_ECHO=1 (`agent.test ADDR`): a TCP echo server, the app a forwarded port reaches.
 func TestMain(m *testing.M) {
 	switch {
 	case os.Getenv("WALROOS_TEST_RELAY") != "":
-		if err := Relay(os.Args[1]); err != nil {
+		if err := Relay(os.Args[1], os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -41,6 +41,7 @@ func TestMain(m *testing.M) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		go func() { io.Copy(io.Discard, os.Stdin); os.Exit(0) }() // killing `podman unshare` doesn't reach us
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
@@ -123,7 +124,7 @@ func newTestGateway(t *testing.T) *testGateway {
 	}
 	exe := self(t)
 	g.dial = func(ctx context.Context, _ Workspace, addr string) (*exec.Cmd, error) {
-		cmd := exec.CommandContext(ctx, exe, addr)
+		cmd := exec.CommandContext(ctx, exe, "", addr)
 		cmd.Env = append(os.Environ(), "WALROOS_TEST_RELAY=1")
 		return cmd, nil
 	}
@@ -190,6 +191,55 @@ func TestSSHAuth(t *testing.T) {
 	tg.tailnet.Store(false)
 	if _, err := tg.dial(t, "app", tg.userKey); err == nil {
 		t.Error("a connection from outside the tailnet got in")
+	}
+}
+
+// TestSSHHubDown: without the hub nobody logs in, the client gets an answer instead of hanging,
+// and a failure isn't cached, so logins work again as soon as the hub is back.
+func TestSSHHubDown(t *testing.T) {
+	var hub atomic.Value // "down", "hangs" or "up"
+	g := newSSHGateway(
+		func(context.Context, string) (string, error) { return "nLaptop", nil },
+		func(ctx context.Context, _, _ string) (string, error) {
+			switch hub.Load() {
+			case "down":
+				return "", errors.New("dial tcp: connection refused")
+			case "hangs":
+				<-ctx.Done()
+				return "", ctx.Err()
+			}
+			return "owner@github", nil
+		},
+		newSigner(t),
+	)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go g.Serve(ln)
+	key := newSigner(t)
+	login := func() (time.Duration, error) {
+		start := time.Now()
+		c, err := ssh.Dial("tcp", ln.Addr().String(), &ssh.ClientConfig{
+			User: "app", Auth: []ssh.AuthMethod{ssh.PublicKeys(key)},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(), Timeout: 30 * time.Second,
+		})
+		if err == nil {
+			c.Close()
+		}
+		return time.Since(start), err
+	}
+
+	for state, within := range map[string]time.Duration{"down": time.Second, "hangs": 12 * time.Second} {
+		hub.Store(state)
+		if d, err := login(); err == nil || d > within {
+			t.Errorf("hub %s: login %v after %v, want refused within %v", state, err, d, within)
+		}
+	}
+	hub.Store("up")
+	if _, err := login(); err != nil {
+		t.Errorf("hub back: %v", err)
 	}
 }
 
