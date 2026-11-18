@@ -89,10 +89,12 @@ go build -o bin/walroos ./cmd/walroos
 
 ```bash
 walroos node join --hub walroos-hub --token wlr_join_... --roles dev,build
-walroos node run
+walroos node install   # systemd --user service; or run it in the foreground: walroos node run
 ```
 
 The node joins the tailnet by itself as `walroos-<name>` (embedded Tailscale, like the hub): the first `join` prints a login URL, or set `TS_AUTHKEY`. It doesn't need Tailscale installed on the machine. It shows up in the UI with live CPU, memory, disk and Podman telemetry.
+
+`node install` starts the agent now and on boot, and restarts it if it crashes (logs: `journalctl --user -u walroos-node -f`). Starting on boot without logging in needs lingering; if it can't enable it, it prints the `sudo loginctl enable-linger` command to run.
 
 <details>
 <summary><b>Running next to another VPN (NordVPN, etc.)</b></summary>

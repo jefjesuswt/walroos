@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -73,7 +75,7 @@ var joinCmd = &cobra.Command{
 		ui.PrintSuccess("Joined %s as '%s' (%s).", hub, st.Name, strings.Join(out.Node.Roles, ", "))
 		ui.PrintKeyValue("State", statePath())
 		fmt.Println("\n  Start the agent:  walroos node run")
-		fmt.Println("  Keep it running:  systemd --user unit + `loginctl enable-linger $USER`")
+		fmt.Println("  Keep it running:  walroos node install   (systemd --user service)")
 		return nil
 	},
 }
@@ -150,7 +152,78 @@ func init() {
 	runCmd.Flags().StringVar(&listenAddr, "listen", ":"+agent.Port, "Tailnet port for the agent API the hub calls")
 	runCmd.Flags().StringVar(&sshAddr, "ssh-listen", ":"+agent.SSHPort, "Tailnet port for the workspaces' SSH gateway (empty disables it)")
 
-	Cmd.AddCommand(joinCmd, runCmd, relayCmd)
+	Cmd.AddCommand(joinCmd, runCmd, installCmd, relayCmd)
+}
+
+const serviceName = "walroos-node.service"
+
+var installCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Run the agent as a systemd --user service that starts on boot",
+	Long: "Writes ~/.config/systemd/user/" + serviceName + ", enables and starts it, and enables lingering\n" +
+		"so it runs without a login session. Remove with: systemctl --user disable --now walroos-node",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, err := loadState(); err != nil {
+			return ui.WrapError("no node state at %s, run `walroos node join` first: %w", statePath(), err)
+		}
+		exe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if exe, err = filepath.EvalSymlinks(exe); err != nil {
+			return err
+		}
+		cfg, err := os.UserConfigDir()
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(cfg, "systemd", "user", serviceName)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(unit(exe)), 0o644); err != nil {
+			return err
+		}
+		ctx := cmd.Context()
+		for _, args := range [][]string{{"--user", "daemon-reload"}, {"--user", "enable", "--now", serviceName}} {
+			if out, err := exec.CommandContext(ctx, "systemctl", args...).CombinedOutput(); err != nil {
+				return ui.WrapError("systemctl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+			}
+		}
+		ui.PrintSuccess("Installed and started %s.", serviceName)
+		ui.PrintKeyValue("Unit", path)
+		fmt.Println("\n  Logs:  journalctl --user -u walroos-node -f")
+
+		// Without lingering, user services stop at logout and don't start on boot. loginctl can
+		// exit 0 even when polkit says no (no active session), so read the setting back.
+		u, err := user.Current()
+		if err != nil {
+			return err
+		}
+		exec.CommandContext(ctx, "loginctl", "enable-linger", u.Username).Run()
+		if out, _ := exec.CommandContext(ctx, "loginctl", "show-user", u.Username, "-p", "Linger", "--value").Output(); strings.TrimSpace(string(out)) != "yes" {
+			fmt.Printf("\n  To start on boot without logging in, run:  sudo loginctl enable-linger %s\n", u.Username)
+		}
+		return nil
+	},
+}
+
+// unit is the systemd --user service for `node run`. on-failure restarts it after a crash or
+// after the hub rejects the node (exit 1): once you `node join` again, it comes back on its own.
+func unit(exe string) string {
+	return `[Unit]
+Description=walroos node agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart="` + exe + `" node run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+`
 }
 
 // relayCmd is how the SSH gateway reaches ports inside a workspace (ssh -L, VS Code): it runs

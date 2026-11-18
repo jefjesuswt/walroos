@@ -17,7 +17,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:           "walroos",
 	Short:         "Self-hosted dev workspaces and deploys on Podman",
-	Long:          "Walroos runs dev workspaces and deploys apps on your own machines, over a Tailscale network.\n\n  walroos hub        control plane (API + UI)\n  walroos node join  add this machine to a hub\n  walroos node run   node agent\n  walroos ssh-config SSH config for your workspaces",
+	Long:          "Walroos runs dev workspaces and deploys apps on your own machines, over a Tailscale network.\n\n  walroos hub        control plane (API + UI)\n  walroos node join  add this machine to a hub\n  walroos node run   node agent (node install: as a systemd --user service)\n  walroos ssh-config SSH config for your workspaces",
 	Version:       version.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
