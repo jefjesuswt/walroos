@@ -104,6 +104,24 @@ Plan y estado en [docs/devcontainer-detection.md](docs/devcontainer-detection.md
 
 Pendiente: prueba real en casa (podman con salida a internet): crear nimbo con el devcontainer generado y que `./gradlew assemblePublicDebug` compile. En WSL no se puede: la red `walroos-dev` es `--internal`.
 
+## Caminos tristes y seguridad (2026-11-18)
+
+Atacado un hub y un nodo reales por la tailnet (API, MCP y SSH). Arreglado:
+- **CSRF**: la API aceptaba JSON con `Content-Type: text/plain` desde cualquier página; una web visitada desde un dispositivo de la tailnet podía registrar su clave SSH o crear workspaces. Ahora todo el hub pasa por `http.CrossOriginProtection` (stdlib). `/mcp` ya estaba a salvo (exige `application/json`).
+- **DNS rebinding**: se aceptaba cualquier `Host`, y la auth es por identidad de red. `whttp.AllowHosts`: solo el nombre del hub, su nombre MagicDNS, `localhost` e IPs (421 si no).
+- **Symlinks fuera del repo**: `inside()` comparaba rutas como texto. Un repo con `ctx -> ../../../../../../..` como `build.context` copiaba el home del nodo (token del nodo, estado de tsnet) a la imagen; verificado con un canario. Ahora resuelve symlinks, y la lectura de `devcontainer.json` pasa por ahí.
+- **`repo_url` local**: rutas y `file://` clonaban el disco del propio nodo. Solo URLs remotas (`https`, `http`, `ssh`, `git`, `user@host:path`).
+- Cuerpos limitados a 4 MB.
+
+Ya estaba bien (probado): `ext::` (git lo bloquea), `--upload-pack=` (va tras `--`), nombres con `;`, `../`, mayúsculas, mounts `bind` (también `type=volume,type=bind`), `dockerfile` con `../`, imagen inexistente, nombre duplicado, tipos y campos obligatorios del MCP, herramienta desconocida, clave SSH no registrada, cuerpo de 30 MB a `/mcp`.
+
+Límites conocidos (sin arreglar):
+- **Inyección de prompt**: lo que controla un repo (su `devcontainer.json`, errores de git) vuelve al cliente MCP como texto.
+- **SSRF limitado**: el nodo clona cualquier URL de red, incluidas IPs internas y su propio `localhost` (solo protocolo git; los errores muestran el código HTTP).
+- Sin cuotas: un usuario puede crear workspaces hasta llenar el nodo.
+- Un `member` ve y para/arranca workspaces de otros por la API y MCP (por SSH no). En v1 no hay forma de crear members.
+- Un devcontainer inválido se detecta al crear en el nodo (estado `failed`), no al llamar.
+
 ## Después
 
 | Hito | Resumen |
