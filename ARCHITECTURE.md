@@ -64,7 +64,7 @@ flowchart LR
 ```
 
 - **Un solo binario** `walroos`, con dos modos: `hub` (plano de control) y `node` (agente que ejecuta). El hub puede ser también nodo (`walroos hub --node`) para tener un setup de una sola máquina.
-- **Red = Tailscale** (`tsnet`, ya presente en el código). Resuelve el NAT del homelab, da TLS entre componentes e identidad de usuario gratis. Compatible con Headscale.
+- **Red = Tailscale** embebido con `tsnet` en el hub (`walroos-hub`) y en cada nodo (`walroos-<nombre>`): no hace falta `tailscaled` en las máquinas y funciona detrás de otra VPN (NordVPN). Resuelve el NAT del homelab, da TLS entre componentes e identidad de usuario gratis. Compatible con Headscale.
 - **Roles de nodo** como etiquetas: `dev`, `build`, `prod`. Un nodo puede tener varias.
 
 ### Comunicación hub ↔ nodo
@@ -74,7 +74,7 @@ flowchart LR
 | nodo → hub | registro, heartbeat, telemetría | `POST /api/nodes/join`, `POST /api/nodes/{id}/heartbeat` (M0) |
 | hub → nodo | crear/parar contenedores, build, quadlets, logs, terminal | API HTTP del agente sobre la tailnet |
 
-El agente **solo** acepta peticiones cuya identidad en la tailnet (`LocalClient.WhoIs`) sea el hub, además de un token de nodo. No se expone el socket de Podman: el agente ofrece una API acotada y habla con Podman localmente por la CLI (`podman ...`).
+El agente escucha solo en la tailnet (listeners de `tsnet`) y **solo** acepta peticiones cuya identidad (`LocalClient.WhoIs`) sea el hub, además de un token de nodo. No se expone el socket de Podman: el agente ofrece una API acotada y habla con Podman localmente por la CLI (`podman ...`).
 
 Logs y eventos van por **SSE** (stdlib). La terminal web usa **WebSocket** (`coder/websocket`, ya en el árbol de dependencias).
 

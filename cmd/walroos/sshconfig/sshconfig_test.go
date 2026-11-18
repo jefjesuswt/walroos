@@ -47,6 +47,12 @@ Host web.walroos
 	if strings.Contains(custom, "Host bad") {
 		t.Fatalf("a workspace without a node must be skipped:\n%s", custom)
 	}
+
+	// The tailnet IP wins over the name: tsnet nodes are "walroos-<name>" on the tailnet.
+	byIP := Format([]workspace{{Name: "x", NodeName: "n", NodeAddress: "100.64.0.7"}}, "", 2222, ".walroos")
+	if !strings.Contains(byIP, "  HostName 100.64.0.7\n") {
+		t.Fatalf("with an address:\n%s", byIP)
+	}
 }
 
 // TestGenerateAgainstHub runs the command's HTTP path against a real router-shaped server.

@@ -26,6 +26,7 @@ type Workspace struct {
 	Owner            string    `json:"owner"`
 	NodeID           string    `json:"node_id"`
 	NodeName         string    `json:"node_name"`
+	NodeAddress      string    `json:"node_address,omitempty"` // tailnet IP; what ssh-config dials
 	RepoURL          string    `json:"repo_url"`
 	Branch           string    `json:"branch"`
 	DevcontainerPath string    `json:"devcontainer_path"`
