@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { api, type SSHKey } from './api';
-import { ago, EmptyState, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function SettingsPage() {
   const toast = useToast();
@@ -89,13 +89,12 @@ function AddKeyModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =>
         <button className="btn btn-primary" disabled={busy || !name || !pub.trim()} onClick={submit}>{busy ? 'Adding…' : 'Add key'}</button></>}>
       {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't add it</strong><span className="muted">{error}</span></div></div>}
       <div className="form">
-        <label className="field"><span className="label">Name</span>
+        <Field label="Name">
           <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="laptop" autoFocus />
-        </label>
-        <label className="field"><span className="label">Public key</span>
+        </Field>
+        <Field label="Public key" hint={<>Find it with <span className="mono">cat ~/.ssh/id_ed25519.pub</span>.</>}>
           <textarea className="input mono" rows={4} value={pub} onChange={e => setPub(e.target.value)} placeholder="ssh-ed25519 AAAA… you@laptop" />
-          <span className="help">Find it with <span className="mono">cat ~/.ssh/id_ed25519.pub</span>.</span>
-        </label>
+        </Field>
       </div>
     </Modal>
   );
