@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -46,7 +47,7 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	}
 
 	ws, err := s.agents.CreateWorkspace(ctx, address, tokenHash, agent.WorkspaceSpec{
-		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath,
+		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath, Devcontainer: in.Devcontainer,
 	}, nil)
 	if err != nil {
 		return Workspace{}, agentErr(err, "create")
@@ -65,6 +66,28 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 		return Workspace{}, err
 	}
 	return w, nil
+}
+
+// Detect asks a dev node (the same one Create would pick) to clone the repo shallowly and
+// propose a devcontainer. Nothing is stored: the answer goes to the UI as the agent gave it.
+func (s *Service) Detect(ctx context.Context, in DetectInput) (json.RawMessage, error) {
+	if in.RepoURL == "" {
+		return nil, fmt.Errorf("%w: repo_url is required", ErrInvalid)
+	}
+	node, err := s.pickNode(ctx, in.Node)
+	if err != nil {
+		return nil, err
+	}
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, node.ID)
+	if err != nil {
+		return nil, err
+	}
+	d, err := s.agents.Detect(ctx, address, tokenHash, in.RepoURL, in.Branch)
+	var ae *agent.AgentError
+	if errors.As(err, &ae) && ae.Status == 422 {
+		return nil, fmt.Errorf("%w: %s", ErrRepo, ae.Msg)
+	}
+	return d, err
 }
 
 // pickNode returns the requested node (name or id) if it can run workspaces, else the online
