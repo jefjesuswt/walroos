@@ -190,7 +190,11 @@ func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 	if err := s.apps.Delete(r.Context(), r.PathValue("name")); err != nil {
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+		code := http.StatusInternalServerError
+		if errors.Is(err, ErrAppBusy) {
+			code = http.StatusConflict
+		}
+		whttp.ErrorJSON(w, code, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -33,7 +33,8 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
-	if !nameRe.MatchString(in.Name) || !workspace.RemoteRepo(in.RepoURL) || in.Port < 1 || in.Port > 65535 {
+	spec := agent.AppSpec{Name: in.Name, ID: "x", RepoURL: in.RepoURL, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
+	if !nameRe.MatchString(in.Name) || !workspace.RemoteRepo(in.RepoURL) || !spec.Valid() {
 		return App{}, ErrInvalid
 	}
 	node, err := s.pickNode(ctx, in.Node)
@@ -108,6 +109,10 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 		return err
 	}
 	if err := s.agents.DeleteApp(ctx, address, tokenHash, name); err != nil {
+		var ae *agent.AgentError
+		if errors.As(err, &ae) && ae.Status == 409 {
+			return ErrBusy
+		}
 		return err
 	}
 	return s.store.Delete(ctx, a.ID)
@@ -136,6 +141,9 @@ func (s *Service) Deploy(ctx context.Context, name, sha string) (Deployment, err
 	a, err := s.store.Get(ctx, name)
 	if err != nil {
 		return Deployment{}, err
+	}
+	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Port: a.Port, Sha: sha}).Valid() {
+		return Deployment{}, ErrInvalid
 	}
 	return s.enqueue(ctx, Deployment{AppID: a.ID, Sha: sha})
 }

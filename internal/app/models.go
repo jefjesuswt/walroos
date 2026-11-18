@@ -12,10 +12,11 @@ var (
 	ErrNotFound       = errors.New("app not found")
 	ErrDeployNotFound = errors.New("deployment not found")
 	ErrExists         = errors.New("an app with that name already exists")
-	ErrInvalid        = errors.New("name must be a DNS label, repo_url a remote git URL and port 1-65535")
+	ErrInvalid        = errors.New("name must be a DNS label, repo_url a remote git URL, port 1-65535, sha hex, branch and dockerfile without spaces or a leading '-', health_path a URL path")
 	ErrNoNode         = errors.New("no online node with the prod role; join one with `walroos node join --roles prod`")
 	ErrNodeRole       = errors.New("the chosen node doesn't have the prod role")
 	ErrNoImage        = errors.New("only a succeeded deployment can be rolled back to")
+	ErrBusy           = errors.New("a deploy of this app is running on its node; try again when it ends")
 )
 
 // App is what to build and how to check it.

@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	ErrInvalidApp  = errors.New("app name must be a DNS label, deploy id 1-16 of [a-z0-9], port 1-65535, and repo_url or image is required")
-	ErrAppBusy     = errors.New("a deploy of this app is already running on this node")
+	ErrInvalidApp  = errors.New("invalid app: name must be a DNS label, port 1-65535, sha hex, branch and dockerfile without spaces or a leading '-', health_path a URL path")
+	ErrAppBusy     = errors.New("a deploy or delete of this app is already running on this node")
 	ErrAppNotFound = errors.New("app not found on this node")
 )
 
@@ -76,24 +76,39 @@ func NewApps() *Apps {
 	return &Apps{busy: map[string]bool{}, dir: filepath.Join(cfg, "containers", "systemd")}
 }
 
-var deployIDRe = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+var (
+	deployIDRe   = regexp.MustCompile(`^[a-z0-9]{1,16}$`)
+	shaRe        = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
+	refRe        = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,199}$`)    // branch, dockerfile: no leading "-" (git/podman options)
+	healthPathRe = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,511}$`) // goes into the raw HTTP request line
+)
+
+// Valid reports whether spec is safe to hand to git, podman and the health check. The hub
+// checks it too, to answer 400 instead of a failed deployment.
+func (spec AppSpec) Valid() bool {
+	opt := func(re *regexp.Regexp, v string) bool { return v == "" || re.MatchString(v) }
+	ownImage := "localhost/walroos-app-" + spec.Name + ":"
+	tag, isOwn := strings.CutPrefix(spec.Image, ownImage)
+	return workspaceNameRe.MatchString(spec.Name) && deployIDRe.MatchString(spec.ID) && spec.Port >= 1 && spec.Port <= 65535 &&
+		(spec.RepoURL != "" || spec.Image != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
+		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
+		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) // rollback runs only this app's own builds
+}
 
 // Deploy builds (unless spec.Image is set), starts the new container next to the old one,
 // waits for it to answer on its port, then stops the old one. If the new one never gets
 // healthy it is removed and the old one keeps serving. Progress goes to log.
 func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release, error) {
-	if !workspaceNameRe.MatchString(spec.Name) || !deployIDRe.MatchString(spec.ID) || spec.Port < 1 || spec.Port > 65535 ||
-		(spec.RepoURL == "" && spec.Image == "") {
+	if !spec.Valid() {
 		return Release{}, ErrInvalidApp
 	}
-	a.mu.Lock()
-	if a.busy[spec.Name] {
-		a.mu.Unlock()
-		return Release{}, ErrAppBusy
+	unlock, err := a.lock(spec.Name)
+	if err != nil {
+		return Release{}, err
 	}
-	a.busy[spec.Name] = true
-	a.mu.Unlock()
-	defer func() { a.mu.Lock(); delete(a.busy, spec.Name); a.mu.Unlock() }()
+	defer unlock()
+	// Cleanup must finish even if the hub hangs up mid-deploy, or the new release is orphaned.
+	bg := context.WithoutCancel(ctx)
 
 	if err := ensureAppNetwork(ctx); err != nil {
 		return Release{}, err
@@ -115,20 +130,20 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 	}
 	fmt.Fprintf(log, "starting %s\n", rel.Container)
 	if err := a.start(ctx, spec, rel); err != nil {
-		a.remove(ctx, rel.Container)
+		a.remove(bg, rel.Container)
 		return Release{}, err
 	}
 	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmpOr(spec.HealthPath, "/"), log); err != nil {
-		fmt.Fprintf(log, "%s never got healthy, removing it; the previous release keeps serving\n%s", rel.Container, journal(ctx, rel.Container, 20))
-		a.remove(ctx, rel.Container)
+		fmt.Fprintf(log, "%s never got healthy, removing it; the previous release keeps serving\n%s", rel.Container, journal(bg, rel.Container, 20))
+		a.remove(bg, rel.Container)
 		return Release{}, err
 	}
 	// ponytail: no ingress yet (M3.2); this is where traffic switches to rel.Container.
 	for _, c := range old {
 		fmt.Fprintf(log, "stopping previous release %s\n", c)
-		a.remove(ctx, c)
+		a.remove(bg, c)
 	}
-	pruneImages(ctx, spec.Name, rel.Image)
+	pruneImages(bg, spec.Name, rel.Image)
 	fmt.Fprintf(log, "%s is live (%s)\n", rel.Container, rel.Sha)
 	return rel, nil
 }
@@ -331,6 +346,11 @@ func (a *Apps) Logs(ctx context.Context, app string, lines int) (string, error) 
 
 // Delete stops every release of app and removes its images.
 func (a *Apps) Delete(ctx context.Context, app string) error {
+	unlock, err := a.lock(app) // else a deploy mid-build would start its release after this
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	units, err := a.units(app)
 	if err != nil {
 		return err
@@ -340,6 +360,17 @@ func (a *Apps) Delete(ctx context.Context, app string) error {
 	}
 	pruneImages(ctx, app, "")
 	return nil
+}
+
+// lock marks app busy: one deploy or delete at a time per app.
+func (a *Apps) lock(app string) (unlock func(), err error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.busy[app] {
+		return nil, ErrAppBusy
+	}
+	a.busy[app] = true
+	return func() { a.mu.Lock(); delete(a.busy, app); a.mu.Unlock() }, nil
 }
 
 func journal(ctx context.Context, container string, lines int) string {
