@@ -14,3 +14,5 @@ func startPTY(*exec.Cmd, uint32, uint32) (*os.File, error) {
 }
 
 func setWinsize(*os.File, uint32, uint32) error { return nil }
+
+func chroot(string) error { return errors.New("only supported on Linux nodes") }
