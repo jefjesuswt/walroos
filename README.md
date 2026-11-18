@@ -146,7 +146,7 @@ M1 progress:
 - [x] walroos base image for repos without a devcontainer (Debian, git, mise, sftp-server; user `dev`)
 - [ ] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`, agent forwarding for `git push`)
 - [x] Workspace service on the hub (pick a node, call its agent, keep the state)
-- [ ] `walroos ssh-config`
+- [x] `walroos ssh-config` (add `--proxy` on machines with userspace tailscaled)
 - [ ] Workspaces page and SSH keys in the UI
 - [ ] Rebuild a workspace without losing `$HOME`
 - [ ] Per-workspace environment variables and secrets
