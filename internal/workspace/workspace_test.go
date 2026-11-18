@@ -289,7 +289,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	}
 
 	// A name is unique hub-wide.
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 409 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "https://example.com/x"}, nil); code != 409 {
 		t.Fatalf("duplicate: %d, want 409", code)
 	}
 
@@ -323,7 +323,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 func TestWorkspaceErrors(t *testing.T) {
 	h := newHub(t, true)
 
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "Bad Name", "repo_url": "x"}, nil); code != 400 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "Bad Name", "repo_url": "https://example.com/x"}, nil); code != 400 {
 		t.Errorf("bad name: %d, want 400", code)
 	}
 	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "ok"}, nil); code != 400 {
@@ -338,20 +338,20 @@ func TestWorkspaceErrors(t *testing.T) {
 
 	// A workspace the agent already has there.
 	h.agent.set("taken", agent.Workspace{Name: "taken", State: "running"})
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "taken", "repo_url": "x"}, nil); code != 409 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "taken", "repo_url": "https://example.com/x"}, nil); code != 409 {
 		t.Errorf("agent says it exists: %d, want 409", code)
 	}
 
 	// An agent that rejects the spec.
 	h.agent.fail = "boom"
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "bad", "repo_url": "x"}, nil); code != 400 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "bad", "repo_url": "https://example.com/x"}, nil); code != 400 {
 		t.Errorf("agent 400: %d, want 400", code)
 	}
 	h.agent.fail = ""
 
 	// An agent that's down.
 	h.agent.down = true
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "down", "repo_url": "x"}, nil); code != 502 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "down", "repo_url": "https://example.com/x"}, nil); code != 502 {
 		t.Errorf("agent down: %d, want 502", code)
 	}
 
@@ -359,19 +359,19 @@ func TestWorkspaceErrors(t *testing.T) {
 
 func TestNoDevNode(t *testing.T) {
 	h := newHub(t, false)
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 409 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "https://example.com/x"}, nil); code != 409 {
 		t.Fatalf("no dev node: %d, want 409", code)
 	}
-	if _, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}); !strings.Contains(msg, "dev role") {
+	if _, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "https://example.com/x"}); !strings.Contains(msg, "dev role") {
 		t.Fatalf("error = %q, want it to mention the dev role", msg)
 	}
 
 	// A node without the dev role can't be asked, even by name.
 	build := addNode(t, h.db, "builder", "build")
-	if _, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "app2", "repo_url": "x", "node": "builder"}); !strings.Contains(msg, "dev role") {
+	if _, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "app2", "repo_url": "https://example.com/x", "node": "builder"}); !strings.Contains(msg, "dev role") {
 		t.Fatalf("non-dev node: %q", msg)
 	}
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app2", "repo_url": "x", "node": build}, nil); code != 409 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app2", "repo_url": "https://example.com/x", "node": build}, nil); code != 409 {
 		t.Fatalf("non-dev node by id: %d, want 409", code)
 	}
 }
@@ -384,24 +384,24 @@ func TestPicksLeastLoadedDevNode(t *testing.T) {
 	addNode(t, h.db, "builder", "build") // not a candidate
 
 	var first workspace.Workspace
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "one", "repo_url": "x"}, &first); code != 201 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "one", "repo_url": "https://example.com/x"}, &first); code != 201 {
 		t.Fatalf("create: %d", code)
 	}
 	var second workspace.Workspace
-	h.call(t, "POST", "/api/workspaces", map[string]string{"name": "two", "repo_url": "x"}, &second)
+	h.call(t, "POST", "/api/workspaces", map[string]string{"name": "two", "repo_url": "https://example.com/x"}, &second)
 	if first.NodeName == second.NodeName {
 		t.Fatalf("both workspaces landed on %s; want the empty node used second", first.NodeName)
 	}
 
 	var byName workspace.Workspace
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "three", "repo_url": "x", "node": first.NodeName}, &byName); code != 201 || byName.NodeName != first.NodeName {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "three", "repo_url": "https://example.com/x", "node": first.NodeName}, &byName); code != 201 || byName.NodeName != first.NodeName {
 		t.Fatalf("create on a named node: %d %+v", code, byName)
 	}
 }
 
 func TestWorkspaceRebuild(t *testing.T) {
 	h := newHub(t, true)
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 201 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "https://example.com/x"}, nil); code != 201 {
 		t.Fatalf("create: %d", code)
 	}
 	var ws workspace.Workspace
@@ -415,7 +415,7 @@ func TestWorkspaceRebuild(t *testing.T) {
 
 func TestWorkspaceEnv(t *testing.T) {
 	h := newHub(t, true)
-	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 201 {
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "https://example.com/x"}, nil); code != 201 {
 		t.Fatalf("create: %d", code)
 	}
 
@@ -496,10 +496,10 @@ func TestWorkspaceDetect(t *testing.T) {
 	h.agent.mu.Lock()
 	h.agent.down = true
 	h.agent.mu.Unlock()
-	if code, _ := h.callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "x"}); code != 502 {
+	if code, _ := h.callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "https://example.com/x"}); code != 502 {
 		t.Errorf("agent down: %d, want 502", code)
 	}
-	if code, _ := newHub(t, false).callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "x"}); code != 409 {
+	if code, _ := newHub(t, false).callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": "https://example.com/x"}); code != 409 {
 		t.Errorf("no dev node: %d, want 409", code)
 	}
 }
@@ -518,5 +518,38 @@ func TestWorkspaceCreateWithDevcontainer(t *testing.T) {
 	h.agent.mu.Unlock()
 	if got["image"] != dc["image"] || got["postCreateCommand"] != dc["postCreateCommand"] {
 		t.Fatalf("agent got devcontainer %v, want %v", got, dc)
+	}
+}
+
+// The node's git clones repo_url: only remote URLs, never the node's own disk or ext:: commands.
+func TestRepoURLMustBeRemote(t *testing.T) {
+	h := newHub(t, true)
+	for u, ok := range map[string]bool{
+		"https://github.com/a/b":            true,
+		"http://git.lan/a/b.git":            true,
+		"ssh://git@gitlab.com:2222/a/b.git": true,
+		"git://git.kernel.org/pub/x.git":    true,
+		"git@github.com:a/b":                true,
+		"/home/jeffrey/repo":                false,
+		"file:///home/jeffrey/.ssh":         false,
+		"../../repo":                        false,
+		"ext::sh -c touch% /tmp/pwned":      false,
+		"--upload-pack=touch /tmp/pwned":    false,
+		"-x@host:path":                      false,
+		"https://":                          false,
+		"C:/Users/x/repo":                   false,
+		"user@host:":                        false,
+		"a/b@host:path":                     false,
+	} {
+		code, msg := h.callErr(t, "POST", "/api/workspaces/detect", map[string]string{"repo_url": u})
+		if got := code != 400; got != ok {
+			t.Errorf("detect %q: %d %s, want accepted=%v", u, code, msg, ok)
+		}
+		if !ok && !strings.Contains(msg, "remote git URL") {
+			t.Errorf("detect %q: %s", u, msg)
+		}
+	}
+	if code, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "x", "repo_url": "file:///home/jeffrey/.ssh"}); code != 400 || !strings.Contains(msg, "remote git URL") {
+		t.Errorf("create with file://: %d %s", code, msg)
 	}
 }
