@@ -37,7 +37,7 @@ Tailscale saca su tráfico por fuera de cualquier VPN (`SO_MARK` / `SO_BINDTODEV
 - [ ] Nodo con tag (no usuario) → rechazado. Sin probar: hace falta un dispositivo con tag en la tailnet.
 - [ ] Unit de systemd `--user` para `walroos node run` (hoy se arranca a mano).
 
-## M1 — Workspaces (siguiente)
+## M1 — Workspaces ✅ (2026-11-17)
 
 Objetivo: desde la laptop, `ssh proyecto.walroos` abre un shell dentro de un contenedor en el homelab y `claude` corre ahí sin instalar nada local.
 
