@@ -24,9 +24,13 @@ func (c *Client) ListWorkspaces(ctx context.Context, address, tokenHash string) 
 	return list, c.do(ctx, http.MethodGet, address, tokenHash, "/v1/workspaces", nil, &list)
 }
 
-func (c *Client) CreateWorkspace(ctx context.Context, address, tokenHash string, spec WorkspaceSpec) (Workspace, error) {
+func (c *Client) CreateWorkspace(ctx context.Context, address, tokenHash string, spec WorkspaceSpec, env []string) (Workspace, error) {
 	var ws Workspace
-	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces", spec, &ws)
+	body := struct {
+		WorkspaceSpec
+		Env []string `json:"env,omitempty"`
+	}{spec, env}
+	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces", body, &ws)
 }
 
 func (c *Client) GetWorkspace(ctx context.Context, address, tokenHash, name string) (Workspace, error) {
@@ -44,9 +48,12 @@ func (c *Client) StopWorkspace(ctx context.Context, address, tokenHash, name str
 	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces/"+name+"/stop", nil, &ws)
 }
 
-func (c *Client) RebuildWorkspace(ctx context.Context, address, tokenHash, name string) (Workspace, error) {
+func (c *Client) RebuildWorkspace(ctx context.Context, address, tokenHash, name string, env []string) (Workspace, error) {
 	var ws Workspace
-	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces/"+name+"/rebuild", nil, &ws)
+	body := struct {
+		Env []string `json:"env,omitempty"`
+	}{env}
+	return ws, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/workspaces/"+name+"/rebuild", body, &ws)
 }
 
 func (c *Client) DeleteWorkspace(ctx context.Context, address, tokenHash, name string) error {

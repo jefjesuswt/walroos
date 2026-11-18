@@ -28,6 +28,8 @@ func (h *Handler) Routes(r *whttp.Router) {
 	r.Post("/api/workspaces/{name}/start", h.handleStart)
 	r.Post("/api/workspaces/{name}/stop", h.handleStop)
 	r.Post("/api/workspaces/{name}/rebuild", h.handleRebuild)
+	r.Get("/api/workspaces/{name}/env", h.handleGetEnv)
+	r.Put("/api/workspaces/{name}/env", h.handlePutEnv)
 	r.Delete("/api/workspaces/{name}", h.handleDelete)
 }
 
@@ -73,6 +75,36 @@ func (h *Handler) handleStart(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleStop(w http.ResponseWriter, r *http.Request) {
 	h.op(w, r, h.svc.Stop)
+}
+
+func (h *Handler) handleGetEnv(w http.ResponseWriter, r *http.Request) {
+	vars, err := h.svc.Env(r.Context(), r.PathValue("name"))
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	if vars == nil {
+		vars = []EnvVar{}
+	}
+	whttp.JSON(w, http.StatusOK, vars)
+}
+
+func (h *Handler) handlePutEnv(w http.ResponseWriter, r *http.Request) {
+	var vars []EnvVar
+	if err := json.NewDecoder(r.Body).Decode(&vars); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.svc.SetEnv(r.Context(), r.PathValue("name"), vars); err != nil {
+		errorJSON(w, err)
+		return
+	}
+	vars, err := h.svc.Env(r.Context(), r.PathValue("name"))
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusOK, vars)
 }
 
 func (h *Handler) handleRebuild(w http.ResponseWriter, r *http.Request) {
