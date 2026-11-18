@@ -1,0 +1,368 @@
+package workspace_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/workspace"
+	"github.com/jefjesuswt/walroos/shared/whttp"
+)
+
+// fakeAgent is a node agent that keeps workspaces in memory: the hub's HTTP contract, no podman.
+type fakeAgent struct {
+	mu   sync.Mutex
+	ws   map[string]agent.Workspace
+	down bool   // answer 500 to everything
+	fail string // if set, POST /v1/workspaces answers 400 with it
+	last agent.WorkspaceSpec
+}
+
+func newFakeAgent(t *testing.T) (*fakeAgent, *httptest.Server) {
+	t.Helper()
+	fa := &fakeAgent{ws: map[string]agent.Workspace{}}
+	srv := httptest.NewServer(http.HandlerFunc(fa.serve))
+	t.Cleanup(srv.Close)
+	return fa, srv
+}
+
+func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.down {
+		http.Error(w, `{"error":"agent down"}`, 500)
+		return
+	}
+	json := func(code int, v any) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+		json.NewEncoder(w).Encode(v)
+	}
+	errJSON := func(code int, msg string) { json(code, map[string]string{"error": msg}) }
+
+	path := strings.TrimPrefix(r.URL.Path, "/v1/workspaces")
+	name := strings.TrimPrefix(strings.TrimPrefix(path, "/"), "/")
+	sub := ""
+	if i := strings.Index(name, "/"); i >= 0 {
+		name, sub = name[:i], name[i+1:]
+	}
+
+	switch {
+	case r.Method == "GET" && path == "":
+		list := []agent.Workspace{}
+		for _, ws := range f.ws {
+			list = append(list, ws)
+		}
+		json(200, list)
+	case r.Method == "POST" && path == "":
+		var spec agent.WorkspaceSpec
+		if err := jsonDecode(r, &spec); err != nil {
+			errJSON(400, "invalid JSON body")
+			return
+		}
+		f.last = spec
+		if f.fail != "" {
+			errJSON(400, f.fail)
+			return
+		}
+		if _, ok := f.ws[spec.Name]; ok {
+			errJSON(409, "workspace already exists on this node")
+			return
+		}
+		f.ws[spec.Name] = agent.Workspace{Name: spec.Name, State: "creating"}
+		json(202, f.ws[spec.Name])
+	case r.Method == "GET" && name != "" && sub == "":
+		ws, ok := f.ws[name]
+		if !ok {
+			errJSON(404, "workspace not found")
+			return
+		}
+		json(200, ws)
+	case r.Method == "POST" && sub == "start":
+		ws, ok := f.ws[name]
+		if !ok {
+			errJSON(404, "workspace not found")
+			return
+		}
+		ws.State = "running"
+		f.ws[name] = ws
+		json(200, ws)
+	case r.Method == "POST" && sub == "stop":
+		ws, ok := f.ws[name]
+		if !ok {
+			errJSON(404, "workspace not found")
+			return
+		}
+		ws.State = "stopped"
+		f.ws[name] = ws
+		json(200, ws)
+	case r.Method == "DELETE" && name != "":
+		if _, ok := f.ws[name]; !ok {
+			errJSON(404, "workspace not found")
+			return
+		}
+		delete(f.ws, name)
+		w.WriteHeader(204)
+	default:
+		errJSON(404, "not found")
+	}
+}
+
+func (f *fakeAgent) set(name string, ws agent.Workspace) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ws[name] = ws
+}
+
+func jsonDecode(r *http.Request, v any) error { return json.NewDecoder(r.Body).Decode(v) }
+
+type hub struct {
+	http    http.Handler
+	db      *config.Database
+	agent   *fakeAgent
+	nodeID  string
+	login   string
+	agentsC *agent.Client
+}
+
+// newHub wires the same routes as `walroos hub`, on a temp SQLite, with the caller as owner.
+// Every node address dials the fake agent.
+func newHub(t *testing.T, withDevNode bool) *hub {
+	t.Helper()
+	ctx := context.Background()
+
+	db, err := config.NewSQLite(filepath.Join(t.TempDir(), "hub.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	users := auth.NewStore(db)
+	if err := users.EnsureOwner(ctx, "owner@github"); err != nil {
+		t.Fatal(err)
+	}
+	fa, srv := newFakeAgent(t)
+
+	h := &hub{db: db, agent: fa, login: "owner@github"}
+	if withDevNode {
+		h.nodeID = addNode(t, db, "homelab-1", "dev")
+	}
+	// The hub dials any node address through the fake agent.
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}
+	h.agentsC = &agent.Client{HTTP: &http.Client{Transport: &http.Transport{DialContext: dial}}}
+
+	fleetSvc := fleet.NewService(fleet.NewStore(db))
+	fleetHandler := fleet.NewHandler(fleetSvc, "http://walroos-hub", "nHub", h.agentsC)
+	wsHandler := workspace.NewHandler(workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC))
+
+	r := whttp.NewRouter()
+	fleetHandler.NodeRoutes(r)
+	r.Group(func(r *whttp.Router) {
+		r.Use(auth.Middleware(auth.Static(h.login), users))
+		r.Get("/api/me", auth.HandleMe)
+		fleetHandler.UserRoutes(r)
+		wsHandler.Routes(r)
+	})
+	h.http = r
+	return h
+}
+
+func addNode(t *testing.T, db *config.Database, name string, roles ...string) string {
+	t.Helper()
+	id := name + "-id"
+	now := time.Now().UTC()
+	if _, err := db.Write.Exec(`INSERT INTO nodes (id, name, roles, token_hash, address, created_at, last_seen)
+		VALUES (?, ?, ?, ?, '100.64.0.1', ?, ?)`, id, name, strings.Join(roles, ","), "h-"+id, now, now); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// callErr is call, returning the error message for any status.
+func (h *hub) callErr(t *testing.T, method, path string, body any) (int, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		json.NewEncoder(&buf).Encode(body)
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	rec := httptest.NewRecorder()
+	h.http.ServeHTTP(rec, req)
+	var e struct{ Error string }
+	json.NewDecoder(rec.Body).Decode(&e)
+	return rec.Code, e.Error
+}
+
+func (h *hub) call(t *testing.T, method, path string, body any, out any) int {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		json.NewEncoder(&buf).Encode(body)
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	req.RemoteAddr = "100.101.12.4:41000"
+	rec := httptest.NewRecorder()
+	h.http.ServeHTTP(rec, req)
+	if out != nil && rec.Code < 300 {
+		if err := json.NewDecoder(rec.Body).Decode(out); err != nil {
+			t.Fatalf("%s %s: decode: %v", method, path, err)
+		}
+	}
+	return rec.Code
+}
+
+func TestWorkspaceLifecycle(t *testing.T) {
+	h := newHub(t, true)
+
+	var got workspace.Workspace
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "https://github.com/me/app"}, &got); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	if got.State != "creating" || got.Owner != h.login || got.NodeName != "homelab-1" {
+		t.Fatalf("created = %+v", got)
+	}
+	if spec := h.agent.last; spec.Name != "app" || spec.RepoURL != "https://github.com/me/app" {
+		t.Fatalf("agent got %+v", spec)
+	}
+
+	// The agent finishes creating; a list refreshes the row from it.
+	h.agent.set("app", agent.Workspace{Name: "app", State: "running", Image: "localhost/walroos-base:abc"})
+	var list []workspace.Workspace
+	if code := h.call(t, "GET", "/api/workspaces", nil, &list); code != 200 || len(list) != 1 {
+		t.Fatalf("list: %d %+v", code, list)
+	}
+	if list[0].State != "running" || list[0].Image != "localhost/walroos-base:abc" {
+		t.Fatalf("list didn't refresh from the agent: %+v", list[0])
+	}
+	var stored string
+	h.db.Read.QueryRow(`SELECT state FROM workspaces WHERE name = 'app'`).Scan(&stored)
+	if stored != "running" {
+		t.Errorf("row state = %q, want running (refresh must be saved)", stored)
+	}
+
+	// A name is unique hub-wide.
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 409 {
+		t.Fatalf("duplicate: %d, want 409", code)
+	}
+
+	var ws workspace.Workspace
+	if code := h.call(t, "POST", "/api/workspaces/app/stop", nil, &ws); code != 200 || ws.State != "stopped" {
+		t.Fatalf("stop: %d %+v", code, ws)
+	}
+	if code := h.call(t, "POST", "/api/workspaces/app/start", nil, &ws); code != 200 || ws.State != "running" {
+		t.Fatalf("start: %d %+v", code, ws)
+	}
+
+	// A node with workspaces can't be removed (the FK), and the API says why.
+	if code := h.call(t, "DELETE", "/api/nodes/"+h.nodeID, nil, nil); code != 409 {
+		t.Fatalf("delete node with workspaces: %d, want 409", code)
+	}
+
+	if code := h.call(t, "DELETE", "/api/workspaces/app", nil, nil); code != 204 {
+		t.Fatalf("delete: %d", code)
+	}
+	if _, ok := h.agent.ws["app"]; ok {
+		t.Error("delete didn't reach the agent")
+	}
+	if code := h.call(t, "GET", "/api/workspaces/app", nil, nil); code != 404 {
+		t.Fatalf("get after delete: %d", code)
+	}
+	if code := h.call(t, "DELETE", "/api/nodes/"+h.nodeID, nil, nil); code != 204 {
+		t.Fatalf("delete node after its workspaces: %d", code)
+	}
+}
+
+func TestWorkspaceErrors(t *testing.T) {
+	h := newHub(t, true)
+
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "Bad Name", "repo_url": "x"}, nil); code != 400 {
+		t.Errorf("bad name: %d, want 400", code)
+	}
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "ok"}, nil); code != 400 {
+		t.Errorf("missing repo: %d, want 400", code)
+	}
+	if code := h.call(t, "GET", "/api/workspaces/ghost", nil, nil); code != 404 {
+		t.Errorf("unknown: %d, want 404", code)
+	}
+	if code := h.call(t, "DELETE", "/api/workspaces/ghost", nil, nil); code != 404 {
+		t.Errorf("delete unknown: %d, want 404", code)
+	}
+
+	// A workspace the agent already has there.
+	h.agent.set("taken", agent.Workspace{Name: "taken", State: "running"})
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "taken", "repo_url": "x"}, nil); code != 409 {
+		t.Errorf("agent says it exists: %d, want 409", code)
+	}
+
+	// An agent that rejects the spec.
+	h.agent.fail = "boom"
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "bad", "repo_url": "x"}, nil); code != 400 {
+		t.Errorf("agent 400: %d, want 400", code)
+	}
+	h.agent.fail = ""
+
+	// An agent that's down.
+	h.agent.down = true
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "down", "repo_url": "x"}, nil); code != 502 {
+		t.Errorf("agent down: %d, want 502", code)
+	}
+
+}
+
+func TestNoDevNode(t *testing.T) {
+	h := newHub(t, false)
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}, nil); code != 409 {
+		t.Fatalf("no dev node: %d, want 409", code)
+	}
+	if _, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "app", "repo_url": "x"}); !strings.Contains(msg, "dev role") {
+		t.Fatalf("error = %q, want it to mention the dev role", msg)
+	}
+
+	// A node without the dev role can't be asked, even by name.
+	build := addNode(t, h.db, "builder", "build")
+	if _, msg := h.callErr(t, "POST", "/api/workspaces", map[string]string{"name": "app2", "repo_url": "x", "node": "builder"}); !strings.Contains(msg, "dev role") {
+		t.Fatalf("non-dev node: %q", msg)
+	}
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "app2", "repo_url": "x", "node": build}, nil); code != 409 {
+		t.Fatalf("non-dev node by id: %d, want 409", code)
+	}
+}
+
+// TestPicksLeastLoadedDevNode: with two dev nodes, a new workspace goes to the empty one,
+// and asking for a node by name goes there even if it's busier.
+func TestPicksLeastLoadedDevNode(t *testing.T) {
+	h := newHub(t, true)                 // homelab-1 is the only one
+	addNode(t, h.db, "homelab-2", "dev") // both online: addNode sets last_seen
+	addNode(t, h.db, "builder", "build") // not a candidate
+
+	var first workspace.Workspace
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "one", "repo_url": "x"}, &first); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	var second workspace.Workspace
+	h.call(t, "POST", "/api/workspaces", map[string]string{"name": "two", "repo_url": "x"}, &second)
+	if first.NodeName == second.NodeName {
+		t.Fatalf("both workspaces landed on %s; want the empty node used second", first.NodeName)
+	}
+
+	var byName workspace.Workspace
+	if code := h.call(t, "POST", "/api/workspaces", map[string]string{"name": "three", "repo_url": "x", "node": first.NodeName}, &byName); code != 201 || byName.NodeName != first.NodeName {
+		t.Fatalf("create on a named node: %d %+v", code, byName)
+	}
+}

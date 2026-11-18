@@ -70,7 +70,12 @@ Tareas, en orden:
    - Tests: `ssh_test.go` (todo menos podman, Linux) y `ssh_podman_test.go` (`WALROOS_PODMAN_TEST=1`). **Probado de punta a punta por la tailnet** (2026-11-17, Arch + Podman 6.2 rootless, `tailscaled --tun=userspace-networking`, cliente tsnet como laptop): `ssh`/`exec`, `sftp` (imagen base), `-L` al puerto del contenedor, `-A` (`/run/walroos/*.sock` 0600 y `ssh-add -l` ve la clave), `-R` rechazado, arranque automático si estaba parado, clave no registrada → `Permission denied`, conexión directa fuera de la tailnet → rechazada, host key estable tras reiniciar el agente.
    - En modo userspace el peer llega como `127.0.0.1:<puerto>` y `WhoIs` resuelve por el 4-tupla mientras la conexión está abierta: por eso la identidad se conserva. Una conexión directa a `:2222` no tiene esa entrada y se rechaza.
    - Límites (`ponytail:`): workspaces creados antes de esto no tienen directorio del agente (sin `-A` hasta recrearlos o la tarea 9); `-R` (remote forward) rechazado; si podman ignora el SIGHUP puede quedar el proceso del `exec`; sin `XDG_RUNTIME_DIR` el directorio cae a `/tmp/walroos-<uid>`.
-6. **Hub: servicio de workspaces** (elige nodo con rol `dev`, llama al agente, guarda estado).
+6. ✅ **Hub: servicio de workspaces** (`internal/workspace`, `GET/POST /api/workspaces`, `GET/DELETE /api/workspaces/{name}`, `POST .../start|stop`).
+   - Elige el nodo `dev` **online** con menos workspaces, o el que se pida por nombre/ID (si no tiene `dev` → 409). Llama al agente y guarda la fila.
+   - `List`/`Get` refrescan el estado desde el agente y lo persisten (crear es asíncrono: `creating` → `running`/`failed`). Si el agente no responde, se muestra la última fila conocida.
+   - Si el agente acepta pero el hub no puede guardar la fila, borra el workspace del nodo para no dejar huérfanos.
+   - Borrar un nodo con workspaces → 409 con mensaje (antes era un 500 del FK).
+   - Probado de punta a punta con podman real (hub dev + agente con el token del nodo): crear 201 → `running`, stop/start, delete y sin contenedores ni volúmenes. En `--dev` el agente rechaza al hub (sin identidad de tailnet): es lo esperado.
 7. **CLI `walroos ssh-config`**: imprime los bloques `Host <ws>.walroos` para `~/.ssh/config`.
 8. **UI**:
    - Página Workspaces: lista, modal "crear desde repo", info de conexión (SSH / VS Code / Claude Code).
