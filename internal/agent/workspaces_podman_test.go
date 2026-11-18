@@ -528,6 +528,45 @@ func TestWorkspaceRebuild(t *testing.T) {
 	}
 }
 
+// TestWorkspaceInlineDevcontainer: an inline devcontainer wins over the repo's, leaves the clone
+// untouched (git status clean) and survives a rebuild.
+func TestWorkspaceInlineDevcontainer(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	repo := gitRepo(t, map[string]string{
+		".devcontainer/devcontainer.json": `{"image":"docker.io/library/alpine:3.22"}`, // root: must be ignored
+		"tools/Dockerfile":                "FROM docker.io/library/alpine:3.22\nRUN adduser -D -u 1003 dev\n",
+		"README.md":                       "x\n",
+	})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	inline := []byte(`{"build":{"dockerfile":"tools/Dockerfile"},"remoteUser":"dev","postCreateCommand":"touch ~/inline-ran"}`)
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo, Devcontainer: inline}, nil); err != nil {
+		t.Fatal(err)
+	}
+	check := func(when string) {
+		t.Helper()
+		ws := waitState(t, w, name, "running", 5*time.Minute)
+		if ws.User != "1003:1003" {
+			t.Fatalf("%s: user = %s, want 1003 from the inline devcontainer", when, ws.User)
+		}
+		if _, err := podman(ctx, "exec", "--user", ws.User, "ws-"+name, "test", "-f", "/home/dev/inline-ran"); err != nil {
+			t.Fatalf("%s: postCreateCommand didn't run: %v", when, err)
+		}
+		src, _ := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", "ws-"+name+"-src")
+		out, err := exec.Command("git", "-C", src, "status", "--porcelain").CombinedOutput()
+		if err != nil || len(out) > 0 {
+			t.Fatalf("%s: clone not clean: %q, %v", when, out, err)
+		}
+	}
+	check("create")
+	if _, err := w.Rebuild(ctx, name, nil); err != nil {
+		t.Fatal(err)
+	}
+	check("rebuild")
+}
+
 // TestWorkspaceRebuildUnknown: a name with no volumes is not a workspace.
 func TestWorkspaceRebuildUnknown(t *testing.T) {
 	needPodman(t)

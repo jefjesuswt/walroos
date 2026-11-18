@@ -24,6 +24,7 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) Routes(r *whttp.Router) {
 	r.Get("/api/workspaces", h.handleList)
 	r.Post("/api/workspaces", h.handleCreate)
+	r.Post("/api/workspaces/detect", h.handleDetect)
 	r.Get("/api/workspaces/{name}", h.handleGet)
 	r.Post("/api/workspaces/{name}/start", h.handleStart)
 	r.Post("/api/workspaces/{name}/stop", h.handleStop)
@@ -58,6 +59,21 @@ func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	whttp.JSON(w, http.StatusCreated, ws)
+}
+
+func (h *Handler) handleDetect(w http.ResponseWriter, r *http.Request) {
+	var in DetectInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	d, err := h.svc.Detect(r.Context(), in)
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(d)
 }
 
 func (h *Handler) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +154,8 @@ func errorJSON(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalid):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrRepo):
+		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, ErrNotFound), errors.Is(err, fleet.ErrNodeNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrAgentBusy):

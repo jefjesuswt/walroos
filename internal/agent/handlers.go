@@ -17,6 +17,28 @@ func (s *Server) workspaceRoutes(r *whttp.Router) {
 	r.Post("/v1/workspaces/{name}/stop", s.handleStopWorkspace)
 	r.Post("/v1/workspaces/{name}/rebuild", s.handleRebuildWorkspace)
 	r.Delete("/v1/workspaces/{name}", s.handleDeleteWorkspace)
+	r.Post("/v1/detect", s.handleDetect)
+}
+
+// handleDetect proposes a devcontainer for a repo: shallow clone, scan, answer. Nothing is kept.
+func (s *Server) handleDetect(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		RepoURL string `json:"repo_url"`
+		Branch  string `json:"branch"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	d, err := Detect(r.Context(), body.RepoURL, body.Branch)
+	switch {
+	case errors.Is(err, ErrDetectClone):
+		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())
+	case err != nil:
+		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	default:
+		whttp.JSON(w, http.StatusOK, d)
+	}
 }
 
 func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
