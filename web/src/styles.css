@@ -134,6 +134,13 @@ code { font-size: .92em; }
 .skip:focus { top: var(--sp2); }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 ::selection { background: var(--ac-soft); }
+/* Thin pill scrollbars. Chromium ignores these once scrollbar-color is set, so that's Firefox only. */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb { background: var(--bd2); background-clip: padding-box; border: 3px solid transparent; border-radius: 12px; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--tx2); }
+@supports not selector(::-webkit-scrollbar) { :root { scrollbar-width: thin; scrollbar-color: var(--bd2) transparent; } }
 
 .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .ic-lg { width: 28px; height: 28px; }
@@ -183,7 +190,11 @@ body.sb-collapsed .sb-foot { padding-inline: 0; align-items: center; }
   height: var(--top); display: flex; align-items: center; gap: var(--sp3);
   padding: 0 var(--sp6);
   background: var(--bg);
+  transition: top var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
+/* `top`, not a transform: a transform would become the containing block of the mobile FAB */
+body.scrolled .topbar { background: var(--s1); box-shadow: 0 1px 0 var(--bd); }
+body.tb-hidden .topbar { top: calc(-1 * var(--top) - 1px); }
 .crumbs { display: flex; align-items: center; gap: var(--sp2); min-width: 0; flex: 1 1 0; font-size: var(--fs-sm); color: var(--tx2); }
 .crumbs ol { display: flex; align-items: center; gap: var(--sp2); list-style: none; margin: 0; padding: 0; min-width: 0; }
 .crumbs li { display: flex; align-items: center; gap: var(--sp2); min-width: 0; white-space: nowrap; }
@@ -348,7 +359,7 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 .bar i.b-busy { background: var(--busy); } .bar i.b-bad { background: var(--bad); }
 
 /* tables */
-.table-wrap { position: relative; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; border-radius: var(--r3); background: var(--s2); }
+.table-wrap { position: relative; overflow-x: auto; overscroll-behavior-x: contain; border-radius: var(--r3); background: var(--s2); }
 .tbl { width: 100%; border-collapse: collapse; font-size: var(--fs); }
 .tbl th { text-align: left; font-weight: 500; color: var(--tx2); font-size: var(--fs-xs); letter-spacing: .04em; padding: var(--sp3) var(--sp4); border-bottom: 1px solid var(--bd); white-space: nowrap; }
 .tbl td { padding: var(--sp2) var(--sp4); border-bottom: 1px solid color-mix(in srgb, var(--bd) 70%, transparent); vertical-align: middle; height: 72px; }
