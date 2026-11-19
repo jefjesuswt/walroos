@@ -35,7 +35,11 @@ func (f *fakeCF) serve(w http.ResponseWriter, r *http.Request) {
 	ok := func(result any) {
 		json.NewEncoder(w).Encode(map[string]any{"success": true, "result": result})
 	}
-	if r.Header.Get("Authorization") != "Bearer good" {
+	auth := r.Header.Get("Authorization")
+	if auth == "Bearer zones-only" && r.URL.Path == "/zones" {
+		auth = "Bearer good" // can list zones, nothing else
+	}
+	if auth != "Bearer good" {
 		w.WriteHeader(403)
 		json.NewEncoder(w).Encode(map[string]any{"success": false, "errors": []map[string]any{{"code": 9109, "message": "Invalid access token"}}})
 		return
@@ -106,6 +110,12 @@ func TestAppDomains(t *testing.T) {
 	}
 	if code := h.call(t, "PUT", "/api/settings/cloudflare", map[string]string{"token": "bad"}, nil); code == 200 {
 		t.Error("a token Cloudflare rejects was stored")
+	}
+	// A token that passes the zone check but can't make tunnels says so, not a bare 500.
+	h.call(t, "PUT", "/api/settings/cloudflare", map[string]string{"token": "zones-only"}, nil)
+	var e struct{ Error string }
+	if code := h.call(t, "PUT", "/api/apps/web/domains", []string{"web.example.com"}, &e); code != 502 || !strings.Contains(e.Error, "lacks a permission") {
+		t.Errorf("domains with a zones-only token: %d %q", code, e.Error)
 	}
 	if code := h.call(t, "PUT", "/api/settings/cloudflare", map[string]string{"token": "good"}, &st); code != 200 || !st.Configured || st.Zones[0] != "example.com" {
 		t.Fatalf("set token: %d %+v", code, st)
