@@ -152,8 +152,8 @@ func TestAppDomains(t *testing.T) {
 
 	// Someone else's record is never overwritten, and the domains stay as they were.
 	cf.records["blog.example.com"] = cloudflare.Record{ID: "r0", Type: "A", Name: "blog.example.com", Content: "1.2.3.4"}
-	if code := h.call(t, "PUT", "/api/apps/api/domains", []string{"blog.example.com"}, nil); code == 200 {
-		t.Error("took over an A record")
+	if code := h.call(t, "PUT", "/api/apps/api/domains", []string{"blog.example.com"}, nil); code != 409 {
+		t.Errorf("someone else's A record: %d, want 409 (a conflict, not a server error)", code)
 	}
 	if h.call(t, "GET", "/api/apps/api", nil, &a); len(a.Domains) != 0 || cf.records["blog.example.com"].Content != "1.2.3.4" {
 		t.Errorf("after the failed takeover: %v, %+v", a.Domains, cf.records["blog.example.com"])
