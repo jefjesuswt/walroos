@@ -215,6 +215,46 @@ Probado:
 - Podman real en WSL: build, push a `registry:2`, `rmi` local, pull por el handler con token malo (falla) y bueno (live), sin tags sobrantes.
 - No probado de punta a punta con dos nodos reales: hay uno solo.
 
+## Auditoría de seguridad y caminos tristes (2026-11-18)
+
+Revisión independiente (subagente sin contexto) con seis atacantes: otro equipo de la tailnet, una web maliciosa en el navegador del dueño, un repo malicioso, código dentro de un contenedor, un nodo comprometido, y entradas malas en API y MCP.
+
+Arreglado:
+- **Crítico: `mounts` del devcontainer.** Solo se miraba `type=`. `type=volume,volume-opt=device=/home/u,volume-opt=o=bind` montaba cualquier ruta del host (verificado: leer y escribir el `$HOME` del nodo, con su token y su estado de tsnet). Además se podía montar el volumen de otro workspace.
+  - Ahora solo pasan las claves `type`, `source`/`src`, `target`/`dst`/`destination`, `ro`/`readonly`, `tmpfs-size` y `tmpfs-mode`. Sin comillas, y con un solo `type`.
+  - En la forma objeto, las comas se rechazan.
+  - Los volúmenes con nombre se llaman `ws-<workspace>-v-<source>`.
+- **Alto: registry sin auth.** Un `RUN --network=host` en un Dockerfile llega al loopback del nodo build y podía leer o pisar imágenes del registry.
+  - Ahora el registry exige htpasswd. La contraseña es aleatoria y vive solo en memoria del agente: si el agente reinicia, el registry se recrea en el siguiente build.
+  - El push usa un `--authfile` temporal `0600`. El proxy de la tailnet pone su propio Basic auth.
+- **Alto: `detect` con symlinks.** Un `go.mod -> /dev/zero` tumbaba el agente por memoria, y un FIFO lo colgaba. Ahora solo se leen archivos regulares, con 1 MB máximo.
+- **Medio: memoria del agente.**
+  - El log de build sin saltos de línea se corta en líneas de 64 KB.
+  - El health check lee solo los primeros 4 KB de la respuesta.
+- **Medio: workspace huérfano.** El nombre repetido se descubría al insertar, después de que el agente ya estaba creando el workspace, y un workspace a medio crear no se puede borrar. Ahora se revisa antes de llamar al agente.
+- **Medio: `secret.key` perdida.** El hub creaba una clave nueva en silencio, y los deploys corrían sin secretos. Ahora no arranca si la base tiene variables cifradas y falta la clave.
+- **Bajo:**
+  - Tokens en URLs `https://user:token@…`: se ocultan en el log de deploy.
+  - Aserción de tipo sin chequear en el SSH: podía tumbar el agente.
+  - Directorio de datos `0700`.
+  - Apps con `NoNewPrivileges=true`.
+  - `GET /api/workspaces` ya no espera un timeout por cada fila de un nodo caído.
+
+Ya estaba bien:
+- Web del hub: `CrossOriginProtection`, `AllowHosts` contra DNS rebinding, sin CORS, cuerpos de 4 MB máximo.
+- SQL parametrizado; join tokens de un solo uso.
+- Agente: hub fijado por StableID y token comparado en tiempo constante.
+- Proxy del registry, inyección en git, podman y systemd, symlinks del contexto de build, y canales del SSH.
+
+Pendiente (`ponytail:`):
+- **Builds:** pueden llegar a otros servicios en `127.0.0.1` del nodo build con `RUN --network=host` (podman no tiene forma de prohibirlo).
+- **Límites de recursos:** sin límites de memoria (podman ya limita a 2048 pids).
+- **Aislamiento:** apps y workspaces se ven entre sí en su red.
+- **Cola de deploys:** un worker para todo el hub, así que un deploy colgado bloquea 30 min.
+- **Log de deploy:** el append es lento con logs de más de 1 MB.
+- **Gateway SSH:** sin límite de conexiones antes de autenticar.
+- **MCP:** devuelve logs y errores al LLM sin sanear (riesgo de prompt injection).
+
 ## Después
 
 | Hito | Resumen |

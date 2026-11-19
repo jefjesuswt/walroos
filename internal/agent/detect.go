@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -97,7 +98,12 @@ func (s scan) read(rel string) string {
 	if rel == "" {
 		return ""
 	}
-	b, _ := os.ReadFile(filepath.Join(s.dir, rel))
+	f, err := os.Open(filepath.Join(s.dir, rel))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	b, _ := io.ReadAll(io.LimitReader(f, 1<<20)) // manifests are small; a huge one is cut, not loaded
 	return string(b)
 }
 
@@ -127,6 +133,7 @@ func detectDir(dir string) Detection {
 		case e.IsDir() && p != "." && (skipDirs[e.Name()] || strings.Count(p, "/") >= 3):
 			return fs.SkipDir
 		case e.IsDir():
+		case !e.Type().IsRegular(): // a symlink to /dev/zero or a FIFO would eat memory or hang
 		case strings.Contains(p, "/"):
 			deeper = append(deeper, p)
 		default:

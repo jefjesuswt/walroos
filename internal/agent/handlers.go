@@ -223,14 +223,19 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 	defer l.mu.Unlock()
 	l.buf = append(l.buf, p...)
 	for {
-		i := bytes.IndexByte(l.buf, '\n')
-		if i < 0 {
-			return len(p), nil
+		i, skip := bytes.IndexByte(l.buf, '\n'), 1
+		if i < 0 || i > maxLine { // a line with no end in sight is cut, not buffered whole
+			if len(l.buf) < maxLine {
+				return len(p), nil
+			}
+			i, skip = maxLine, 0
 		}
 		l.sendLocked(DeployLine{Log: string(l.buf[:i])})
-		l.buf = l.buf[i+1:]
+		l.buf = l.buf[i+skip:]
 	}
 }
+
+const maxLine = 64 << 10
 
 // Flush sends a last unterminated line.
 func (l *lineWriter) Flush() {

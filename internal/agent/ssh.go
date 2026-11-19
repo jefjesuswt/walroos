@@ -284,8 +284,9 @@ func (c *sshConn) start(ctx context.Context, ch ssh.Channel, tty *ptyRequest, en
 	if err != nil {
 		return nil, err
 	}
-	local, remote := c.sc.LocalAddr().(*net.TCPAddr), c.sc.RemoteAddr().(*net.TCPAddr)
-	if local != nil && remote != nil {
+	local, ok1 := c.sc.LocalAddr().(*net.TCPAddr)
+	remote, ok2 := c.sc.RemoteAddr().(*net.TCPAddr)
+	if ok1 && ok2 {
 		env = append(env, fmt.Sprintf("SSH_CONNECTION=%s %d %s %d", remote.IP, remote.Port, local.IP, local.Port))
 	}
 	if tty != nil {
