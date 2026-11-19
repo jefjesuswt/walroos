@@ -13,8 +13,11 @@ func TestTunnelToken(t *testing.T) {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}
-	unit := tunnelUnit("/x/walroos-cloudflared.env")
-	if !strings.Contains(unit, "\nNetwork="+EdgeNetwork+"\n") || !strings.Contains(unit, "\nEnvironmentFile=/x/walroos-cloudflared.env\n") {
+	unit := tunnelUnit("/x/walroos-cloudflared.env", "ExecStartPost=guard")
+	if !strings.Contains(unit, "\nNetwork="+EdgeNetwork+"\n") || !strings.Contains(unit, "\nEnvironmentFile=/x/walroos-cloudflared.env\n") || !strings.Contains(unit, "\nExecStartPost=guard\n") {
 		t.Errorf("unit:\n%s", unit)
+	}
+	if r := guardRules(`"podman1", "podman4"`); !strings.Contains(r, `iifname { "podman1", "podman4" } oifname != { "podman1", "podman4" } ip daddr { 10.0.0.0/8,`) || !strings.Contains(r, "delete table inet walroos_guard") {
+		t.Errorf("guard rules:\n%s", r)
 	}
 }

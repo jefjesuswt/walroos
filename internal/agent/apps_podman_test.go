@@ -76,6 +76,8 @@ func TestAppDeployPodman(t *testing.T) {
 		t.Fatalf("after a restart: %q, want v1", got)
 	}
 
+	assertGuarded(t)
+
 	// A release that never answers: removed, v1 keeps serving.
 	commit(`["sleep", "300"]`, "broken")
 	log.Reset()
@@ -181,6 +183,60 @@ func edgeGet(t *testing.T, app string) string {
 		t.Logf("edge get %s: %v", app, err)
 	}
 	return out
+}
+
+// assertGuarded checks that a container on the app networks can't reach this host's private
+// address (a stand-in for the LAN), while public egress still works.
+func assertGuarded(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+	if out, err := podman(ctx, "unshare", "--rootless-netns", "nft", "list", "table", "inet", "walroos_guard"); err != nil || !strings.Contains(out, "reject") {
+		t.Fatalf("guard table: %v\n%s", err, out)
+	}
+	var lan string
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if ip, ok := a.(*net.IPNet); ok && ip.IP.To4() != nil && ip.IP.IsPrivate() {
+			lan = ip.IP.String()
+			break
+		}
+	}
+	if lan == "" {
+		t.Log("no private address on this host; skipping the LAN half")
+	} else {
+		ln, err := net.Listen("tcp", lan+":0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ln.Close()
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				c.Write([]byte("HTTP/1.0 200 OK\r\n\r\nlan\n"))
+				c.Close()
+			}
+		}()
+		for _, n := range []string{AppNetwork, EdgeNetwork} {
+			out, err := podman(ctx, "run", "--rm", "--network", n, "docker.io/library/python:3-alpine",
+				"wget", "-qO-", "-T", "5", "http://"+ln.Addr().String()+"/")
+			if err == nil || strings.Contains(out, "lan") {
+				t.Errorf("a container on %s reached %s: %q", n, ln.Addr(), out)
+			}
+		}
+	}
+	// Internet: only where the host has it (WSL's networks are --internal: no NAT there).
+	if _, err := podman(ctx, "run", "--rm", "--network", "pasta", "docker.io/library/python:3-alpine", "wget", "-qO/dev/null", "-T", "5", "https://www.cloudflare.com/cdn-cgi/trace"); err != nil {
+		t.Log("no internet; skipping the public half")
+		return
+	}
+	if out, err := podman(ctx, "network", "inspect", EdgeNetwork, "--format", "{{.Internal}}"); err == nil && out == "false" {
+		if out, err := podman(ctx, "run", "--rm", "--network", EdgeNetwork, "docker.io/library/python:3-alpine", "wget", "-qO-", "-T", "5", "https://www.cloudflare.com/cdn-cgi/trace"); err != nil {
+			t.Errorf("public egress from %s: %v %s", EdgeNetwork, err, out)
+		}
+	}
 }
 
 func appsNamed(list []App, name string) []App {
