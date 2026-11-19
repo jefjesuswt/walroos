@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/internal/cloudflare"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 )
 
@@ -225,4 +226,94 @@ func randomID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+func (s *Store) setting(ctx context.Context, key string) (string, error) {
+	var v string
+	err := s.db.Read.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+func (s *Store) setSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.Write.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+// domains maps app id to its domains, sorted.
+func (s *Store) domains(ctx context.Context) (map[string][]string, error) {
+	rows, err := s.db.Read.QueryContext(ctx, `SELECT app_id, domain FROM app_domains ORDER BY domain`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var app, d string
+		if err := rows.Scan(&app, &d); err != nil {
+			return nil, err
+		}
+		out[app] = append(out[app], d)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) replaceDomains(ctx context.Context, appID string, domains []string) error {
+	tx, err := s.db.Write.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM app_domains WHERE app_id = ?`, appID); err != nil {
+		return err
+	}
+	for _, d := range domains {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO app_domains (domain, app_id) VALUES (?, ?)`, d, appID); err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+				return fmt.Errorf("%w: %s", ErrDomainTaken, d)
+			}
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// nodeRules is the ingress of a node's tunnel: each domain to its app by network alias.
+func (s *Store) nodeRules(ctx context.Context, nodeID string) ([]cloudflare.Rule, error) {
+	rows, err := s.db.Read.QueryContext(ctx, `SELECT d.domain, a.name, a.port FROM app_domains d
+		JOIN apps a ON a.id = d.app_id WHERE a.node_id = ? ORDER BY d.domain`, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	rules := []cloudflare.Rule{}
+	for rows.Next() {
+		var d, name string
+		var port int
+		if err := rows.Scan(&d, &name, &port); err != nil {
+			return nil, err
+		}
+		rules = append(rules, cloudflare.Rule{Hostname: d, Service: fmt.Sprintf("http://%s:%d", name, port)})
+	}
+	return rules, rows.Err()
+}
+
+type tunnel struct{ AccountID, ID string }
+
+func (s *Store) tunnel(ctx context.Context, nodeID string) (tunnel, bool, error) {
+	var t tunnel
+	err := s.db.Read.QueryRowContext(ctx, `SELECT account_id, tunnel_id FROM tunnels WHERE node_id = ?`, nodeID).Scan(&t.AccountID, &t.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return t, false, nil
+	}
+	return t, err == nil, err
+}
+
+func (s *Store) saveTunnel(ctx context.Context, nodeID string, t tunnel) error {
+	_, err := s.db.Write.ExecContext(ctx, `INSERT INTO tunnels (node_id, account_id, tunnel_id) VALUES (?, ?, ?)
+		ON CONFLICT (node_id) DO UPDATE SET account_id = excluded.account_id, tunnel_id = excluded.tunnel_id`, nodeID, t.AccountID, t.ID)
+	return err
 }

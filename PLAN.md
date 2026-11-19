@@ -161,7 +161,7 @@ Ya estaba bien: `Dockerfile` symlink fuera del repo, `dockerfile: ../../etc/pass
 
 Límite conocido: si el hub muere sin cerrar la conexión (tsnet no manda FIN), el nodo termina el deploy por su cuenta y el hub lo marca `failed` al arrancar. La release viva del nodo es la verdad; M3.3 la mostrará.
 
-Falta: ingress con Cloudflare Tunnel (M3.2, necesita cuenta, dominio y token de CF), editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
+Falta: editar una app (puerto, rama) sin borrarla. Para pasar un nodo existente a `prod` hoy hay que volver a unirlo con `--roles dev,prod`.
 
 ## M3.3 — UI y MCP de apps ✅ (2026-11-18)
 
@@ -215,6 +215,54 @@ Probado:
 - Podman real en WSL: build, push a `registry:2`, `rmi` local, pull por el handler con token malo (falla) y bueno (live), sin tags sobrantes.
 - No probado de punta a punta con dos nodos reales: hay uno solo.
 
+## M3.2 — Dominios con Cloudflare Tunnel ✅ código (2026-11-19)
+
+Falta probarlo de punta a punta con una cuenta real de Cloudflare.
+
+**Setup:**
+- En Settings → Cloudflare se pega un API token con Zone:Read, DNS:Edit y Account → Cloudflare Tunnel:Edit.
+- Se valida listando zonas y se guarda cifrado en `settings` (migración 005).
+- La cuenta sale de la zona. `ponytail:` una sola cuenta.
+
+**Dominios:**
+- Se editan en el detalle de la app, o con `PUT /api/apps/{name}/domains` o la herramienta MCP `set_app_domains`.
+- La primera vez para un nodo, el hub crea (o reusa) el túnel `walroos-<nodo>` y le pasa el token al agente (`PUT /v1/tunnel`). El agente escribe el Quadlet `walroos-cloudflared` con el token en un env file `0600`, y lo reinicia solo si algo cambió.
+- Después el hub reescribe el ingress del túnel con todos los dominios del nodo (`hostname → http://<app>:<port>`, más un 404 al final) y crea un CNAME proxied a `<tunnel>.cfargotunnel.com`.
+- Si el registro ya existe y no es un CNAME a un túnel, falla en vez de pisarlo.
+- Al quitar un dominio se borra su CNAME, si todavía apunta al túnel.
+- Al borrar la app pasa lo mismo, como best effort.
+- Un dominio pertenece a una sola app (PK).
+
+**Zero-downtime sin tocar Cloudflare en cada deploy:**
+- La release sana entra a la red `walroos-edge` con el alias `<app>`: `podman network connect` en caliente, y `Network=walroos-edge:alias=<app>` en su Quadlet para el próximo arranque.
+- Hasta que se para la vieja, el alias resuelve a las dos, y las dos están sanas.
+- Una release que no pasa el health check nunca entra a esa red.
+
+**Probado:**
+- Hub contra una API de Cloudflare falsa:
+  - un token rechazado no se guarda, y el guardado está cifrado;
+  - normalización de dominios;
+  - túnel creado una sola vez y reusado;
+  - ingress y CNAME;
+  - dominios inválidos o fuera de zona → 400;
+  - dominio de otra app → 409;
+  - un registro A ajeno no se toca y los dominios vuelven atrás;
+  - cambio de dominio borra el CNAME viejo;
+  - borrar la app limpia el ingress y el DNS.
+- Podman real en WSL (redes `--internal`):
+  - la app responde por `http://<app>:8000` desde otro contenedor en `walroos-edge`;
+  - el alias sigue tras `systemctl restart`;
+  - el swap, el rollback y el build/pull siguen pasando.
+- UI en móvil claro, escritorio oscuro y Dracula, sin scroll horizontal.
+
+**Límites (`ponytail:`):**
+- `cloudflared:latest`.
+- Primera página de zonas (50).
+- Si Cloudflare falla a mitad, los registros ya cambiados quedan, aunque los dominios en la base vuelven atrás.
+- No hay forma de apagar el túnel de un nodo sin dominios.
+
+**No probado:** `cloudflared` conectando de verdad. WSL no tiene salida en redes bridge, y hace falta tu token y un dominio.
+
 ## Auditoría de seguridad y caminos tristes (2026-11-18)
 
 Revisión independiente (subagente sin contexto) con seis atacantes: otro equipo de la tailnet, una web maliciosa en el navegador del dueño, un repo malicioso, código dentro de un contenedor, un nodo comprometido, y entradas malas en API y MCP.
@@ -259,7 +307,7 @@ Pendiente (`ponytail:`):
 
 | Hito | Resumen |
 |---|---|
-| M3 Deploy | Resto: Cloudflare Tunnel (M3.2). |
+| M3 Deploy | Probar M3.2 con una cuenta real de Cloudflare. |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 

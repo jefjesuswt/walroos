@@ -35,6 +35,32 @@ func (h *Handler) Routes(r *whttp.Router) {
 	r.Get("/api/apps/{name}/deployments", h.handleDeployments)
 	r.Get("/api/apps/{name}/deployments/{id}", h.handleDeployment)
 	r.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
+	r.Put("/api/apps/{name}/domains", h.handlePutDomains)
+	r.Get("/api/settings/cloudflare", h.handleGetCloudflare)
+	r.Put("/api/settings/cloudflare", h.handlePutCloudflare)
+}
+
+func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
+	var domains []string
+	if decode(w, r, &domains) {
+		a, err := h.svc.SetDomains(r.Context(), r.PathValue("name"), domains)
+		reply(w, http.StatusOK, a, err)
+	}
+}
+
+func (h *Handler) handleGetCloudflare(w http.ResponseWriter, r *http.Request) {
+	st, err := h.svc.Cloudflare(r.Context())
+	reply(w, http.StatusOK, st, err)
+}
+
+func (h *Handler) handlePutCloudflare(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Token string `json:"token"`
+	}
+	if decode(w, r, &in) {
+		st, err := h.svc.SetCloudflare(r.Context(), in.Token)
+		reply(w, http.StatusOK, st, err)
+	}
 }
 
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
@@ -141,11 +167,12 @@ func (h *Handler) handleRollback(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid):
+	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy):
+	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy),
+		errors.Is(err, ErrNoCloudflare), errors.Is(err, ErrDomainTaken):
 		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
 	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress):
 		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())

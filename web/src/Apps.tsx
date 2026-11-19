@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type App, type Deployment, type Node } from './api';
+import { api, type App, type Cloudflare, type Deployment, type Node } from './api';
 import { ago, Badge, Confirm, EmptyState, EnvModal, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 // What the app is doing, from the node's live release first: a deployment's state is only
@@ -87,6 +87,7 @@ export function AppDetail({ name }: { name: string }) {
   const [error, setError] = useState('');
   const [deploying, setDeploying] = useState(false);
   const [editingEnv, setEditingEnv] = useState(false);
+  const [editingDomains, setEditingDomains] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [open, setOpen] = useState<string | null>(null); // deployment id in the log modal
 
@@ -161,6 +162,20 @@ export function AppDetail({ name }: { name: string }) {
         )}
       </section>
 
+      <section className="card" aria-labelledby="domains-h">
+        <div className="card-head">
+          <div><h2 id="domains-h">Domains</h2><p className="muted">Public, with TLS, through {a.node_name}'s Cloudflare Tunnel. No ports open on the node.</p></div>
+          <button className="btn" onClick={() => setEditingDomains(true)}><Icon n="globe" />Edit</button>
+        </div>
+        <div className="card-body">
+          {a.domains.length === 0 ? <p className="muted">None yet: the app is only reachable inside the node.</p> : (
+            <ul className="domain-list">
+              {a.domains.map(d => <li key={d}><a className="mono" href={`https://${d}`} target="_blank" rel="noreferrer">{d}</a></li>)}
+            </ul>
+          )}
+        </div>
+      </section>
+
       <RuntimeLogs app={a} />
 
       <section className="card" aria-labelledby="build-h">
@@ -186,6 +201,7 @@ export function AppDetail({ name }: { name: string }) {
           load={() => api.appEnv(a.name)} save={vars => api.setAppEnv(a.name, vars)}
           onClose={() => setEditingEnv(false)} onSaved={() => setEditingEnv(false)} />
       )}
+      {editingDomains && <DomainsModal app={a} onClose={() => setEditingDomains(false)} onSaved={() => { setEditingDomains(false); load(); }} />}
       {removing && (
         <Confirm title={`Delete ${a.name}?`} confirmLabel="Delete app" danger onClose={() => setRemoving(false)} onConfirm={remove}>
           <p className="muted">Stops the app on <span className="mono">{a.node_name}</span> and removes its images, environment and deployment history. It can't be undone.</p>
@@ -301,6 +317,39 @@ function DeploymentModal({ app, id, onClose, onRollback }: {
           : <div className="log-lines">{lines.map((l, i) => (
             <div key={i} className={`ln plain${/never got healthy|^error|failed|fatal/i.test(l) ? ' err' : /^(cloning|building|starting|health check|stopping|rollback)|is live/.test(l) ? '' : ' dim'}`}><span className="t">{l}</span></div>
           ))}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function DomainsModal({ app, onClose, onSaved }: { app: App; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [text, setText] = useState(app.domains.join('\n'));
+  const [cf, setCf] = useState<Cloudflare | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.cloudflare().then(setCf, e => setError(e.message)); }, []);
+  const submit = () => {
+    setBusy(true);
+    api.setDomains(app.name, text.split(/[\s,]+/).filter(Boolean)).then(
+      () => { toast('Domains saved'); onSaved(); },
+      e => { setError(e.message); setBusy(false); },
+    );
+  };
+  return (
+    <Modal title={`Domains · ${app.name}`} onClose={onClose}
+      sub={`Each one gets a proxied CNAME to the tunnel and a rule to http://${app.name}:${app.port}. Deploys don't touch them.`}
+      foot={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || cf?.configured === false} onClick={submit}><Icon n="check" />{busy ? 'Saving…' : 'Save'}</button></>}>
+      {cf?.configured === false && (
+        <div className="alert alert-busy" role="status"><Icon n="alert" />
+          <div className="alert-text"><strong>Cloudflare isn't set up</strong><span className="muted">Add an API token in <a href="#/settings">Settings</a> first.</span></div>
+        </div>
+      )}
+      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't save them</strong><span className="muted">{error}</span></div></div>}
+      <div className="form">
+        <Field label="Hostnames, one per line" hint={cf?.zones.length ? <>In a zone the token can edit: <span className="mono">{cf.zones.join(', ')}</span>. Empty removes them all.</> : 'Empty removes them all.'}>
+          <textarea className="input mono" rows={4} value={text} onChange={e => setText(e.target.value)} placeholder={`${app.name}.example.com`} spellCheck={false} autoFocus />
+        </Field>
       </div>
     </Modal>
   );

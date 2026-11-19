@@ -124,6 +124,11 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, l
 	return s
 }
 
+type domainsIn struct {
+	Name    string   `json:"name" jsonschema:"app name"`
+	Domains []string `json:"domains" jsonschema:"hostnames like app.example.com"`
+}
+
 type appIn struct {
 	Name string `json:"name" jsonschema:"app name"`
 }
@@ -214,6 +219,13 @@ func addAppTools(s *sdk.Server, apps *app.Service) {
 		func(ctx context.Context, _ *sdk.CallToolRequest, in deploymentIn) (*sdk.CallToolResult, any, error) {
 			d, err := apps.Rollback(ctx, in.Name, in.ID)
 			return nil, d, err
+		})
+
+	sdk.AddTool(s, &sdk.Tool{Name: "set_app_domains",
+		Description: "Make exactly these hostnames public for the app, with TLS, through its node's Cloudflare Tunnel (an empty list removes them). Needs a Cloudflare token in Settings; each hostname must be in one of its zones."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in domainsIn) (*sdk.CallToolResult, any, error) {
+			a, err := apps.SetDomains(ctx, in.Name, in.Domains)
+			return nil, a, err
 		})
 
 	sdk.AddTool(s, &sdk.Tool{Name: "app_logs", Annotations: ro,

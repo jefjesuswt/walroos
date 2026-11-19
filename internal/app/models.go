@@ -32,6 +32,7 @@ type App struct {
 	Dockerfile string      `json:"dockerfile"`
 	Port       int         `json:"port"`
 	HealthPath string      `json:"health_path"`
+	Domains    []string    `json:"domains"` // public hostnames, through the node's Cloudflare Tunnel
 	CreatedAt  time.Time   `json:"created_at"`
 	Last       *Deployment `json:"last_deployment,omitempty"`
 	Running    *agent.App  `json:"running,omitempty"` // the release on the node, as its agent reports it
