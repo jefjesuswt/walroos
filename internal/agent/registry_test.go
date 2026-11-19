@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -75,5 +76,30 @@ func TestLineWriterCapsLines(t *testing.T) {
 	}
 	if n := strings.Count(out.String(), "\n"); n != 4 {
 		t.Errorf("%d lines, want 3 cut ones and the rest", n)
+	}
+}
+
+func TestRegistryAuthOK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); r.URL.Path != "/v2/" || !ok || u != "walroos" || p != "right" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	orig := registryAddr
+	registryAddr = strings.TrimPrefix(srv.URL, "http://")
+	t.Cleanup(func() { registryAddr = orig })
+
+	if !registryAuthOK(context.Background(), "right") {
+		t.Error("working password reported as broken")
+	}
+	if registryAuthOK(context.Background(), "stale") {
+		t.Error("stale password (registry recreated by someone else) reported as fine")
+	}
+	srv.Close()
+	if registryAuthOK(context.Background(), "right") {
+		t.Error("registry down reported as fine")
 	}
 }

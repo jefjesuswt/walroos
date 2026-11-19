@@ -145,7 +145,10 @@ func (s *Server) RegistryHandler() http.Handler {
 func (a *Apps) ensureRegistry(ctx context.Context) (authFile string, err error) {
 	a.regMu.Lock()
 	defer a.regMu.Unlock()
-	if out, _ := podman(ctx, "inspect", "--format", "{{.State.Running}}", registryName); out != "true" || a.regPass == "" {
+	// Also recreate it when our password no longer works: something else (another agent on this
+	// host, a test run) recreated the container with its own users file, and every push would
+	// fail with "authentication required" until the agent restarts.
+	if out, _ := podman(ctx, "inspect", "--format", "{{.State.Running}}", registryName); out != "true" || a.regPass == "" || !registryAuthOK(ctx, a.regPass) {
 		if a.regPass, err = startRegistry(ctx); err != nil {
 			return "", err
 		}
@@ -195,6 +198,23 @@ func startRegistry(ctx context.Context) (pass string, err error) {
 		time.Sleep(200 * time.Millisecond)
 	}
 	return "", fmt.Errorf("%s didn't answer on %s", registryName, registryAddr)
+}
+
+// registryAuthOK reports whether the registry accepts pass. Any error counts as no.
+func registryAuthOK(ctx context.Context, pass string) bool {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+registryAddr+"/v2/", nil)
+	if err != nil {
+		return false
+	}
+	req.SetBasicAuth("walroos", pass)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // registryConfig replaces the image's /etc/docker/registry/config.yml: storage on the volume,
