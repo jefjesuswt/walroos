@@ -56,6 +56,20 @@ export function App() {
 
   useEffect(() => { document.body.classList.toggle('drawer-open', drawer); }, [drawer]);
 
+  // The top bar gets a surface once content scrolls under it, hides while scrolling down and
+  // comes back on the way up.
+  useEffect(() => {
+    let last = window.scrollY;
+    const on = () => {
+      const y = window.scrollY, b = document.body.classList;
+      b.toggle('scrolled', y > 0);
+      if (Math.abs(y - last) > 4) b.toggle('tb-hidden', y > last && y > 64);
+      last = y;
+    };
+    window.addEventListener('scroll', on, { passive: true });
+    return () => window.removeEventListener('scroll', on);
+  }, []);
+
   const nav = NAV.find(n => n[0] === route);
   useEffect(() => { document.title = `${sub || nav?.[1] || 'Not found'} · walroos`; }, [nav, sub]);
 
