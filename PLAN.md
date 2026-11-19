@@ -261,7 +261,19 @@ Falta probarlo de punta a punta con una cuenta real de Cloudflare.
 - Si Cloudflare falla a mitad, los registros ya cambiados quedan, aunque los dominios en la base vuelven atrás.
 - No hay forma de apagar el túnel de un nodo sin dominios.
 
-**No probado:** `cloudflared` conectando de verdad. WSL no tiene salida en redes bridge, y hace falta tu token y un dominio.
+**Probado de punta a punta (2026-11-19):** `https://hello.example.com` responde 200 desde el nodo WSL. Para eso hizo falta un parche de NAT solo para WSL: el kernel no trae `nft_fib_inet`.
+- Lo que salió de la prueba:
+  - un token sin permiso de túnel ahora da un 502 claro, no un 500;
+  - `cloudflared` reintenta cada 10 s (`RestartSec`), porque antes systemd se rendía tras 5 fallos rápidos.
+
+## Apps fuera de la LAN (2026-11-19)
+
+Para el homelab: una app expuesta que cae no debe abrir la red de casa. Detalle en ARCHITECTURE.md, "Exponer apps desde un homelab".
+- La regla nftables `inet walroos_guard` va en el netns rootless. Rechaza el tráfico de los bridges `walroos` y `walroos-edge` hacia redes privadas, link-local, CGNAT y tailnet.
+  - Cada Quadlet de app y de `cloudflared` la vuelve a aplicar en `ExecStartPost`; si no se puede aplicar, la unidad falla.
+  - Los workspaces quedan fuera de la regla.
+- Las apps llevan `Memory=2g` y `PidsLimit=2048`.
+- Límite (`ponytail:`): no hay excepciones por app para servicios de la LAN.
 
 ## Auditoría de seguridad y caminos tristes (2026-11-18)
 
@@ -296,8 +308,7 @@ Ya estaba bien:
 
 Pendiente (`ponytail:`):
 - **Builds:** pueden llegar a otros servicios en `127.0.0.1` del nodo build con `RUN --network=host` (podman no tiene forma de prohibirlo).
-- **Límites de recursos:** sin límites de memoria (podman ya limita a 2048 pids).
-- **Aislamiento:** apps y workspaces se ven entre sí en su red.
+- **Aislamiento:** las apps se ven entre sí en `walroos` (ya no ven la LAN ni los workspaces; ver "Apps fuera de la LAN").
 - **Cola de deploys:** un worker para todo el hub, así que un deploy colgado bloquea 30 min.
 - **Log de deploy:** el append es lento con logs de más de 1 MB.
 - **Gateway SSH:** sin límite de conexiones antes de autenticar.
@@ -307,7 +318,7 @@ Pendiente (`ponytail:`):
 
 | Hito | Resumen |
 |---|---|
-| M3 Deploy | Probar M3.2 con una cuenta real de Cloudflare. |
+| M3 Deploy | Probar M3.2 en un nodo Linux real (homelab). |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 

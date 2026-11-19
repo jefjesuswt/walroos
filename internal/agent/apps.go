@@ -226,6 +226,10 @@ func (a *Apps) start(ctx context.Context, spec AppSpec, rel Release) error {
 	if err := os.WriteFile(envFile, env.Bytes(), 0o600); err != nil { // values never reach argv or the unit
 		return err
 	}
+	guard, err := a.guard(ctx)
+	if err != nil {
+		return err
+	}
 	unit := fmt.Sprintf(`# Written by walroos. Rollback and redeploy replace it; don't edit.
 [Unit]
 Description=walroos app %[1]s (%[3]s)
@@ -238,6 +242,9 @@ Label=%[6]s=%[1]s
 Label=%[7]s=%[3]s
 EnvironmentFile=%[8]s
 NoNewPrivileges=true
+# ponytail: same limits for every app; per-app limits when one needs more
+Memory=2g
+PidsLimit=2048
 
 [Quadlet]
 # The default waits for network-online.target, which many hosts (WSL) never reach.
@@ -245,10 +252,11 @@ DefaultDependencies=false
 
 [Service]
 Restart=always
+%[9]s
 
 [Install]
 WantedBy=default.target
-`, spec.Name, rel.Container, rel.Sha, rel.Image, AppNetwork, labelApp, labelSha, envFile)
+`, spec.Name, rel.Container, rel.Sha, rel.Image, AppNetwork, labelApp, labelSha, envFile, guard)
 	if err := os.WriteFile(filepath.Join(a.dir, rel.Container+".container"), []byte(unit), 0o644); err != nil {
 		return err
 	}

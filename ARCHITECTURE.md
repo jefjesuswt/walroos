@@ -168,6 +168,23 @@ trigger (webhook | botón UI | API | MCP)
   - Si el healthcheck falla, se borra el nuevo y el viejo sigue sirviendo.
 - **Compose** (v2): Quadlet `.kube`/`.pod`, o `podman compose`.
 
+### Exponer apps desde un homelab
+Modelo de amenazas: con el túnel no hay puertos abiertos en casa, así que la puerta es **la app misma** (una RCE o una dependencia vieja). Hay que suponer que alguna app expuesta va a caer, y que eso no le dé acceso a la casa.
+
+- **Las apps no ven redes privadas.** Una regla nftables (`inet walroos_guard`) en el netns rootless de podman rechaza el tráfico de los bridges de `walroos` y `walroos-edge` hacia `10/8`, `172.16/12`, `192.168/16`, `169.254/16`, `100.64/10` (CGNAT y tailnet) y `fc00::/7`/`fe80::/10`.
+  - Sigue funcionando: salir a internet, el DNS (aardvark es local al netns) y el tráfico entre contenedores de la misma red.
+  - Los workspaces (`walroos-dev`) quedan fuera de la regla: son código del owner y pueden necesitar la LAN.
+  - El netns desaparece cuando no queda ningún contenedor, y se recrea sin la regla. Por eso cada Quadlet de app y de `cloudflared` la vuelve a aplicar con `ExecStartPost=podman unshare --rootless-netns nft -f walroos-guard.nft`. Si falla, la unidad falla: **ninguna app corre sin la regla**.
+  - Límite: no hay lista de excepciones por app. Hará falta cuando una app necesite un servicio de la LAN (por ejemplo, una base de datos en el NAS).
+- **Límites:** cada app tiene `Memory=2g` y `PidsLimit=2048`. La CPU ya se reparte por peso de cgroup entre contenedores, así que no lleva límite.
+- **Rootless + `NoNewPrivileges`:** el root del contenedor no es root del host.
+
+Lo que walroos no puede hacer por el owner:
+- **Un nodo prod dedicado** (mini PC o VM, nunca la máquina principal). Si el router lo permite, en una VLAN aparte.
+- **ACLs de Tailscale.** Etiqueta los nodos (`tag:walroos-node`) y deja que solo el hub les hable en `:7070`, `:2222` y `:5000`. Los nodos no deben poder iniciar conexiones hacia los dispositivos del owner: escapar de un contenedor deja al atacante como el usuario del nodo, y ese usuario tiene la identidad de Tailscale del nodo.
+- **Cloudflare:** 2FA en la cuenta, porque quien la controle puede reapuntar el ingress del túnel. Además, un token limitado a la zona.
+- **Apps privadas** (fotos, paneles): Cloudflare Access delante, o mejor, solo en la tailnet.
+
 ---
 
 ## 4. CI/CD — "deploy cuando el owner acepta el merge"
