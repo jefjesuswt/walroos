@@ -139,6 +139,23 @@ func (s *Server) appRoutes(r *whttp.Router) {
 	r.Post("/v1/apps/{name}/build", s.handleStream(s.apps.Build))
 	r.Get("/v1/apps/{name}/logs", s.handleAppLogs)
 	r.Delete("/v1/apps/{name}", s.handleDeleteApp)
+	r.Put("/v1/tunnel", s.handleSetTunnel)
+}
+
+func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Token string `json:"token"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	err := s.apps.SetTunnel(r.Context(), in.Token)
+	switch {
+	case errors.Is(err, ErrInvalidTunnel):
+		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
+	case err != nil:
+		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // DeployLine is one line of a deploy's NDJSON answer: log output while it runs, then one

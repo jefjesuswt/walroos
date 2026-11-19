@@ -62,6 +62,19 @@ func TestAppDeployPodman(t *testing.T) {
 		t.Fatalf("v1 = %+v\n%s", v1, log.String())
 	}
 	assertLive(t, a, name, v1.Container)
+	if got := edgeGet(t, name); got != "v1" {
+		t.Fatalf("through %s: %q, want v1", EdgeNetwork, got)
+	}
+	// The alias is in the unit too, so it survives a restart (crash, reboot).
+	if err := run(ctx, nil, "systemctl", "--user", "restart", v1.Container+".service"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.waitHealthy(ctx, v1.Container, 8000, "/", io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got := edgeGet(t, name); got != "v1" {
+		t.Fatalf("after a restart: %q, want v1", got)
+	}
 
 	// A release that never answers: removed, v1 keeps serving.
 	commit(`["sleep", "300"]`, "broken")
@@ -154,6 +167,20 @@ func assertLive(t *testing.T, a *Apps, app, container string) {
 	if code, err := a.get(context.Background(), container, "127.0.0.1:8000", "/"); code != 200 {
 		t.Fatalf("%s answers %d %v", container, code, err)
 	}
+	if got := edgeGet(t, app); got == "" {
+		t.Fatalf("%s doesn't answer as %s on %s", container, app, EdgeNetwork)
+	}
+}
+
+// edgeGet fetches / from the app's alias on EdgeNetwork, as cloudflared would.
+func edgeGet(t *testing.T, app string) string {
+	t.Helper()
+	out, err := podman(context.Background(), "run", "--rm", "--network", EdgeNetwork, "docker.io/library/python:3-alpine",
+		"wget", "-qO-", "-T", "5", "http://"+app+":8000/")
+	if err != nil {
+		t.Logf("edge get %s: %v", app, err)
+	}
+	return out
 }
 
 func appsNamed(list []App, name string) []App {
