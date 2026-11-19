@@ -226,7 +226,7 @@ func (a *Apps) start(ctx context.Context, spec AppSpec, rel Release) error {
 	if err := os.WriteFile(envFile, env.Bytes(), 0o600); err != nil { // values never reach argv or the unit
 		return err
 	}
-	guard, err := a.guard(ctx)
+	guard, err := a.guard(ctx, rel.Container)
 	if err != nil {
 		return err
 	}
