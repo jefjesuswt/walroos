@@ -3,8 +3,10 @@ package agent
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -12,19 +14,24 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // A build node keeps the images it builds in a registry (distribution) bound to localhost.
 // The tailnet reaches it only through RegistryHandler: read-only, one app per token.
 const (
 	RegistryPort  = "5000" // on the tailnet
-	registryAddr  = "127.0.0.1:7075"
 	registryName  = "walroos-registry"
 	registryImage = "docker.io/library/registry:2"
 )
+
+var registryAddr = "127.0.0.1:7075" // tests change it
 
 // PullToken lets a prod node pull app's images from a build node. It's keyed with the build
 // node's token hash, which only that node and the hub know, so the hub hands it out and the
@@ -45,15 +52,17 @@ func (a *Apps) Build(ctx context.Context, spec AppSpec, log io.Writer) (Release,
 		return Release{}, err
 	}
 	defer unlock()
-	if err := ensureRegistry(ctx); err != nil {
+	authFile, err := a.ensureRegistry(ctx)
+	if err != nil {
 		return Release{}, fmt.Errorf("registry: %w", err)
 	}
+	defer os.Remove(authFile)
 	sha, image, err := build(ctx, spec, log)
 	if err != nil {
 		return Release{}, err
 	}
 	fmt.Fprintf(log, "pushing %s to this node's registry\n", image)
-	if err := run(ctx, nil, "podman", "push", "--quiet", "--tls-verify=false", image, "docker://"+registryAddr+"/"+strings.TrimPrefix(image, "localhost/")); err != nil {
+	if err := run(ctx, nil, "podman", "push", "--quiet", "--tls-verify=false", "--authfile", authFile, image, "docker://"+registryAddr+"/"+strings.TrimPrefix(image, "localhost/")); err != nil {
 		return Release{}, err
 	}
 	// ponytail: the registry is never garbage-collected; each build adds only its own layers.
@@ -117,28 +126,89 @@ func (s *Server) RegistryHandler() http.Handler {
 				return
 			}
 		}
-		r.Header.Del("Authorization")
+		s.apps.regMu.Lock()
+		pass := s.apps.regPass
+		s.apps.regMu.Unlock()
+		if pass == "" {
+			http.Error(w, "no build on this node since its agent started", http.StatusServiceUnavailable)
+			return
+		}
+		r.SetBasicAuth("walroos", pass) // the pull token never reaches the registry
 		proxy.ServeHTTP(w, r)
 	})
 }
 
-// ensureRegistry starts the registry container if it isn't running. Host network: it binds
-// 127.0.0.1 only, and rootless port forwarding needs NAT pieces some kernels (WSL) lack.
-func ensureRegistry(ctx context.Context) error {
-	if out, _ := podman(ctx, "inspect", "--format", "{{.State.Running}}", registryName); out == "true" {
-		return nil
+// ensureRegistry starts the registry container if it isn't running, or if this process doesn't
+// know its password, and returns a podman auth file (0600) for pushing to it. Host network: it
+// binds 127.0.0.1 only, and rootless port forwarding needs NAT pieces some kernels (WSL) lack.
+// The password matters: a Dockerfile's `RUN --network=host` reaches the node's loopback.
+func (a *Apps) ensureRegistry(ctx context.Context) (authFile string, err error) {
+	a.regMu.Lock()
+	defer a.regMu.Unlock()
+	if out, _ := podman(ctx, "inspect", "--format", "{{.State.Running}}", registryName); out != "true" || a.regPass == "" {
+		if a.regPass, err = startRegistry(ctx); err != nil {
+			return "", err
+		}
+	}
+	f, err := os.CreateTemp("", "walroos-registry-auth-*.json")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	auth := base64.StdEncoding.EncodeToString([]byte("walroos:" + a.regPass))
+	_, err = fmt.Fprintf(f, `{"auths": {%q: {"auth": %q}}}`, registryAddr, auth)
+	return f.Name(), err
+}
+
+func startRegistry(ctx context.Context) (pass string, err error) {
+	cfg, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(cfg, "walroos", "registry")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	// A random password per agent start: only its bcrypt hash touches disk, the agent keeps the
+	// password in memory and hands it to podman push through a temp --authfile.
+	pass = rand.Text()
+	hash, err := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "users"), []byte("walroos:"+string(hash)+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yml"), []byte(registryConfig()), 0o600); err != nil {
+		return "", err
 	}
 	podman(ctx, "rm", "-f", "--ignore", registryName)
 	if _, err := podman(ctx, "run", "-d", "--name", registryName, "--network", "host", "--restart", "always",
-		"-e", "REGISTRY_HTTP_ADDR="+registryAddr, "-v", registryName+":/var/lib/registry", registryImage); err != nil {
-		return err
+		"-v", registryName+":/var/lib/registry", "-v", dir+":/etc/docker/registry:ro,Z", registryImage); err != nil {
+		return "", err
 	}
 	for range 50 {
 		if resp, err := http.Get("http://" + registryAddr + "/v2/"); err == nil {
 			resp.Body.Close()
-			return nil
+			return pass, nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return fmt.Errorf("%s didn't answer on %s", registryName, registryAddr)
+	return "", fmt.Errorf("%s didn't answer on %s", registryName, registryAddr)
+}
+
+// registryConfig replaces the image's /etc/docker/registry/config.yml: storage on the volume,
+// listen only on registryAddr, and basic auth against the users file written next to it.
+func registryConfig() string {
+	return fmt.Sprintf(`version: 0.1
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: %s
+auth:
+  htpasswd:
+    realm: walroos
+    path: /etc/docker/registry/users
+`, registryAddr)
 }

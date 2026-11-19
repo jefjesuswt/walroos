@@ -188,7 +188,8 @@ func TestAppBuildPullPodman(t *testing.T) {
 
 	var log strings.Builder
 	spec := AppSpec{Name: name, ID: "b1", RepoURL: repo, Branch: "main", Port: 8000}
-	rel, err := a.Build(ctx, spec, &log)
+	build := NewServer(nil, "build-node-token") // the build node: its registry password lives in its Apps
+	rel, err := build.apps.Build(ctx, spec, &log)
 	if err != nil {
 		t.Fatalf("build: %v\n%s", err, log.String())
 	}
@@ -196,8 +197,7 @@ func TestAppBuildPullPodman(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	srv := NewServer(nil, "build-node-token")
-	reg := httptest.NewServer(srv.RegistryHandler())
+	reg := httptest.NewServer(build.RegistryHandler())
 	t.Cleanup(reg.Close)
 	spec.Pull, spec.Sha = strings.TrimPrefix(reg.URL, "http://"), rel.Sha
 

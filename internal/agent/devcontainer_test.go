@@ -89,6 +89,10 @@ func TestDevcontainerRejectsHostMounts(t *testing.T) {
 		`"source=x,target=/x"`, // no type
 		`"type=volume,source=/,target=/h,type=bind"`,
 		`{"type": "bind", "source": "/", "target": "/host"}`,
+		`"type=volume,source=x,target=/h,volume-opt=type=none,volume-opt=device=/home,volume-opt=o=bind"`, // local driver bind
+		`{"type": "volume", "source": "x,volume-opt=device=/,volume-opt=o=bind", "target": "/h"}`,
+		`"type=volume,\"source=x,volume-opt=device=/\",target=/h"`, // CSV quoting
+		`"type=volume,type=volume,source=x,target=/h"`,
 	} {
 		writeFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": [`+m+`]}`)
 		if _, err := readDevcontainer(repo, "dc.json", nil); err == nil {
@@ -186,5 +190,18 @@ func TestBaseImageTagFollowsContainerfile(t *testing.T) {
 	baseContainerfile = append(append([]byte{}, orig...), "\n# edited\n"...)
 	if BaseImage() == a {
 		t.Fatal("editing the Containerfile must change the tag, or nodes keep a stale base image")
+	}
+}
+
+func TestMountScoped(t *testing.T) {
+	for in, want := range map[mount][2]string{
+		"type=volume,source=cache,target=/c":   {"type=volume,source=ws-app-v-cache,target=/c", "ws-app-v-cache"},
+		"type=volume,src=ws-other-home,dst=/v": {"type=volume,src=ws-app-v-ws-other-home,dst=/v", "ws-app-v-ws-other-home"}, // not the other workspace's home
+		"type=volume,target=/anon":             {"type=volume,target=/anon", ""},
+		"type=tmpfs,target=/t":                 {"type=tmpfs,target=/t", ""},
+	} {
+		if opt, vol := in.scoped("app"); opt != want[0] || vol != want[1] {
+			t.Errorf("%s: %s %s, want %v", in, opt, vol, want)
+		}
 	}
 }
