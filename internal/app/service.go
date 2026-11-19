@@ -26,6 +26,8 @@ type Service struct {
 	box    *secretbox.Box
 	kick   chan struct{}
 	now    func() time.Time
+
+	CloudflareAPI string // "" = Cloudflare's; tests point it at a fake
 }
 
 func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
@@ -80,17 +82,25 @@ func (s *Service) List(ctx context.Context) ([]App, error) {
 		return nil, err
 	}
 	live := map[string][]agent.App{} // per node, asked once
+	domains, err := s.store.domains(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for i := range list {
 		s.withLast(ctx, &list[i], live)
+		list[i].Domains = append([]string{}, domains[list[i].ID]...)
 	}
 	return list, nil
 }
 
 func (s *Service) Get(ctx context.Context, name string) (App, error) {
 	a, err := s.store.Get(ctx, name)
-	if err == nil {
-		s.withLast(ctx, &a, map[string][]agent.App{})
+	if err != nil {
+		return a, err
 	}
+	s.withLast(ctx, &a, map[string][]agent.App{})
+	domains, err := s.store.domains(ctx)
+	a.Domains = append([]string{}, domains[a.ID]...)
 	return a, err
 }
 
@@ -145,7 +155,15 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 		}
 		return err
 	}
-	return s.store.Delete(ctx, a.ID)
+	domains, err := s.store.domains(ctx)
+	if err != nil {
+		return err
+	}
+	if err := s.store.Delete(ctx, a.ID); err != nil {
+		return err
+	}
+	s.unroute(ctx, a.NodeID, domains[a.ID])
+	return nil
 }
 
 // Logs returns the running release's output from the node's journal.

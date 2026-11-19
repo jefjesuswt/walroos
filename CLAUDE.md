@@ -17,7 +17,7 @@ go run ./cmd/walroos hub --dev                    # 127.0.0.1:8080, no Tailscale
 cd web && bun run dev                             # Vite :5173, proxies /api to :8080 (WALROOS_API=url for another hub)
 ```
 
-Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (the Windows PATH makes every podman call ~2s slower), and recreate `walroos-dev` with `podman network create --internal walroos-dev` (the WSL kernel lacks the nftables pieces netavark needs for NAT; without internet only `TestWorkspaceMiseToolPersists` fails).
+Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (the Windows PATH makes every podman call ~2s slower), and recreate `walroos-dev`, `walroos` and `walroos-edge` with `podman network create --internal <name>` (the WSL kernel lacks the nftables pieces netavark needs for NAT; without internet only `TestWorkspaceMiseToolPersists` fails).
 
 ## Layout
 
@@ -26,7 +26,8 @@ cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, ru
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs + users allowlist middleware
 internal/agent/         node agent: hub API (:7070), workspaces and apps (Quadlets) on podman, SSH gateway (:2222), build registry proxy (:5000)
-internal/app/           apps: config, encrypted env, deployment queue (one at a time) and history
+internal/app/           apps: config, encrypted env, deployment queue (one at a time) and history, domains
+internal/cloudflare/    the bits of Cloudflare's API used: zones, remote-managed tunnels, CNAMEs
 internal/fleet/         nodes: models, store, service, handlers, integration tests
 internal/sshkeys/       users' SSH keys + the node-facing ssh-auth check
 internal/mcp/           MCP at /mcp (go-sdk, stateless): tools over the fleet and workspace services

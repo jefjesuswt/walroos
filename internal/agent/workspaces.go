@@ -155,7 +155,9 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 	if dc != nil && dc.RemoteUser != "" {
 		remoteUser = dc.RemoteUser
 	}
-	if err := ensureNetwork(ctx); err != nil {
+	// Services on the node that a workspace needs (a database, a broker) join DevNetwork and are
+	// reachable by container name; pasta's default network can't reach the host's ports at all.
+	if err := ensureNetwork(ctx, DevNetwork); err != nil {
 		return err
 	}
 
@@ -427,17 +429,6 @@ func rebuild(ctx context.Context, name string, env []string) error {
 	podman(ctx, "rmi", "-f", "--ignore", "localhost/walroos-ws-"+name)
 
 	return create(ctx, spec, env)
-}
-
-// ensureNetwork creates the shared network the first time. Services on the node that a workspace
-// needs (a database, a broker) join it and are reachable by container name; pasta's default
-// network can't reach the host's ports at all.
-func ensureNetwork(ctx context.Context) error {
-	if _, err := podman(ctx, "network", "exists", DevNetwork); err == nil {
-		return nil
-	}
-	_, err := podman(ctx, "network", "create", DevNetwork)
-	return err
 }
 
 // httpsURL turns an SSH remote (git@host:owner/repo, ssh://git@host/owner/repo) into its https

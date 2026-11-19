@@ -147,19 +147,23 @@ trigger (webhook | botón UI | API | MCP)
 - **Runtime = Podman Quadlet** (`~/.config/containers/systemd/<app>.container`). systemd reinicia, arranca en boot y gestiona logs con journald. Es lo nativo de Podman, no un supervisor propio. Requiere `loginctl enable-linger`.
 - **Rollback** = reescribir el Quadlet con la imagen `:<sha>` anterior. Se mantienen las N últimas imágenes.
 - **Secretos** → archivo `<contenedor>.env` (`0600`) junto al Quadlet, vía `EnvironmentFile=`; nunca en argv ni en la unidad. En el hub van cifrados en SQLite (AES-GCM, con la clave maestra en un archivo `0600`).
-- **Ingress**: dos proveedores detrás de una misma interfaz (`Ingress.Apply(app, domains, port)`). Es el único caso con dos implementaciones reales.
+- **Ingress**: Cloudflare Tunnel en v1; Caddy en v2. Cuando llegue Caddy habrá dos implementaciones reales y ahí tendrá sentido una interfaz común.
   - **Cloudflare Tunnel (default v1).** Cubre CGNAT, el caso de Venezuela.
-    - Un contenedor `cloudflared` por nodo prod, con un túnel *remote-managed*.
-    - **Red Podman `walroos`** (bridge, con DNS de aardvark) en cada nodo prod. `cloudflared` y todas las apps se unen a ella, y las apps **no publican puertos en el host**.
-    - Walroos usa la API de Cloudflare (token con scope de zona) para crear el CNAME `app.walroos.com → <tunnel>.cfargotunnel.com` y la regla de ingress `hostname → http://<app>-<sha>:<port>`, que resuelve por nombre de contenedor.
+    - Un Quadlet `walroos-cloudflared` por nodo prod, con un túnel *remote-managed* (`walroos-<nodo>`). El token del túnel va en un env file `0600`.
+    - **Red `walroos-edge`** (bridge, con DNS de aardvark): ahí viven `cloudflared` y las releases sanas, con el alias `<app>`. Las apps **no publican puertos en el host**.
+    - El hub usa la API de Cloudflare con un token cifrado en `settings`. Ese token necesita estos permisos:
+      - Zone:Read y DNS:Edit;
+      - Cloudflare Tunnel:Edit en la cuenta.
+    - Con él crea el CNAME proxied `app.dominio → <tunnel>.cfargotunnel.com` y la regla de ingress `hostname → http://<app>:<port>`. La regla es fija: un deploy no toca Cloudflare.
+    - Nunca pisa un registro que no sea un CNAME a un túnel.
     - El TLS lo pone el edge de Cloudflare. No hace falta Caddy ni puertos abiertos.
   - **Caddy (v2, para quien tenga IP pública real).** Configurado por su admin API, con TLS por ACME. Rootless: `net.ipv4.ip_unprivileged_port_start=80`.
   - **Tailscale Funnel no sirve para apps**: solo admite dominios `*.ts.net` (no `walroos.com`), unos pocos puertos y tiene límites de ancho de banda. Queda para webhooks.
   - **App privada** → solo en la tailnet, con certificado de `*.ts.net`.
-- **Zero-downtime** (v1, sale casi gratis con la red `walroos`):
-  1. Levantar `<app>-<sha>` junto al contenedor viejo.
+- **Zero-downtime** (v1, con el alias en `walroos-edge`):
+  1. Levantar `<app>-<deployment id>` junto al contenedor viejo, solo en `walroos`.
   2. Healthcheck.
-  3. Cambiar la regla de ingress al contenedor nuevo.
+  3. `podman network connect --alias <app> walroos-edge` y la misma red en el Quadlet (para el próximo arranque). Mientras tanto el alias resuelve a los dos, que están sanos.
   4. Parar el anterior.
   - Si el healthcheck falla, se borra el nuevo y el viejo sigue sirviendo.
 - **Compose** (v2): Quadlet `.kube`/`.pod`, o `podman compose`.

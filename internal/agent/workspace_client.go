@@ -152,6 +152,11 @@ func (c *Client) DeployApp(ctx context.Context, address, tokenHash string, spec 
 	return c.streamApp(ctx, address, tokenHash, "deploy", spec, onLog)
 }
 
+// SetTunnel makes the node run cloudflared for the tunnel token.
+func (c *Client) SetTunnel(ctx context.Context, address, tokenHash, token string) error {
+	return c.do(ctx, http.MethodPut, address, tokenHash, "/v1/tunnel", map[string]string{"token": token}, nil)
+}
+
 // BuildApp builds on a build node and pushes to its registry, streaming like DeployApp.
 func (c *Client) BuildApp(ctx context.Context, address, tokenHash string, spec AppSpec, onLog func(string)) (Release, error) {
 	return c.streamApp(ctx, address, tokenHash, "build", spec, onLog)

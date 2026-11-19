@@ -122,6 +122,11 @@ export interface Release {
   state: string; // systemd ActiveState: active, activating, failed...
 }
 
+export interface Cloudflare {
+  configured: boolean;
+  zones: string[];
+}
+
 export interface App {
   id: string;
   name: string;
@@ -132,6 +137,7 @@ export interface App {
   dockerfile: string;
   port: number;
   health_path: string;
+  domains: string[]; // public hostnames through the node's Cloudflare Tunnel
   created_at: string;
   last_deployment?: Deployment;
   running?: Release;
@@ -196,6 +202,9 @@ export const api = {
   appLogs: (name: string, lines = 300) => req<string>('GET', `/api/apps/${name}/logs?lines=${lines}`),
   appEnv: (name: string) => req<EnvVar[]>('GET', `/api/apps/${name}/env`),
   setAppEnv: (name: string, vars: EnvVar[]) => req<EnvVar[]>('PUT', `/api/apps/${name}/env`, vars),
+  setDomains: (name: string, domains: string[]) => req<App>('PUT', `/api/apps/${name}/domains`, domains),
+  cloudflare: () => req<Cloudflare>('GET', '/api/settings/cloudflare'),
+  setCloudflare: (token: string) => req<Cloudflare>('PUT', '/api/settings/cloudflare', { token }),
 
   sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),
   addSSHKey: (name: string, public_key: string) => req<SSHKey>('POST', '/api/ssh-keys', { name, public_key }),

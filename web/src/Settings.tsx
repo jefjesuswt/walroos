@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { api, type SSHKey } from './api';
+import { api, type Cloudflare, type SSHKey } from './api';
 import { addCustomTheme, allThemes, applyTheme, contrastWarnings, parseTheme, pick, removeCustomTheme, savedPref, type Mode, type Theme } from './theme';
-import { ago, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function SettingsPage() {
   const toast = useToast();
@@ -25,6 +25,8 @@ export function SettingsPage() {
       <h1 className="sr-only">Settings</h1>
 
       <AppearanceCard />
+
+      <CloudflareCard />
 
       <section className="card" aria-labelledby="keys-h">
         <div className="card-head">
@@ -104,6 +106,46 @@ function AddKeyModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =>
 }
 
 const MODES: [Mode, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
+
+function CloudflareCard() {
+  const toast = useToast();
+  const [cf, setCf] = useState<Cloudflare | null>(null);
+  const [error, setError] = useState('');
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { api.cloudflare().then(c => { setCf(c); setError(''); }, e => setError(e.message)); }, []);
+  usePoll(load, 60000);
+  const save = () => {
+    setBusy(true);
+    api.setCloudflare(token).then(
+      c => { setCf(c); setToken(''); setError(''); setBusy(false); toast('Cloudflare token saved'); },
+      e => { setError(e.message); setBusy(false); },
+    );
+  };
+  return (
+    <section className="card" aria-labelledby="cf-h">
+      <div className="card-head">
+        <div>
+          <h2 id="cf-h">Cloudflare</h2>
+          <p className="muted">Apps get public domains through a Cloudflare Tunnel per prod node: TLS at Cloudflare's edge, no open ports, works behind CGNAT.</p>
+        </div>
+        {cf && <Badge s={cf.configured ? 'ok' : 'idle'} label={cf.configured ? 'Connected' : 'Not set up'} />}
+      </div>
+      <div className="card-body">
+        {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Cloudflare said no</strong><span className="muted">{error}</span></div></div>}
+        {cf?.configured && <p>Zones: <span className="mono">{cf.zones.join(', ') || '—'}</span></p>}
+        <div className="form">
+          <Field label={cf?.configured ? 'Replace the API token' : 'API token'}
+            hint={<>Create one at dash.cloudflare.com → My Profile → API Tokens with <span className="mono">Zone · DNS · Edit</span>, <span className="mono">Zone · Zone · Read</span> and <span className="mono">Account · Cloudflare Tunnel · Edit</span>. It's stored encrypted and never shown again.</>}>
+            <input className="input mono" type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && token && !busy && save()} />
+          </Field>
+          <div><button className="btn btn-primary" disabled={!token || busy} onClick={save}><Icon n="check" />{busy ? 'Checking…' : 'Save'}</button></div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function AppearanceCard() {
   const toast = useToast();

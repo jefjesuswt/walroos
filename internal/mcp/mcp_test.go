@@ -145,7 +145,7 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info",
-		"list_apps", "get_app", "create_app", "deploy_app", "get_deployment", "rollback_app", "app_logs"} {
+		"list_apps", "get_app", "create_app", "deploy_app", "get_deployment", "rollback_app", "app_logs", "set_app_domains"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("missing tool %s in %v", want, names)
 		}
