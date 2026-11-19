@@ -774,3 +774,6 @@ body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0;
 .tools .check:has(input:disabled) { cursor: default; }
 .detected .disclosure > div { display: grid; gap: var(--sp2); }
 .detected textarea { width: 100%; font-size: var(--fs-xs); }
+
+.domain-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.domain-list a { color: var(--ac); overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 2px; }

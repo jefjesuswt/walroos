@@ -26,7 +26,7 @@ var (
 )
 
 const (
-	AppNetwork = "walroos" // apps and cloudflared meet here by container name; apps publish no host ports
+	AppNetwork = "walroos" // apps reach each other here by container name; apps publish no host ports
 	labelApp   = "walroos.app"
 	labelSha   = "walroos.sha"
 	keepImages = 3 // per app, for rollback
@@ -125,7 +125,7 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 	// Cleanup must finish even if the hub hangs up mid-deploy, or the new release is orphaned.
 	bg := context.WithoutCancel(ctx)
 
-	if err := ensureAppNetwork(ctx); err != nil {
+	if err := ensureNetwork(ctx, AppNetwork); err != nil {
 		return Release{}, err
 	}
 	rel := Release{Image: spec.Image, Container: spec.Name + "-" + spec.ID}
@@ -156,7 +156,11 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 		a.remove(bg, rel.Container)
 		return Release{}, err
 	}
-	// ponytail: no ingress yet (M3.2); this is where traffic switches to rel.Container.
+	if err := a.expose(ctx, spec.Name, rel.Container); err != nil {
+		fmt.Fprintf(log, "couldn't put %s on %s, removing it; the previous release keeps serving\n", rel.Container, EdgeNetwork)
+		a.remove(bg, rel.Container)
+		return Release{}, err
+	}
 	for _, c := range old {
 		fmt.Fprintf(log, "stopping previous release %s\n", c)
 		a.remove(bg, c)
@@ -445,11 +449,11 @@ func unitValue(unit []byte, prefix string) string {
 	return ""
 }
 
-// ensureAppNetwork creates the apps' network the first time.
-func ensureAppNetwork(ctx context.Context) error {
-	if _, err := podman(ctx, "network", "exists", AppNetwork); err == nil {
+// ensureNetwork creates a network the first time.
+func ensureNetwork(ctx context.Context, name string) error {
+	if _, err := podman(ctx, "network", "exists", name); err == nil {
 		return nil
 	}
-	_, err := podman(ctx, "network", "create", AppNetwork)
+	_, err := podman(ctx, "network", "create", name)
 	return err
 }

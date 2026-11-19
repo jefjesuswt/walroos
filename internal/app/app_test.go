@@ -32,12 +32,18 @@ type fakeAgent struct {
 	deleted []string
 	calls   []string // "<host> <op>" of each build and deploy
 	builds  []agent.AppSpec
+	tunnel  string // the token of the last PUT /v1/tunnel
 }
 
 func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	switch {
+	case r.Method == "PUT" && r.URL.Path == "/v1/tunnel":
+		var in struct{ Token string }
+		json.NewDecoder(r.Body).Decode(&in)
+		f.tunnel = in.Token
+		w.WriteHeader(204)
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/build"):
 		var spec agent.AppSpec
 		json.NewDecoder(r.Body).Decode(&spec)
@@ -90,6 +96,7 @@ type hub struct {
 	http  http.Handler
 	agent *fakeAgent
 	db    *config.Database
+	svc   *app.Service
 }
 
 func newHub(t *testing.T, roles string) *hub {
@@ -128,7 +135,7 @@ func newHub(t *testing.T, roles string) *hub {
 		r.Use(auth.Middleware(auth.Static("owner@github"), users))
 		app.NewHandler(svc).Routes(r)
 	})
-	return &hub{http: r, agent: fa, db: db}
+	return &hub{http: r, agent: fa, db: db, svc: svc}
 }
 
 func (h *hub) call(t *testing.T, method, path string, body, out any) int {
