@@ -30,7 +30,7 @@ func (a *Apps) SetTunnel(ctx context.Context, token string) error {
 		return ErrInvalidTunnel
 	}
 	envFile := filepath.Join(a.dir, tunnelContainer+".env")
-	guard, err := a.guard(ctx)
+	guard, err := a.guard(ctx, tunnelContainer)
 	if err != nil {
 		return err
 	}
