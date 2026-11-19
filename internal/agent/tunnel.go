@@ -29,14 +29,12 @@ func (a *Apps) SetTunnel(ctx context.Context, token string) error {
 	if len(token) > 4096 || !tunnelTokenRe.MatchString(token) {
 		return ErrInvalidTunnel
 	}
-	if err := ensureNetwork(ctx, EdgeNetwork); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(a.dir, 0o755); err != nil {
-		return err
-	}
 	envFile := filepath.Join(a.dir, tunnelContainer+".env")
-	unit := tunnelUnit(envFile)
+	guard, err := a.guard(ctx)
+	if err != nil {
+		return err
+	}
+	unit := tunnelUnit(envFile, guard)
 	env := "TUNNEL_TOKEN=" + token + "\n" // never in argv: `podman inspect` and ps would show it
 	unitFile := filepath.Join(a.dir, tunnelContainer+".container")
 	oldUnit, _ := os.ReadFile(unitFile)
@@ -57,7 +55,7 @@ func (a *Apps) SetTunnel(ctx context.Context, token string) error {
 	return run(ctx, nil, "systemctl", "--user", "restart", tunnelContainer+".service")
 }
 
-func tunnelUnit(envFile string) string {
+func tunnelUnit(envFile, guard string) string {
 	return fmt.Sprintf(`# Written by walroos; the hub sets the token. Don't edit.
 [Unit]
 Description=walroos Cloudflare Tunnel
@@ -78,10 +76,11 @@ Restart=always
 # Without a delay five quick failures (no network at boot) hit systemd's start limit and the
 # tunnel stays down for good.
 RestartSec=10
+%s
 
 [Install]
 WantedBy=default.target
-`, cloudflaredImage, tunnelContainer, EdgeNetwork, envFile)
+`, cloudflaredImage, tunnelContainer, EdgeNetwork, envFile, guard)
 }
 
 // expose puts a healthy release on EdgeNetwork under the app's name: now, and in its unit for
