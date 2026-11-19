@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,8 @@ import (
 )
 
 const API = "https://api.cloudflare.com/client/v4"
+
+var ErrForbidden = errors.New("the Cloudflare token lacks a permission: it needs Zone · DNS · Edit, Zone · Zone · Read and Account · Cloudflare Tunnel · Edit")
 
 type Client struct {
 	Token string
@@ -85,7 +88,11 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		for _, e := range env.Errors {
 			msgs = append(msgs, fmt.Sprintf("%s (%d)", e.Message, e.Code))
 		}
-		return fmt.Errorf("cloudflare %s %s: %d %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, strings.Join(msgs, "; "))
+		err := fmt.Errorf("cloudflare %s %s: %d %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, strings.Join(msgs, "; "))
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return fmt.Errorf("%w (%v)", ErrForbidden, err)
+		}
+		return err
 	}
 	if out != nil {
 		return json.Unmarshal(env.Result, out)

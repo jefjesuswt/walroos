@@ -75,6 +75,9 @@ DefaultDependencies=false
 
 [Service]
 Restart=always
+# Without a delay five quick failures (no network at boot) hit systemd's start limit and the
+# tunnel stays down for good.
+RestartSec=10
 
 [Install]
 WantedBy=default.target

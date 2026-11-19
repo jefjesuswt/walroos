@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/cloudflare"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -174,7 +175,7 @@ func errorJSON(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy),
 		errors.Is(err, ErrNoCloudflare), errors.Is(err, ErrDomainTaken):
 		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress):
+	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress), errors.Is(err, cloudflare.ErrForbidden):
 		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())
 	default:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
