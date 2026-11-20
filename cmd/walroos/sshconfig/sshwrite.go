@@ -16,6 +16,8 @@ import (
 const (
 	beginMarker = "# BEGIN walroos"
 	endMarker   = "# END walroos"
+	// printedHeader starts the first line of Format's output.
+	printedHeader = "# walroos workspaces"
 )
 
 // managedBlock is the section between the markers, "" when there are no workspaces.
@@ -59,8 +61,8 @@ func MergeSSH(config []byte, block, suffix string) (out []byte, changed bool, dr
 			}
 			inside = false
 			continue
-		case inside:
-			continue
+		case inside, strings.HasPrefix(t, printedHeader):
+			continue // the header `ssh-config >>` pasted along with the blocks
 		}
 
 		if kw, args := directive(t); kw == "host" || kw == "match" {

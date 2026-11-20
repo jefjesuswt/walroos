@@ -268,7 +268,7 @@ func normalizeProxy(p string) string {
 // Format renders the Host blocks, sorted by name so the output is stable.
 // A ProxyCommand is only added when a proxy is configured: plain tailnet machines don't need it.
 func Format(list []workspace, proxy string, port int, suffix string) string {
-	return "# walroos workspaces — or let `walroos ssh-config --write` keep them in ~/.ssh/config\n" + hostBlocks(list, proxy, port, suffix)
+	return printedHeader + " — or let `walroos ssh-config --write` keep them in ~/.ssh/config\n" + hostBlocks(list, proxy, port, suffix)
 }
 
 // hostBlocks is one Host block per workspace, each preceded by a blank line.

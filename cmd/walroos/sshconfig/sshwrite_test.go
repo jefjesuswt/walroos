@@ -29,6 +29,10 @@ Host github.com
 Host app.walroos old.walroos
   HostName 100.64.0.1
   Port 2222
+# walroos workspaces — append to ~/.ssh/config
+
+Host old.walroos
+  User old
 
 Host *.walroos
   ForwardAgent no
@@ -58,7 +62,7 @@ Host *.walroos
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
-	if strings.Join(dropped, "|") != "app.walroos|app.walroos old.walroos" {
+	if strings.Join(dropped, "|") != "app.walroos|app.walroos old.walroos|old.walroos" {
 		t.Errorf("dropped: %q", dropped)
 	}
 	if !strings.Contains(twoHosts, "Host api.walroos\n  HostName 100.64.0.3\n  Port 2222\n  User api\n  ProxyCommand nc -X 5 -x localhost:1055 %h %p\n") {
