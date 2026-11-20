@@ -626,3 +626,32 @@ func TestWorkspaceFolder(t *testing.T) {
 		t.Fatalf("node down: %d %+v (want the last known row, no folder)", code, w)
 	}
 }
+
+// A node whose heartbeats stopped isn't called when listing: waiting out an agent timeout per
+// dead node made `GET /api/workspaces` (and `walroos ssh-config`) hang. Its rows show as last
+// known; once the node is back, the live state shows again.
+func TestOfflineNodeNotCalled(t *testing.T) {
+	h := newHub(t, true)
+	if code := h.call(t, "POST", "/api/workspaces", map[string]any{"name": "app", "repo_url": "https://github.com/me/app"}, nil); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	h.agent.set("app", agent.Workspace{Name: "app", State: "running"})
+	var w workspace.Workspace
+	h.call(t, "GET", "/api/workspaces/app", nil, &w) // stores "running"
+
+	// The node goes quiet (no heartbeat for a minute) while its agent would now say "stopped".
+	h.agent.set("app", agent.Workspace{Name: "app", State: "stopped"})
+	h.db.Write.Exec(`UPDATE nodes SET last_seen = ?`, time.Now().UTC().Add(-time.Minute))
+	var list []workspace.Workspace
+	h.call(t, "GET", "/api/workspaces", nil, &list)
+	h.call(t, "GET", "/api/workspaces/app", nil, &w)
+	if len(list) != 1 || list[0].State != "running" || w.State != "running" {
+		t.Fatalf("offline node was asked: list %+v, get %+v (want the stored running)", list, w)
+	}
+
+	h.db.Write.Exec(`UPDATE nodes SET last_seen = ?`, time.Now().UTC())
+	h.call(t, "GET", "/api/workspaces/app", nil, &w)
+	if w.State != "stopped" {
+		t.Fatalf("back online: %q, want the live stopped", w.State)
+	}
+}
