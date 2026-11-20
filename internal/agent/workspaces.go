@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"log"
 	"os/exec"
 	"path"
 	"path/filepath"
@@ -204,6 +205,15 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 	args = append(args, "--entrypoint", "/bin/sh", image, "-c", `trap "exit 0" TERM; while sleep 1000 & wait $!; do :; done`)
 	if _, err := podman(ctx, args...); err != nil {
 		return err
+	}
+
+	// Editors' folder pickers (Zed's Open Folder) start in $HOME: a ~/<repo> link puts the repo one
+	// click away. Something the user already has at that path wins; the link lives in the home
+	// volume, so a rebuild finds it.
+	link := path.Join(homeDir, path.Base(folder))
+	if _, err := podman(ctx, "exec", "--user", user, "ws-"+name, "sh", "-c",
+		`test -e "$1" || test -L "$1" || ln -s "$2" "$1"`, "sh", link, folder); err != nil {
+		log.Printf("workspace %s: link %s to the repo: %v", name, link, err)
 	}
 
 	if dc != nil && len(dc.PostCreateCommand) > 0 {
