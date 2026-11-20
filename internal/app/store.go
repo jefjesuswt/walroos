@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/cloudflare"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 )
@@ -34,12 +36,16 @@ func (s *Store) Insert(ctx context.Context, a App) error {
 	return err
 }
 
-const appCols = `a.id, a.name, a.node_id, n.name, a.repo_url, a.image, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
+const appCols = `a.id, a.name, a.node_id, n.name, a.repo_url, a.image, a.volumes, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
 	FROM apps a JOIN nodes n ON n.id = a.node_id`
 
 func scanApp(row interface{ Scan(...any) error }) (App, error) {
 	var a App
-	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.RepoURL, &a.Image, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
+	var vols string
+	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.RepoURL, &a.Image, &vols, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
+	if err == nil {
+		err = json.Unmarshal([]byte(vols), &a.Volumes)
+	}
 	return a, err
 }
 
@@ -74,6 +80,14 @@ func (s *Store) List(ctx context.Context) ([]App, error) {
 		list = append(list, a)
 	}
 	return list, rows.Err()
+}
+
+func (s *Store) setVolumes(ctx context.Context, id string, vols []agent.Volume) error {
+	b, err := json.Marshal(vols)
+	if err == nil {
+		_, err = s.db.Write.ExecContext(ctx, `UPDATE apps SET volumes = ? WHERE id = ?`, string(b), id)
+	}
+	return err
 }
 
 func (s *Store) Delete(ctx context.Context, id string) error {

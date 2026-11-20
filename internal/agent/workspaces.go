@@ -111,7 +111,7 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 	name := spec.Name
 	src, home := "ws-"+name+"-src", "ws-"+name+"-home"
 	for _, v := range []string{src, home} {
-		if err := ensureVolume(ctx, v, name); err != nil {
+		if err := ensureVolume(ctx, v, labelWorkspace, name); err != nil {
 			return err
 		}
 	}
@@ -193,7 +193,7 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 		for _, m := range dc.Mounts {
 			opt, vol := m.scoped(name)
 			if vol != "" {
-				if err := ensureVolume(ctx, vol, name); err != nil { // labeled, so Delete removes it
+				if err := ensureVolume(ctx, vol, labelWorkspace, name); err != nil { // labeled, so Delete removes it
 					return err
 				}
 			}
@@ -606,14 +606,15 @@ func agentDir(name string) string {
 
 // ensureVolume creates the workspace volume, or reuses it if it's ours (a retried create keeps
 // the clone). A volume with that name but without our label belongs to someone else: refuse.
-func ensureVolume(ctx context.Context, volume, workspace string) error {
-	owner, err := podman(ctx, "volume", "inspect", "--format", `{{index .Labels "`+labelWorkspace+`"}}`, volume)
+// ensureVolume creates volume labeled label=owner, or checks an existing one carries it.
+func ensureVolume(ctx context.Context, volume, label, owner string) error {
+	got, err := podman(ctx, "volume", "inspect", "--format", `{{index .Labels "`+label+`"}}`, volume)
 	if err != nil { // doesn't exist
-		_, err := podman(ctx, "volume", "create", "--label", labelWorkspace+"="+workspace, volume)
+		_, err := podman(ctx, "volume", "create", "--label", label+"="+owner, volume)
 		return err
 	}
-	if owner != workspace {
-		return fmt.Errorf("volume %s already exists and isn't this workspace's; remove or rename it", volume)
+	if got != owner {
+		return fmt.Errorf("volume %s already exists and isn't %s's; remove or rename it", volume, owner)
 	}
 	return nil
 }

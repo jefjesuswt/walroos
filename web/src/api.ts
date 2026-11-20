@@ -142,10 +142,19 @@ export interface App {
   port: number;
   health_path: string;
   domains: string[]; // public hostnames through the node's Cloudflare Tunnel
+  volumes: Volume[]; // apply on the next deploy
   created_at: string;
   last_deployment?: Deployment;
   running?: Release;
   node_down?: boolean;
+}
+
+// A named podman volume (name) or a directory under the node's ~/walroos-data (host_path).
+export interface Volume {
+  name?: string;
+  host_path?: string;
+  target: string;
+  ro?: boolean;
 }
 
 export interface NewApp {
@@ -199,7 +208,7 @@ export const api = {
   apps: () => req<App[]>('GET', '/api/apps'),
   app: (name: string) => req<App>('GET', `/api/apps/${name}`),
   createApp: (a: NewApp) => req<App>('POST', '/api/apps', a),
-  deleteApp: (name: string) => req<void>('DELETE', `/api/apps/${name}`),
+  deleteApp: (name: string, purge = false) => req<void>('DELETE', `/api/apps/${name}${purge ? '?purge=1' : ''}`),
   deployApp: (name: string, sha = '') => req<Deployment>('POST', `/api/apps/${name}/deploy`, { sha }),
   deployments: (name?: string) => req<Deployment[]>('GET', name ? `/api/apps/${name}/deployments` : '/api/deployments'),
   deployment: (name: string, id: string) => req<Deployment>('GET', `/api/apps/${name}/deployments/${id}`),
@@ -208,6 +217,7 @@ export const api = {
   appEnv: (name: string) => req<EnvVar[]>('GET', `/api/apps/${name}/env`),
   setAppEnv: (name: string, vars: EnvVar[]) => req<EnvVar[]>('PUT', `/api/apps/${name}/env`, vars),
   setDomains: (name: string, domains: string[]) => req<App>('PUT', `/api/apps/${name}/domains`, domains),
+  setVolumes: (name: string, volumes: Volume[]) => req<App>('PUT', `/api/apps/${name}/volumes`, volumes),
   cloudflare: () => req<Cloudflare>('GET', '/api/settings/cloudflare'),
   setCloudflare: (token: string) => req<Cloudflare>('PUT', '/api/settings/cloudflare', { token }),
 

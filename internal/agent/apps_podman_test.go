@@ -32,7 +32,7 @@ func TestAppDeployPodman(t *testing.T) {
 	a := NewApps()
 	a.relay = []string{os.Args[0]}
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
-	t.Cleanup(func() { a.Delete(context.Background(), name) })
+	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
 
 	repo := t.TempDir()
 	git := func(args ...string) string {
@@ -138,7 +138,7 @@ func TestAppDeployPodman(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if err := a.Delete(ctx, name); err != ErrAppBusy {
+	if err := a.Delete(ctx, name, true); err != ErrAppBusy {
 		t.Errorf("delete during deploy: %v", err)
 	}
 	cancel()
@@ -147,7 +147,7 @@ func TestAppDeployPodman(t *testing.T) {
 	}
 	assertLive(t, a, name, back.Container)
 
-	if err := a.Delete(ctx, name); err != nil {
+	if err := a.Delete(ctx, name, true); err != nil {
 		t.Fatal(err)
 	}
 	if list, _ := a.List(ctx); len(appsNamed(list, name)) != 0 {
@@ -261,7 +261,7 @@ func TestAppBuildPullPodman(t *testing.T) {
 	a.relay = []string{os.Args[0]}
 	a.dial = (&net.Dialer{}).DialContext
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
-	t.Cleanup(func() { a.Delete(context.Background(), name) })
+	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
 
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "Dockerfile"), []byte("FROM docker.io/library/python:3-alpine\nWORKDIR /srv\nRUN echo built > index.html\nCMD [\"python3\", \"-m\", \"http.server\", \"8000\"]\n"), 0o644)
@@ -314,7 +314,7 @@ func TestAppSourcePodman(t *testing.T) {
 	a := NewApps()
 	a.relay = []string{os.Args[0]}
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
-	t.Cleanup(func() { a.Delete(context.Background(), name) })
+	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
 	live := func(container string) {
 		t.Helper()
 		mine, err := a.List(ctx)
@@ -345,4 +345,97 @@ func TestAppSourcePodman(t *testing.T) {
 		t.Fatalf("rollback: %+v %v\n%s", back, err, log.String())
 	}
 	live(back.Container)
+}
+
+// TestAppVolumesPodman: a named volume keeps its data across deploys, a bind serves files from
+// the data root, an app with volumes stops the old release first and gets it back when the new
+// one fails, a symlink can't take a bind outside the root, and purge removes the named volume.
+func TestAppVolumesPodman(t *testing.T) {
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1")
+	}
+	ctx := context.Background()
+	t.Setenv("WALROOS_TEST_RELAY", "1")
+	healthTimeout = 20 * time.Second
+	a := NewApps()
+	a.relay = []string{os.Args[0]}
+	a.data = t.TempDir()
+	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
+	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
+	exec1 := func(container, script string) string {
+		t.Helper()
+		out, err := podman(ctx, "exec", container, "sh", "-c", script)
+		if err != nil {
+			t.Fatalf("exec %s %q: %v", container, script, err)
+		}
+		return out
+	}
+
+	os.MkdirAll(filepath.Join(a.data, "site"), 0o755)
+	os.WriteFile(filepath.Join(a.data, "site", "index.html"), []byte("from the host"), 0o644)
+	spec := AppSpec{Name: name, ID: "v1", Source: "docker.io/library/nginx:alpine", Port: 80, Volumes: []Volume{
+		{Name: "data", Target: "/data"},
+		{HostPath: "site", Target: "/usr/share/nginx/html", RO: true},
+	}}
+	var log strings.Builder
+	v1, err := a.Deploy(ctx, spec, &log)
+	if err != nil {
+		t.Fatalf("v1: %v\n%s", err, log.String())
+	}
+	if got := exec1(v1.Container, "cat /usr/share/nginx/html/index.html"); got != "from the host" {
+		t.Fatalf("bind: %q", got)
+	}
+	if _, err := podman(ctx, "exec", v1.Container, "touch", "/usr/share/nginx/html/x"); err == nil {
+		t.Error("wrote to a read-only bind")
+	}
+	exec1(v1.Container, "echo kept > /data/f")
+
+	log.Reset()
+	spec.ID = "v2"
+	v2, err := a.Deploy(ctx, spec, &log)
+	if err != nil || !strings.Contains(log.String(), "stopping "+v1.Container+" first") {
+		t.Fatalf("v2: %v\n%s", err, log.String())
+	}
+	if got := exec1(v2.Container, "cat /data/f"); got != "kept" {
+		t.Fatalf("named volume after a redeploy: %q", got)
+	}
+
+	// A release that never gets healthy: v2 was stopped for it and comes back.
+	log.Reset()
+	bad := spec
+	bad.ID, bad.HealthPath = "v3", "/nope"
+	if _, err := a.Deploy(ctx, bad, &log); err == nil || !strings.Contains(log.String(), "starting "+v2.Container+" again") {
+		t.Fatalf("broken release: %v\n%s", err, log.String())
+	}
+	if code, err := a.get(ctx, v2.Container, "127.0.0.1:80", "/"); code != 200 {
+		t.Fatalf("v2 after the failed deploy: %d %v\n%s", code, err, log.String())
+	}
+
+	// A symlink in the data root can't lead a bind outside it.
+	os.Symlink("/etc", filepath.Join(a.data, "evil"))
+	evil := spec
+	evil.ID, evil.Volumes = "v4", []Volume{{HostPath: "evil", Target: "/x"}}
+	if _, err := a.Deploy(ctx, evil, io.Discard); err == nil || !strings.Contains(err.Error(), "volume evil") {
+		t.Fatalf("bind through a symlink to /etc: %v", err)
+	}
+	if code, _ := a.get(ctx, v2.Container, "127.0.0.1:80", "/"); code != 200 {
+		t.Fatal("v2 down after the refused deploy")
+	}
+
+	vol := "walroos-app-" + name + "-data"
+	if err := a.Delete(ctx, name, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := podman(ctx, "volume", "exists", vol); err != nil {
+		t.Fatal("delete without purge removed the volume")
+	}
+	if err := a.Delete(ctx, name, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := podman(ctx, "volume", "exists", vol); err == nil {
+		t.Fatal("purge left the volume")
+	}
+	if _, err := os.Stat(filepath.Join(a.data, "site", "index.html")); err != nil {
+		t.Fatal("purge touched the data root")
+	}
 }

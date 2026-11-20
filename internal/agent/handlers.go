@@ -209,7 +209,7 @@ func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
-	if err := s.apps.Delete(r.Context(), r.PathValue("name")); err != nil {
+	if err := s.apps.Delete(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
 		code := http.StatusInternalServerError
 		if errors.Is(err, ErrAppBusy) {
 			code = http.StatusConflict

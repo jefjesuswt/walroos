@@ -154,8 +154,27 @@ func (s *Service) AllDeployments(ctx context.Context) ([]Deployment, error) {
 	return s.store.AllDeployments(ctx, 100)
 }
 
-// Delete stops the app on its node and removes it with its history.
-func (s *Service) Delete(ctx context.Context, name string) error {
+// SetVolumes replaces the app's volumes; they apply on the next deploy.
+func (s *Service) SetVolumes(ctx context.Context, name string, vols []agent.Volume) (App, error) {
+	a, err := s.store.Get(ctx, name)
+	if err != nil {
+		return App{}, err
+	}
+	if vols == nil {
+		vols = []agent.Volume{}
+	}
+	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Source: a.Image, Port: a.Port, Volumes: vols}).Valid() {
+		return App{}, ErrVolumes
+	}
+	if err := s.store.setVolumes(ctx, a.ID, vols); err != nil {
+		return App{}, err
+	}
+	return s.Get(ctx, name)
+}
+
+// Delete stops the app on its node and removes it with its history. purge also removes its
+// named volumes there; otherwise an app created again with the same name gets them back.
+func (s *Service) Delete(ctx context.Context, name string, purge bool) error {
 	a, err := s.store.Get(ctx, name)
 	if err != nil {
 		return err
@@ -164,7 +183,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if err := s.agents.DeleteApp(ctx, address, tokenHash, name); err != nil {
+	if err := s.agents.DeleteApp(ctx, address, tokenHash, name, purge); err != nil {
 		var ae *agent.AgentError
 		if errors.As(err, &ae) && ae.Status == 409 {
 			return ErrBusy
@@ -314,7 +333,7 @@ func (s *Service) run(ctx context.Context, d Deployment) {
 	log := func(line string) { s.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
 		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
-		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image,
+		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes,
 	}
 	if b, ok := s.builder(ctx, a.NodeID); ok && d.Image == "" && a.Image == "" {
 		baddr, bhash, err := s.nodes.AgentTarget(ctx, b.ID)
