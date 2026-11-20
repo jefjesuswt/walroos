@@ -189,13 +189,9 @@ func zedSettingsPath() string {
 	return filepath.Join(home, ".config", "zed", "settings.json")
 }
 
-// writeZed updates the settings file in place. A symlink (dotfiles) is written through, so the
-// link stays; the write goes to a temp file next to the target and is renamed over it.
+// writeZed updates the settings file in place (symlinks followed, mode kept).
 func writeZed(path string, list []workspace, suffix string) (changed bool, warnings []string, err error) {
-	target := path
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		target = resolved
-	}
+	target := resolve(path)
 	settings, err := os.ReadFile(target)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return false, nil, err
@@ -204,27 +200,5 @@ func writeZed(path string, list []workspace, suffix string) (changed bool, warni
 	if err != nil || !changed {
 		return false, warnings, err
 	}
-	mode := os.FileMode(0o644)
-	if fi, err := os.Stat(target); err == nil {
-		mode = fi.Mode().Perm()
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return false, warnings, err
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(target), ".settings-*.json")
-	if err != nil {
-		return false, warnings, err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(out); err != nil {
-		tmp.Close()
-		return false, warnings, err
-	}
-	if err := tmp.Close(); err != nil {
-		return false, warnings, err
-	}
-	if err := os.Chmod(tmp.Name(), mode); err != nil {
-		return false, warnings, err
-	}
-	return true, warnings, os.Rename(tmp.Name(), target)
+	return true, warnings, replaceFile(target, out, 0o644, 0o755)
 }
