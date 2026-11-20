@@ -182,7 +182,7 @@ func pick(s scan, root bool) (Detection, gen) {
 		if n, _ := strconv.Atoi(sdk); n >= 37 { // newer SDKs have minor versions: platforms;android-37.0
 			platform += ".0"
 		}
-		d.Stack, g.image, g.user = "android", "mcr.microsoft.com/devcontainers/java:1-"+jdk+"-bookworm", "vscode"
+		d.Stack, g = "android", stackGen("java", jdk)
 		g.env = map[string]string{"ANDROID_HOME": "/home/vscode/android-sdk", "ANDROID_SDK_ROOT": "/home/vscode/android-sdk"}
 		d.Tools = append(d.Tools, Tool{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"},
 			Tool{ID: "android-sdk", Label: "Android SDK", Version: sdk, Source: "postCreate", Install: androidSDK(platform, buildTools)})
@@ -192,12 +192,12 @@ func pick(s scan, root bool) (Detection, gen) {
 	case has("global.json", "*.csproj", "*.sln", "*.slnx") != "":
 		v := match(s.read(has("global.json")), `"version"\s*:\s*"(\d+\.\d+)`)
 		v = cmpOr(cmpOr(v, s.grep(`<TargetFrameworks?>net(\d+\.\d+)`, "*.csproj")), "10.0")
-		d.Stack, g.image, g.user = "dotnet", "mcr.microsoft.com/devcontainers/dotnet:"+v, "vscode"
+		d.Stack, g = "dotnet", stackGen("dotnet", v)
 		d.Tools = append(d.Tools, Tool{ID: "dotnet", Label: ".NET SDK", Version: v, Source: "image"})
 
 	case has("bun.lock", "bun.lockb", "package.json") != "":
 		node := cmpOr(match(s.read(has(".nvmrc", ".node-version")), `v?(\d+)`), "22")
-		d.Stack, g.image, g.user = "node", "mcr.microsoft.com/devcontainers/javascript-node:"+node, "node"
+		d.Stack, g = "node", stackGen("node", node)
 		d.Tools = append(d.Tools, Tool{ID: "node", Label: "Node.js", Version: node, Source: "image"})
 		deps := Tool{ID: "deps", Label: "Install dependencies", Source: "postCreate", Install: "npm install"}
 		switch {
@@ -218,17 +218,17 @@ func pick(s scan, root bool) (Detection, gen) {
 
 	case has("go.mod") != "":
 		v := cmpOr(match(s.read(has("go.mod")), `(?m)^go (\d+\.\d+)`), "1")
-		d.Stack, g.image, g.user = "go", "mcr.microsoft.com/devcontainers/go:"+v, "vscode"
+		d.Stack, g = "go", stackGen("go", v)
 		d.Tools = append(d.Tools, Tool{ID: "go", Label: "Go", Version: v, Source: "image"})
 
 	case has("Cargo.toml") != "":
-		d.Stack, g.image, g.user = "rust", "mcr.microsoft.com/devcontainers/rust:1", "vscode"
+		d.Stack, g = "rust", stackGen("rust", "1")
 		d.Tools = append(d.Tools, Tool{ID: "rust", Label: "Rust", Source: "image"})
 
 	case has("pyproject.toml", "requirements.txt") != "":
 		v := match(s.read(has(".python-version")), `(\d+\.\d+)`)
 		v = cmpOr(cmpOr(v, match(s.read(has("pyproject.toml")), `requires-python\s*=\s*"[>=~^]*(\d+\.\d+)`)), "3.13")
-		d.Stack, g.image, g.user = "python", "mcr.microsoft.com/devcontainers/python:"+v, "vscode"
+		d.Stack, g = "python", stackGen("python", v)
 		d.Tools = append(d.Tools, Tool{ID: "python", Label: "Python", Version: v, Source: "image"})
 		if has("uv.lock") != "" {
 			d.Tools = append(d.Tools, Tool{ID: "uv", Label: "uv", Source: "postCreate", Install: "pipx install uv"},
@@ -237,7 +237,7 @@ func pick(s scan, root bool) (Detection, gen) {
 
 	case has("build.gradle.kts", "build.gradle", "pom.xml") != "":
 		jdk := cmpOr(match(s.read(has("build.gradle.kts", "build.gradle", "pom.xml")), jdkRe), "17")
-		d.Stack, g.image, g.user = "java", "mcr.microsoft.com/devcontainers/java:1-"+jdk+"-bookworm", "vscode"
+		d.Stack, g = "java", stackGen("java", jdk)
 		d.Tools = append(d.Tools, Tool{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"})
 
 	default:
@@ -246,6 +246,59 @@ func pick(s scan, root bool) (Detection, gen) {
 		d.Notes = append(d.Notes, "No stack detected: the walroos base image has mise, install runtimes with `mise use`.")
 	}
 	return d, g
+}
+
+// stackImages is the devcontainers image of each stack, with %s for the version: detect fills in
+// the one it reads from the repo, a new project the one picked in the form. Bun runs on Node's.
+var stackImages = map[string]gen{
+	"go":     {image: "mcr.microsoft.com/devcontainers/go:%s", user: "vscode"},
+	"dotnet": {image: "mcr.microsoft.com/devcontainers/dotnet:%s", user: "vscode"},
+	"node":   {image: "mcr.microsoft.com/devcontainers/javascript-node:%s", user: "node"},
+	"bun":    {image: "mcr.microsoft.com/devcontainers/javascript-node:%s", user: "node"},
+	"python": {image: "mcr.microsoft.com/devcontainers/python:%s", user: "vscode"},
+	"rust":   {image: "mcr.microsoft.com/devcontainers/rust:%s", user: "vscode"},
+	"java":   {image: "mcr.microsoft.com/devcontainers/java:1-%s-bookworm", user: "vscode"},
+}
+
+func stackGen(stack, version string) gen {
+	g := stackImages[stack]
+	g.image = fmt.Sprintf(g.image, version)
+	return g
+}
+
+// ProjectStack is a stack a new project can start from. Versions are tags of its image (see
+// stackImages), newest first; VersionOf names what they are versions of when it isn't the stack.
+type ProjectStack struct {
+	ID        string   `json:"id"`
+	Label     string   `json:"label"`
+	Versions  []string `json:"versions"`
+	VersionOf string   `json:"version_of,omitempty"`
+}
+
+// ProjectStacks are checked against the registry's tags; add a version once its image is published.
+var ProjectStacks = []ProjectStack{
+	{ID: "go", Label: "Go", Versions: []string{"1.27", "1.26", "1.25"}},
+	{ID: "node", Label: "Node.js", Versions: []string{"24", "22", "26"}},
+	{ID: "bun", Label: "Bun", Versions: []string{"24", "22"}, VersionOf: "Node.js"},
+	{ID: "python", Label: "Python", Versions: []string{"3.14", "3.13", "3.12"}},
+	{ID: "dotnet", Label: ".NET", Versions: []string{"10.0", "11.0", "9.0"}},
+	{ID: "java", Label: "Java", Versions: []string{"21", "17"}},
+	{ID: "rust", Label: "Rust", Versions: []string{"1"}},
+}
+
+// ProjectDevcontainer is the devcontainer.json a new project starts with: the image detect picks
+// for that stack and version, plus Bun for bun. ok is false for a stack or version not offered.
+func ProjectDevcontainer(stack, version string) (dc json.RawMessage, ok bool) {
+	for _, s := range ProjectStacks {
+		if s.ID == stack && slices.Contains(s.Versions, version) {
+			var tools []Tool
+			if stack == "bun" {
+				tools = append(tools, Tool{ID: "bun", Install: "npm install -g bun"})
+			}
+			return stackGen(stack, version).json(tools), true
+		}
+	}
+	return nil, false
 }
 
 // gen is a generated devcontainer.json, before tools add their postCreate.

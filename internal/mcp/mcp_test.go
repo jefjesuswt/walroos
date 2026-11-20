@@ -144,7 +144,7 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
 	}
-	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info",
+	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info", "create_project",
 		"list_apps", "get_app", "create_app", "deploy_app", "get_deployment", "rollback_app", "app_logs", "set_app_domains"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("missing tool %s in %v", want, names)
@@ -182,6 +182,20 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 	info, _, _ := call(t, s, "workspace_ssh_info", map[string]any{"name": "app"})
 	if info["command"] != "ssh -p 2222 app@100.64.0.7" || !strings.Contains(info["ssh_config"].(string), "Host app.walroos\n  HostName 100.64.0.7\n") {
 		t.Fatalf("ssh info: %v", info)
+	}
+
+	// A new project without GitHub: the node gets the files to git init.
+	if w, text, isErr := call(t, s, "create_project", map[string]any{"name": "fresh", "stack": "go", "version": "1.26"}); isErr || w["state"] != "creating" || w["stack"] != "go" {
+		t.Fatalf("create_project: %v %s", w, text)
+	}
+	if created.RepoURL != "" || !strings.Contains(created.Init[".devcontainer/devcontainer.json"], "devcontainers/go:1.26") {
+		t.Fatalf("create_project spec: %+v", created)
+	}
+	if _, text, isErr := call(t, s, "create_project", map[string]any{"name": "gh", "stack": "go", "version": "1.26", "github": true}); !isErr || !strings.Contains(text, "GitHub isn't set up") {
+		t.Fatalf("create_project without a token: isErr=%v %q", isErr, text)
+	}
+	if _, text, isErr := call(t, s, "create_project", map[string]any{"name": "gh", "stack": "go", "version": "0.1"}); !isErr || !strings.Contains(text, "unknown stack or version") {
+		t.Fatalf("create_project bad version: isErr=%v %q", isErr, text)
 	}
 
 	// Service errors come back as tool errors the model can read, not protocol failures.

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
-import { api, type Cloudflare, type SSHKey } from './api';
+import { api, type Cloudflare, type GitHub, type SSHKey } from './api';
 import { addCustomTheme, allThemes, applyTheme, contrastWarnings, parseTheme, pick, removeCustomTheme, savedPref, type Mode, type Theme } from './theme';
-import { ago, Badge, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Confirm, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function SettingsPage() {
   const toast = useToast();
@@ -27,6 +27,8 @@ export function SettingsPage() {
       <AppearanceCard />
 
       <CloudflareCard />
+
+      <GitHubCard />
 
       <section className="card" aria-labelledby="keys-h">
         <div className="card-head">
@@ -143,6 +145,58 @@ function CloudflareCard() {
           <div><button className="btn btn-primary" disabled={!token || busy} onClick={save}><Icon n="check" />{busy ? 'Checking…' : 'Save'}</button></div>
         </div>
       </div>
+    </section>
+  );
+}
+
+function GitHubCard() {
+  const toast = useToast();
+  const [gh, setGh] = useState<GitHub | null>(null);
+  const [error, setError] = useState('');
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const load = useCallback(() => { api.github().then(g => { setGh(g); setError(''); }, e => setError(e.message)); }, []);
+  usePoll(load, 60000);
+  const save = () => {
+    setBusy(true);
+    api.setGitHub(token).then(
+      g => { setGh(g); setToken(''); setError(''); setBusy(false); toast(`GitHub token saved for ${g.login}`); },
+      e => { setError(e.message); setBusy(false); },
+    );
+  };
+  const remove = () => api.removeGitHub().then(() => { setRemoving(false); toast('GitHub token removed'); load(); }, e => toast(e.message, 'bad'));
+  return (
+    <section className="card" aria-labelledby="gh-h">
+      <div className="card-head">
+        <div>
+          <h2 id="gh-h">GitHub</h2>
+          <p className="muted">New projects get their repo created on your GitHub account, with a first commit holding the devcontainer and a README.</p>
+        </div>
+        {gh && <Badge s={gh.configured ? 'ok' : 'idle'} label={gh.configured ? 'Connected' : 'Not set up'} />}
+      </div>
+      <div className="card-body">
+        {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>GitHub said no</strong><span className="muted">{error}</span></div></div>}
+        {gh?.configured && (
+          <div className="section-head">
+            <p>Repos are created as <span className="mono">{gh.login}</span>.</p>
+            <button className="btn btn-ghost" onClick={() => setRemoving(true)}><Icon n="trash" />Remove</button>
+          </div>
+        )}
+        <div className="form">
+          <Field label={gh?.configured ? 'Replace the token' : 'Personal access token'}
+            hint={<>Create one at github.com → Settings → Developer settings: a classic token with the <span className="mono">repo</span> scope, or a fine-grained one with <span className="mono">Administration</span> and <span className="mono">Contents</span> read and write. It's stored encrypted and never shown again.</>}>
+            <input className="input mono" type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && token && !busy && save()} />
+          </Field>
+          <div><button className="btn btn-primary" disabled={!token || busy} onClick={save}><Icon n="check" />{busy ? 'Checking…' : 'Save'}</button></div>
+        </div>
+      </div>
+      {removing && (
+        <Confirm title="Remove the GitHub token?" confirmLabel="Remove token" danger onClose={() => setRemoving(false)} onConfirm={remove}>
+          <p className="muted">New projects will start as local git repos until you add a token again. Repos already created stay on GitHub; revoke the token there too if you're done with it.</p>
+        </Confirm>
+      )}
     </section>
   );
 }

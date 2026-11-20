@@ -62,6 +62,28 @@ export interface NewWorkspace {
   stack?: string; // Detection.stack, stored for display
 }
 
+// A stack a new project can start from (GET /api/projects/stacks). Versions are image tags, newest first.
+export interface ProjectStack {
+  id: string;
+  label: string;
+  versions: string[];
+  version_of?: string; // what the versions are of, when not the stack itself (Bun runs on Node)
+}
+
+export interface NewProject {
+  name: string;
+  stack: string;
+  version: string;
+  github: boolean; // create the repo on GitHub; false = a local git init on the node
+  private: boolean;
+  node?: string;
+}
+
+export interface GitHub {
+  configured: boolean;
+  login?: string;
+}
+
 // What POST /api/workspaces/detect proposes for a repo.
 export interface DetectedTool {
   id: string;
@@ -198,6 +220,8 @@ export const api = {
   workspace: (name: string) => req<Workspace>('GET', `/api/workspaces/${name}`),
   createWorkspace: (w: NewWorkspace) => req<Workspace>('POST', '/api/workspaces', w),
   detect: (repo_url: string, branch: string, node: string) => req<Detection>('POST', '/api/workspaces/detect', { repo_url, branch, node }),
+  projectStacks: () => req<ProjectStack[]>('GET', '/api/projects/stacks'),
+  createProject: (p: NewProject) => req<Workspace>('POST', '/api/projects', p),
   startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
   stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
   rebuildWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/rebuild`),
@@ -220,6 +244,9 @@ export const api = {
   setVolumes: (name: string, volumes: Volume[]) => req<App>('PUT', `/api/apps/${name}/volumes`, volumes),
   cloudflare: () => req<Cloudflare>('GET', '/api/settings/cloudflare'),
   setCloudflare: (token: string) => req<Cloudflare>('PUT', '/api/settings/cloudflare', { token }),
+  github: () => req<GitHub>('GET', '/api/settings/github'),
+  setGitHub: (token: string) => req<GitHub>('PUT', '/api/settings/github', { token }),
+  removeGitHub: () => req<void>('DELETE', '/api/settings/github'),
 
   sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),
   addSSHKey: (name: string, public_key: string) => req<SSHKey>('POST', '/api/ssh-keys', { name, public_key }),
