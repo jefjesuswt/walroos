@@ -16,6 +16,9 @@ import (
 
 const API = "https://api.cloudflare.com/client/v4"
 
+// ErrRecordExists: the name already has a DNS record walroos didn't make. Never overwritten.
+var ErrRecordExists = errors.New("walroos doesn't overwrite it; remove it in Cloudflare first")
+
 var ErrForbidden = errors.New("the Cloudflare token lacks a permission: it needs Zone · DNS · Edit, Zone · Zone · Read and Account · Cloudflare Tunnel · Edit")
 
 type Client struct {
@@ -152,7 +155,7 @@ func (c *Client) PointAt(ctx context.Context, zone, name, tunnel string) error {
 	body := map[string]any{"type": "CNAME", "name": name, "content": Target(tunnel), "proxied": true, "comment": "walroos"}
 	for _, r := range recs {
 		if r.Type != "CNAME" || !strings.HasSuffix(r.Content, ".cfargotunnel.com") {
-			return fmt.Errorf("%s already has a %s record (%s); remove it in Cloudflare first", name, r.Type, r.Content)
+			return fmt.Errorf("%s already has a %s record (%s): %w", name, r.Type, r.Content, ErrRecordExists)
 		}
 		if r.Content == Target(tunnel) {
 			return nil

@@ -102,7 +102,7 @@ Decisiones abiertas de M1:
 
 Plan y estado en [docs/devcontainer-detection.md](docs/devcontainer-detection.md). El agente detecta el stack con un clon superficial (`POST /v1/detect`), genera un `devcontainer.json` y la UI lo ajusta antes de crear; el JSON va en línea en el spec y el repo no se toca.
 
-Pendiente: prueba real en casa (podman con salida a internet): crear droid con el devcontainer generado y que `./gradlew assemblePublicDebug` compile. En WSL no se puede: la red `walroos-dev` es `--internal`.
+**Probado en real** (2026-11-18, Arch con internet, hub `walroos-hub` y nodo `build-1` por la tailnet): `POST /api/workspaces/detect` de droid en 1,2 s (android, `java:17`, `vscode`, SDK 37 / build-tools 36), workspace `droid-e2e` con ese devcontainer `running` en 40 s (imagen en caché), y `./gradlew assemblePublicDebug` → `BUILD SUCCESSFUL` en 5 min 24 s con el APK generado.
 
 ## M2 — MCP ✅ (2026-11-18)
 
@@ -114,7 +114,7 @@ Probado: test de integración con el cliente del SDK (SQLite real, router y auth
 
 **Probado de punta a punta por la tailnet** (2026-11-18, con NordVPN): hub en Windows, nodo `dev` en WSL (servicio de systemd), Claude Code en Windows llegando a la tailnet por un puente tsnet efímero. Claude Code detectó el stack, creó `mcpdemo` desde `octocat/Hello-World`, consultó `get_workspace` hasta `running` y pidió `workspace_ssh_info`; con ese comando, `ssh` entró como `dev` en `/workspaces/Hello-World` con el repo clonado.
 
-Sin probar: desde una laptop con `tailscaled` en modo userspace, Claude Code tendría que salir por el proxy (`HTTP_PROXY=http://localhost:1055`).
+**Probado desde una laptop con `tailscaled` en modo userspace** (2026-11-18): `claude mcp list` con `HTTP_PROXY=http://localhost:1055` → `walroos: √ Connected`; sin el proxy, "Failed to connect". Por el proxy con `curl`: `initialize`, las 15 herramientas y `list_nodes`. Sin probar una sesión completa con el modelo (el Claude Code de la app de escritorio no tenía login).
 
 ## Caminos tristes y seguridad (2026-11-18)
 
@@ -213,11 +213,13 @@ Probado:
 - Hub con agentes falsos: orden de las llamadas, sin env en el build, `pull`/`pull_token` correctos, rollback sin build, un build fallido no llega a prod, y un nodo `build,prod` construye para sí.
 - Handler del registry: token de otra app, `tags/list`, `..`, `%2F` y PUT rechazados.
 - Podman real en WSL: build, push a `registry:2`, `rmi` local, pull por el handler con token malo (falla) y bueno (live), sin tags sobrantes.
-- No probado de punta a punta con dos nodos reales: hay uno solo.
+- **Dos nodos por la tailnet** (2026-11-18, `build-1` y `prod-1`, cada uno con su tsnet en la misma máquina y el mismo podman): build en `build-1`, push a su registry, `prod-1` hace pull de `100.64.0.9:5000`, health 200 y sirve. Release rota: no pasa el health, se retira y la anterior sigue. Nodo build caído: se construye en el destino.
+  - Mejora pendiente: con el nodo build caído el log no lo dice; solo falta la línea "building on X".
+- **Registry con contraseña vieja** (2026-11-19, arreglado): si algo recrea `walroos-registry` con otra contraseña (otro agente en la misma máquina, una corrida de tests), cada push fallaba con "authentication required" hasta reiniciar el agente. Ahora `ensureRegistry` comprueba la contraseña con un `GET /v2/` autenticado y, si no sirve, recrea el registry. Probado: test de podman recrea el registry y el deploy siguiente se recupera solo.
 
 ## M3.2 — Dominios con Cloudflare Tunnel ✅ código (2026-11-19)
 
-Falta probarlo de punta a punta con una cuenta real de Cloudflare.
+**Probado en Linux real** (2026-11-19, Arch, sin parches de NAT): token mínimo `walroos-hub` (Zone Read + DNS Write solo en `walroos.com`, Cloudflare Tunnel Write solo en la cuenta). `https://hello.example.com` → 200 desde internet (5/5, ~0,35 s); deploy v7 → v8 con peticiones públicas cada 0,3 s: 44/44 OK, 0 errores. Dominio fuera de la zona → 400, de otra app → 409, registro A ajeno (`walroos.com`) → 409 y no se toca (antes respondía 500), borrar una app y quitar un dominio borran su CNAME y el ingress queda en 404.
 
 **Setup:**
 - En Settings → Cloudflare se pega un API token con Zone:Read, DNS:Edit y Account → Cloudflare Tunnel:Edit.
@@ -274,6 +276,11 @@ Para el homelab: una app expuesta que cae no debe abrir la red de casa. Detalle 
   - Los workspaces quedan fuera de la regla.
 - Las apps llevan `Memory=2g` y `PidsLimit=2048`.
 - Límite (`ponytail:`): no hay excepciones por app para servicios de la LAN.
+- **Probado en Linux real** (2026-11-19, Arch, Podman 6.2, cgroup v2 con `memory` y `pids` delegados):
+  - Desde la app: router, tailnet (hub y laptop), NordVPN, `169.254.169.254` y `host.containers.internal` → "No route to host"; internet, DNS y app ↔ app funcionan; un workspace en `walroos-dev` sigue llegando a la LAN. Comparado con un contenedor sin la regla, que sí llega a la web del router y a un servicio del host por `host.containers.internal`. La IP LAN del host no es alcanzable desde ningún contenedor (pasta la hace local al netns).
+  - Borrar la tabla a mano abre la LAN; reiniciar la unidad la vuelve a poner.
+  - `Memory=2g`: un proceso que pide 3 GB llega a 1996 MiB y recibe "out of memory"; la app sigue sirviendo. `PidsLimit=2048`: "can't fork" a los 2047; el host no se entera.
+  - **Arreglado:** si `nft` fallaba, systemd paraba el contenedor por las buenas y una app que ignora SIGTERM corría ~50 s sin la regla (y otra vez en cada ciclo de `Restart=always`). Ahora `ExecStartPost` hace `podman kill --signal KILL` si `nft` falla: el contenedor desaparece en 0,4 s. `ponytail:` entre el arranque y la regla (milisegundos, solo con el netns recién creado) la app no tiene regla.
 
 ## Auditoría de seguridad y caminos tristes (2026-11-18)
 
