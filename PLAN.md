@@ -329,6 +329,33 @@ Pendiente (`ponytail:`):
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 
+## Desarrollo remoto real: laptop → PC main (2026-11-19)
+
+Hub `walroos-home` en la laptop (`precision`), nodo `arch` en la PC main (Ryzen 5 5600X, Arch, Podman 6.2, NordVPN en las dos). `walroos node join` + `node install` (servicio de systemd, linger) sin `tailscaled` en `arch`: el nodo va por su propio tsnet. Workspace `walroos` desde la detección de stack (`devcontainers/go:1.27`), listo en 49 s.
+- Desde la laptop, `ssh walroos.walroos` (por el proxy userspace) entra como `vscode` en `/workspaces/walroos`; `go build` en 37 s y tests OK, con 12 hilos de `arch`.
+- nvim 0.12.6 instalado en `~/.local` (volumen del home), PTY, `TERM` del cliente propagado, 256 colores, `gopls` en la imagen.
+- Zed 1.29 con `zeditor ssh://walroos.walroos/workspaces/walroos`: instala su servidor en `~/.zed_server`, abre el repo y git, y corre el language server en `arch` (tras arreglar `sftp-server`, ver abajo).
+- VS Code: sin probar (no está instalado en la laptop).
+- **Hub mudado a `arch`** (2026-11-19): parar el hub viejo, copiar `hub.db`, `secret.key` y `tsnet/` (misma identidad `walroos-home` y misma IP de tailnet), arrancarlo allí. Los tres nodos se reconectaron solos en 5 s y el token de Cloudflare se descifró con la `secret.key` copiada. Falta en el producto:
+  - [ ] `walroos hub install` (como `node install`): la unidad `walroos-hub.service` se escribió a mano.
+  - [ ] Documentar la mudanza y el respaldo del hub (`hub.db` + `secret.key` + `tsnet/` van juntos; nunca dos hubs con la misma `tsnet/`).
+- [ ] **El panel no se abre desde una laptop con `tailscaled` en modo userspace** (la de NordVPN): el navegador no tiene ruta a la tailnet. Arreglo usado: un PAC que manda solo `walroos-home`, `*.ts.net` y `100.64.0.0/10` por el SOCKS `localhost:1055` (en Helium, `"--proxy-pac-url=data:…"` en `~/.config/helium-browser-flags.conf`, entre comillas porque el wrapper hace `eval` y el `;` del `data:` lo corta). Mejor en el producto: `walroos ui`, que levante un tsnet efímero (el binario ya lo trae) y sirva el panel en `127.0.0.1:<puerto>`, con ese host permitido en `AllowHosts`.
+- Repos privados: el nodo clona con el `git` y las llaves SSH del usuario del nodo (en `arch`, `~/.ssh/id_ed25519` sin passphrase). Funciona desde el servicio de systemd, sin agente SSH. Con una llave con passphrase no funcionaría: no hay credenciales de git en walroos.
+
+## Casos tristes que walroos no detecta
+
+- [ ] **Netns rootless sin salida, y el nodo reporta `online`** (encontrado 2026-11-19 en `arch`, Arch + NordVPN).
+  - Qué pasó: el proceso `pasta` del netns rootless murió (con 2 h de uptime; probablemente un cambio de red, como NordVPN reconectando). El netns siguió existiendo sin interfaz de salida ni ruta por defecto. Todo contenedor en una red bridge se quedó sin internet ni DNS: el workspace (`go build` no bajaba módulos) y también `obsidian-livesync`, ajeno a walroos.
+  - Qué vio walroos: nada. El nodo seguía `online` con telemetría normal, el workspace `running` y el SSH funcionando. El primer síntoma fue un `lookup … i/o timeout` dentro del workspace.
+  - Cómo se arregló: parar todos los contenedores del netns (podman lo destruye), arrancar uno (lo recrea con un `pasta` nuevo).
+  - Qué haría walroos: el agente comprueba en cada heartbeat que el netns rootless tiene ruta por defecto y que hay un `pasta` vivo para él (o un `getent hosts` desde `podman unshare --rootless-netns`), lo manda en la telemetría y la UI marca el nodo como degradado con el arreglo en una línea. Repararlo solo (parar y arrancar contenedores ajenos) no: puede cortar servicios del dueño.
+- [ ] **Imágenes de devcontainer sin `sftp-server`** (encontrado 2026-11-19 con `mcr.microsoft.com/devcontainers/go:1.27`, la que genera la detección de stack). `scp`, `sftp` y la subida de extensiones de Zed fallan con el mensaje claro del gateway. Arreglo temporal: `sudo apt-get install openssh-sftp-server` en el workspace (se pierde en un rebuild). Opciones de fondo:
+  1. La detección de stack añade un `postCreateCommand` que instala `openssh-sftp-server` en imágenes Debian/Ubuntu. Barato, pero no cubre devcontainers que vengan del repo.
+  2. El gateway trae su propio SFTP (`pkg/sftp`, como decía la decisión abierta de M1) y lo ejecuta dentro del contenedor como el usuario del workspace (binario estático copiado con `podman cp`). Cubre todas las imágenes.
+- [ ] **Terminal sin terminfo** (Ghostty manda `TERM=xterm-ghostty`; kitty, `xterm-kitty`): las imágenes no traen esas entradas y `nvim`, `clear` o `tput` fallan con "unknown terminal type". Arreglo por workspace, persistente en el volumen del home: `infocmp -x xterm-ghostty | ssh <ws>.walroos -- tic -x -`. Opciones: que `walroos ssh-config` lo documente o lo haga, `shell-integration-features = ssh-terminfo` en Ghostty, o instalar `ncurses-term` en la imagen base.
+- [ ] **Sin identidad de git en el workspace**: `git commit` falla hasta configurar `user.name` y `user.email`. Opción: que el hub los guarde por usuario y el agente los pase como `GIT_AUTHOR_*`/`GIT_COMMITTER_*` (o los escriba en `~/.gitconfig` del volumen del home al crear).
+- [ ] **Un intento de `ssh` por el proxy userspace falló** con `SOCKS server failure` justo después de reiniciar el workspace; el reintento funcionó. Ver si se repite antes de tocar nada.
+
 ## Backlog chico
 
 - Self-host de las fuentes (hoy Google Fonts; offline cae a fuentes del sistema).
