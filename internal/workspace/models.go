@@ -18,7 +18,22 @@ var (
 	ErrAgentBusy = errors.New("the node is busy with that workspace, try again in a moment")
 	ErrRepo      = errors.New("the node couldn't read the repo")
 	ErrRepoURL   = errors.New("repo_url must be a remote git URL: https://, ssh://, git:// or user@host:path")
+	ErrStack     = errors.New("stack must be one detect returns: android, dotnet, bun, node, go, rust, python, java, devcontainer or none")
 )
+
+// stacks are the ones worth storing; detect's "devcontainer" and "none" are stored as "".
+var stacks = map[string]bool{"android": true, "dotnet": true, "bun": true, "node": true, "go": true, "rust": true, "python": true, "java": true}
+
+// normalizeStack checks a stack from the API and returns what to store.
+func normalizeStack(s string) (string, error) {
+	switch {
+	case s == "" || s == "devcontainer" || s == "none":
+		return "", nil
+	case stacks[s]:
+		return s, nil
+	}
+	return "", ErrStack
+}
 
 // Workspace mirrors a workspace on a node.
 type Workspace struct {
@@ -32,7 +47,8 @@ type Workspace struct {
 	Branch           string    `json:"branch"`
 	DevcontainerPath string    `json:"devcontainer_path"`
 	Image            string    `json:"image,omitempty"`
-	State            string    `json:"state"` // creating, running, stopped, failed, deleting
+	Stack            string    `json:"stack,omitempty"` // detected at create time; "" = unknown
+	State            string    `json:"state"`           // creating, running, stopped, failed, deleting
 	Error            string    `json:"error,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }
@@ -44,6 +60,9 @@ type CreateInput struct {
 	Branch           string `json:"branch"`
 	DevcontainerPath string `json:"devcontainer_path"`
 	Node             string `json:"node"`
+	// Stack is what detect found (android, go...), for display. "devcontainer" and "none" are
+	// stored as "" (the image says more there).
+	Stack string `json:"stack,omitempty"`
 	// Devcontainer is a devcontainer.json to use instead of the repo's (the one detect generates).
 	// The node keeps it with the workspace for rebuilds; the hub doesn't store it.
 	Devcontainer json.RawMessage `json:"devcontainer,omitempty"`
