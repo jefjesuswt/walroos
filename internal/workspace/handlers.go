@@ -152,7 +152,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrRepoURL):
+	case errors.Is(err, ErrInvalid), errors.Is(err, ErrRepoURL), errors.Is(err, ErrStack):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrRepo):
 		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())

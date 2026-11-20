@@ -31,18 +31,19 @@ type nameIn struct {
 }
 
 type detectIn struct {
-	RepoURL string `json:"repo_url" jsonschema:"git URL (https or git@host:owner/repo); public repos only for now"`
+	RepoURL string `json:"repo_url" jsonschema:"git URL; for a private repo use the SSH form git@host:owner/repo, which the node clones with its own SSH keys"`
 	Branch  string `json:"branch,omitempty" jsonschema:"branch to look at; default branch if empty"`
 	Node    string `json:"node,omitempty" jsonschema:"node name or ID; empty picks the dev node with the fewest workspaces"`
 }
 
 type createIn struct {
 	Name             string         `json:"name" jsonschema:"DNS label: lowercase letters, digits and '-'"`
-	RepoURL          string         `json:"repo_url" jsonschema:"git URL (https or git@host:owner/repo); public repos only for now"`
+	RepoURL          string         `json:"repo_url" jsonschema:"git URL; for a private repo use the SSH form git@host:owner/repo, which the node clones with its own SSH keys"`
 	Branch           string         `json:"branch,omitempty" jsonschema:"branch to clone; default branch if empty"`
 	Node             string         `json:"node,omitempty" jsonschema:"node name or ID; empty picks the dev node with the fewest workspaces"`
 	DevcontainerPath string         `json:"devcontainer_path,omitempty" jsonschema:"path of the repo's devcontainer.json, if not in a standard location"`
 	Devcontainer     map[string]any `json:"devcontainer,omitempty" jsonschema:"devcontainer.json to use instead of the repo's, e.g. the one detect_stack proposes"`
+	Stack            string         `json:"stack,omitempty" jsonschema:"the stack detect_stack returned (android, go, dotnet...), shown in the UI"`
 }
 
 func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, login string) *sdk.Server {
@@ -84,7 +85,7 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, l
 				dc, _ = json.Marshal(in.Devcontainer)
 			}
 			w, err := ws.Create(ctx, login, workspace.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch,
-				Node: in.Node, DevcontainerPath: in.DevcontainerPath, Devcontainer: dc})
+				Node: in.Node, DevcontainerPath: in.DevcontainerPath, Devcontainer: dc, Stack: in.Stack})
 			return nil, w, err
 		})
 

@@ -40,6 +40,10 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	if !RemoteRepo(in.RepoURL) {
 		return Workspace{}, ErrRepoURL
 	}
+	stack, err := normalizeStack(in.Stack)
+	if err != nil {
+		return Workspace{}, err
+	}
 	// Before the agent: a name taken on another node would only fail at the insert, after the
 	// agent started creating it, and a workspace mid-create can't be deleted.
 	if _, err := s.store.Get(ctx, in.Name); err == nil {
@@ -65,7 +69,7 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	w := Workspace{
 		ID: randomID(), Name: in.Name, Owner: owner, NodeID: node.ID, NodeName: node.Name, NodeAddress: node.Address,
 		RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath,
-		Image: ws.Image, State: orDefault(ws.State, "creating"), Error: ws.Error, CreatedAt: s.now().UTC(),
+		Image: ws.Image, Stack: stack, State: orDefault(ws.State, "creating"), Error: ws.Error, CreatedAt: s.now().UTC(),
 	}
 	if err := s.store.Insert(ctx, w); err != nil {
 		// The node has it but the hub can't record it: remove it rather than leave an orphan.
