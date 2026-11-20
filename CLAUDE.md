@@ -9,7 +9,7 @@ Self-hosted platform on Podman: remote dev workspaces (like Coder/DevPod) + Dokp
 
 ```bash
 cd web && bun install && bun run build && cd ..   # UI → internal/web/ui/dist (embedded, not in git)
-go build -o bin/walroos ./cmd/walroos
+CGO_ENABLED=0 go build -o bin/walroos ./cmd/walroos   # static: the SFTP helper also runs in musl images
 go test ./...
 WALROOS_PODMAN_TEST=1 go test ./internal/agent -v   # + workspace lifecycle on real rootless podman
 GOOS=linux CGO_ENABLED=0 go test -c ./internal/agent # SSH tests are linux-only: run the binary in WSL

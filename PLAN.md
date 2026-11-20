@@ -17,7 +17,7 @@ Requisitos: Go ≥ 1.27.4 (lo exige `tailscale.com` v1.104), [bun](https://bun.s
 
 ```bash
 cd web && bun install && bun run build && cd ..
-go build -o bin/walroos ./cmd/walroos
+CGO_ENABLED=0 go build -o bin/walroos ./cmd/walroos
 go test ./...
 go run ./cmd/walroos hub --dev        # http://127.0.0.1:8080
 ```
@@ -349,9 +349,8 @@ Hub `walroos-home` en la laptop (`precision`), nodo `arch` en la PC main (Ryzen 
   - Qué vio walroos: nada. El nodo seguía `online` con telemetría normal, el workspace `running` y el SSH funcionando. El primer síntoma fue un `lookup … i/o timeout` dentro del workspace.
   - Cómo se arregló: parar todos los contenedores del netns (podman lo destruye), arrancar uno (lo recrea con un `pasta` nuevo).
   - Qué haría walroos: el agente comprueba en cada heartbeat que el netns rootless tiene ruta por defecto y que hay un `pasta` vivo para él (o un `getent hosts` desde `podman unshare --rootless-netns`), lo manda en la telemetría y la UI marca el nodo como degradado con el arreglo en una línea. Repararlo solo (parar y arrancar contenedores ajenos) no: puede cortar servicios del dueño.
-- [ ] **Imágenes de devcontainer sin `sftp-server`** (encontrado 2026-11-19 con `mcr.microsoft.com/devcontainers/go:1.27`, la que genera la detección de stack). `scp`, `sftp` y la subida de extensiones de Zed fallan con el mensaje claro del gateway. Arreglo temporal: `sudo apt-get install openssh-sftp-server` en el workspace (se pierde en un rebuild). Opciones de fondo:
-  1. La detección de stack añade un `postCreateCommand` que instala `openssh-sftp-server` en imágenes Debian/Ubuntu. Barato, pero no cubre devcontainers que vengan del repo.
-  2. El gateway trae su propio SFTP (`pkg/sftp`, como decía la decisión abierta de M1) y lo ejecuta dentro del contenedor como el usuario del workspace (binario estático copiado con `podman cp`). Cubre todas las imágenes.
+- [x] **Imágenes de devcontainer sin `sftp-server`** (encontrado 2026-11-19 con `devcontainers/go:1.27`; arreglado 2026-11-19). `scp`, `sftp` y las extensiones de Zed fallaban. Ahora, si la imagen no trae `sftp-server`, el gateway copia el binario del agente al contenedor una vez (`/usr/local/bin/.walroos-sftp-<hash>`; una versión nueva reemplaza la vieja) y corre `walroos sftp-server` (`pkg/sftp`) como el usuario del workspace. Sirve en workspaces ya creados, sin rebuild. Límite: un walroos con CGO necesita glibc; para imágenes musl (Alpine) compilar con `CGO_ENABLED=0`, y el subsistema lo explica si no puede correr.
+- [x] **Zed (y VS Code) abrían `$HOME`** en vez del repo (arreglado 2026-11-19): el hub devuelve `folder` (la carpeta real, viva desde el nodo) y la tarjeta Connect da `zed ssh://<ws>.walroos/workspaces/<repo>` y `code --remote ssh-remote+<ws>.walroos /workspaces/<repo>`.
 - [ ] **Terminal sin terminfo** (Ghostty manda `TERM=xterm-ghostty`; kitty, `xterm-kitty`): las imágenes no traen esas entradas y `nvim`, `clear` o `tput` fallan con "unknown terminal type". Arreglo por workspace, persistente en el volumen del home: `infocmp -x xterm-ghostty | ssh <ws>.walroos -- tic -x -`. Opciones: que `walroos ssh-config` lo documente o lo haga, `shell-integration-features = ssh-terminfo` en Ghostty, o instalar `ncurses-term` en la imagen base.
 - [ ] **Sin identidad de git en el workspace**: `git commit` falla hasta configurar `user.name` y `user.email`. Opción: que el hub los guarde por usuario y el agente los pase como `GIT_AUTHOR_*`/`GIT_COMMITTER_*` (o los escriba en `~/.gitconfig` del volumen del home al crear).
 - [ ] **Un intento de `ssh` por el proxy userspace falló** con `SOCKS server failure` justo después de reiniciar el workspace; el reintento funcionó. Ver si se repite antes de tocar nada.
