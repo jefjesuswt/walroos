@@ -49,6 +49,7 @@ type SSHGateway struct {
 	// How sessions reach workspaces. Podman in production; tests run commands on the host.
 	lookup  func(ctx context.Context, name string) (Workspace, error)                       // running workspace (starts it if stopped)
 	command func(ctx context.Context, ws Workspace, tty bool, env, argv []string) *exec.Cmd // process inside the workspace
+	sftp    func(ctx context.Context, ws Workspace) error                                   // makes SFTP available; nil in tests
 	dial    func(ctx context.Context, ws Workspace, addr string) (*exec.Cmd, error)         // Relay process in the workspace's network
 	hostDir func(name string) string                                                        // host side of ws.AgentDir
 
@@ -67,6 +68,7 @@ func (s *Server) SSHGateway(authorize SSHAuthorize, hostKey ssh.Signer, relay []
 	g := newSSHGateway(s.identify, authorize, hostKey)
 	g.lookup = s.ws.ready
 	g.command = podmanExec
+	g.sftp = ensureSFTPHelper
 	g.dial = func(ctx context.Context, ws Workspace, addr string) (*exec.Cmd, error) {
 		return podmanRelay(ctx, ws, relay, addr)
 	}
@@ -237,6 +239,13 @@ func (c *sshConn) session(nch ssh.NewChannel) {
 			started, ok = true, true
 			req.Reply(true, nil) // before the process can send exit-status
 			req.WantReply = false
+			if isSFTP(req.Type) && c.g.sftp != nil {
+				if ws, err := c.workspace(); err == nil {
+					if err := c.g.sftp(ctx, ws); err != nil {
+						slog.Warn("SSH: SFTP helper", "workspace", ws.Name, "err", err)
+					}
+				}
+			}
 			if ptmx, err = c.start(ctx, ch, tty, env, argv, wantAgent); err != nil {
 				fmt.Fprintf(ch.Stderr(), "walroos: %v\r\n", err)
 				sendExit(ch, 1)
@@ -252,10 +261,6 @@ func (c *sshConn) session(nch ssh.NewChannel) {
 // the variables sshd sets. /bin/sh if there's none.
 const userShell = `s=$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f7); [ -x "$s" ] || s=/bin/sh; ` +
 	`u=$(id -un 2>/dev/null) && export USER="$u" LOGNAME="$u"; export SHELL="$s"; `
-
-// sftpServer runs the image's sftp-server; the walroos base image ships one.
-const sftpServer = `for p in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /usr/libexec/sftp-server /usr/lib/sftp-server; do ` +
-	`[ -x "$p" ] && exec "$p"; done; echo "no sftp-server in this workspace image (install openssh-sftp-server)" >&2; exit 127`
 
 // sessionArgv is what runs for a shell, exec or subsystem request.
 func sessionArgv(req *ssh.Request) ([]string, bool) {

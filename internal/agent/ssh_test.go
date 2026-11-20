@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
@@ -29,6 +30,19 @@ import (
 //   - WALROOS_TEST_ECHO=1 (`agent.test ADDR`): a TCP echo server, the app a forwarded port reaches.
 func TestMain(m *testing.M) {
 	switch {
+	case len(os.Args) > 1 && os.Args[1] == "sftp-server": // copied into a container by ensureSFTPHelper
+		s, err := sftp.NewServer(struct {
+			io.Reader
+			io.WriteCloser
+		}{os.Stdin, os.Stdout})
+		if err == nil {
+			err = s.Serve()
+		}
+		if err != nil && err != io.EOF {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	case os.Getenv("WALROOS_TEST_RELAY") != "":
 		if err := Relay(os.Args[1], os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
