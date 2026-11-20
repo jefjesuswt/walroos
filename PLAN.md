@@ -102,7 +102,7 @@ Decisiones abiertas de M1:
 
 Plan y estado en [docs/devcontainer-detection.md](docs/devcontainer-detection.md). El agente detecta el stack con un clon superficial (`POST /v1/detect`), genera un `devcontainer.json` y la UI lo ajusta antes de crear; el JSON va en línea en el spec y el repo no se toca.
 
-**Probado en real** (2026-11-18, Arch con internet, hub `walroos-home` y nodo `home-build` por la tailnet): `POST /api/workspaces/detect` de nimbo en 1,2 s (android, `java:17`, `vscode`, SDK 37 / build-tools 36), workspace `nimbo-e2e` con ese devcontainer `running` en 40 s (imagen en caché), y `./gradlew assemblePublicDebug` → `BUILD SUCCESSFUL` en 5 min 24 s con el APK generado.
+**Probado en real** (2026-11-18, Arch con internet, hub y nodo `build` por la tailnet): `POST /api/workspaces/detect` de nimbo en 1,2 s (android, `java:17`, `vscode`, SDK 37 / build-tools 36), workspace `nimbo-e2e` con ese devcontainer `running` en 40 s (imagen en caché), y `./gradlew assemblePublicDebug` → `BUILD SUCCESSFUL` en 5 min 24 s con el APK generado.
 
 ## M2 — MCP ✅ (2026-11-18)
 
@@ -213,13 +213,13 @@ Probado:
 - Hub con agentes falsos: orden de las llamadas, sin env en el build, `pull`/`pull_token` correctos, rollback sin build, un build fallido no llega a prod, y un nodo `build,prod` construye para sí.
 - Handler del registry: token de otra app, `tags/list`, `..`, `%2F` y PUT rechazados.
 - Podman real en WSL: build, push a `registry:2`, `rmi` local, pull por el handler con token malo (falla) y bueno (live), sin tags sobrantes.
-- **Dos nodos por la tailnet** (2026-11-18, `home-build` y `home-prod`, cada uno con su tsnet en la misma máquina y el mismo podman): build en `home-build`, push a su registry, `home-prod` hace pull de `100.119.189.51:5000`, health 200 y sirve. Release rota: no pasa el health, se retira y la anterior sigue. Nodo build caído: se construye en el destino.
+- **Dos nodos por la tailnet** (2026-11-18, un nodo `build` y uno `prod`, cada uno con su tsnet en la misma máquina y el mismo podman): build en el nodo `build`, push a su registry, el nodo `prod` hace pull de `<ip-del-build>:5000`, health 200 y sirve. Release rota: no pasa el health, se retira y la anterior sigue. Nodo build caído: se construye en el destino.
   - Mejora pendiente: con el nodo build caído el log no lo dice; solo falta la línea "building on X".
 - **Registry con contraseña vieja** (2026-11-19, arreglado): si algo recrea `walroos-registry` con otra contraseña (otro agente en la misma máquina, una corrida de tests), cada push fallaba con "authentication required" hasta reiniciar el agente. Ahora `ensureRegistry` comprueba la contraseña con un `GET /v2/` autenticado y, si no sirve, recrea el registry. Probado: test de podman recrea el registry y el deploy siguiente se recupera solo.
 
 ## M3.2 — Dominios con Cloudflare Tunnel ✅ código (2026-11-19)
 
-**Probado en Linux real** (2026-11-19, Arch, sin parches de NAT): token mínimo `walroos-home` (Zone Read + DNS Write solo en `walroos.com`, Cloudflare Tunnel Write solo en la cuenta). `https://hello-home.walroos.com` → 200 desde internet (5/5, ~0,35 s); deploy v7 → v8 con peticiones públicas cada 0,3 s: 44/44 OK, 0 errores. Dominio fuera de la zona → 400, de otra app → 409, registro A ajeno (`walroos.com`) → 409 y no se toca (antes respondía 500), borrar una app y quitar un dominio borran su CNAME y el ingress queda en 404.
+**Probado en Linux real** (2026-11-19, Arch, sin parches de NAT): token mínimo (Zone Read + DNS Write solo en la zona, Cloudflare Tunnel Write solo en la cuenta). Un dominio de prueba → 200 desde internet (5/5, ~0,35 s); deploy v7 → v8 con peticiones públicas cada 0,3 s: 44/44 OK, 0 errores. Dominio fuera de la zona → 400, de otra app → 409, registro A ajeno (el apex de la zona) → 409 y no se toca (antes respondía 500), borrar una app y quitar un dominio borran su CNAME y el ingress queda en 404.
 
 **Setup:**
 - En Settings → Cloudflare se pega un API token con Zone:Read, DNS:Edit y Account → Cloudflare Tunnel:Edit.
@@ -263,7 +263,7 @@ Probado:
 - Si Cloudflare falla a mitad, los registros ya cambiados quedan, aunque los dominios en la base vuelven atrás.
 - No hay forma de apagar el túnel de un nodo sin dominios.
 
-**Probado de punta a punta (2026-11-19):** `https://hello.walroos.com` responde 200 desde el nodo WSL. Para eso hizo falta un parche de NAT solo para WSL: el kernel no trae `nft_fib_inet`.
+**Probado de punta a punta (2026-11-19):** un dominio de prueba responde 200 desde un nodo en WSL. Para eso hizo falta un parche de NAT solo para WSL: el kernel no trae `nft_fib_inet`.
 - Lo que salió de la prueba:
   - un token sin permiso de túnel ahora da un 502 claro, no un 500;
   - `cloudflared` reintenta cada 10 s (`RestartSec`), porque antes systemd se rendía tras 5 fallos rápidos.
@@ -329,23 +329,23 @@ Pendiente (`ponytail:`):
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 
-## Desarrollo remoto real: laptop → PC main (2026-11-19)
+## Desarrollo remoto real: laptop → PC (2026-11-19)
 
-Hub `walroos-home` en la laptop (`precision`), nodo `arch` en la PC main (Ryzen 5 5600X, Arch, Podman 6.2, NordVPN en las dos). `walroos node join` + `node install` (servicio de systemd, linger) sin `tailscaled` en `arch`: el nodo va por su propio tsnet. Workspace `walroos` desde la detección de stack (`devcontainers/go:1.27`), listo en 49 s.
-- Desde la laptop, `ssh walroos.walroos` (por el proxy userspace) entra como `vscode` en `/workspaces/walroos`; `go build` en 37 s y tests OK, con 12 hilos de `arch`.
+Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las dos). `walroos node join` + `node install` (servicio de systemd, linger) sin `tailscaled` en el nodo: el nodo va por su propio tsnet. Workspace `walroos` desde la detección de stack (`devcontainers/go:1.27`), listo en 49 s.
+- Desde la laptop, `ssh walroos.walroos` (por el proxy userspace) entra como `vscode` en `/workspaces/walroos`; `go build` en 37 s y tests OK, con los 12 hilos del nodo.
 - nvim 0.12.6 instalado en `~/.local` (volumen del home), PTY, `TERM` del cliente propagado, 256 colores, `gopls` en la imagen.
-- Zed 1.29 con `zeditor ssh://walroos.walroos/workspaces/walroos`: instala su servidor en `~/.zed_server`, abre el repo y git, y corre el language server en `arch` (tras arreglar `sftp-server`, ver abajo).
+- Zed 1.29 con `zeditor ssh://walroos.walroos/workspaces/walroos`: instala su servidor en `~/.zed_server`, abre el repo y git, y corre el language server en el nodo (tras arreglar `sftp-server`, ver abajo).
 - VS Code: sin probar (no está instalado en la laptop).
-- **Hub mudado a `arch`** (2026-11-19): parar el hub viejo, copiar `hub.db`, `secret.key` y `tsnet/` (misma identidad `walroos-home` y misma IP de tailnet), arrancarlo allí. Los tres nodos se reconectaron solos en 5 s y el token de Cloudflare se descifró con la `secret.key` copiada. Falta en el producto:
+- **Hub mudado a la PC del nodo** (2026-11-19): parar el hub viejo, copiar `hub.db`, `secret.key` y `tsnet/` (misma identidad y misma IP de tailnet), arrancarlo allí. Los tres nodos se reconectaron solos en 5 s y el token de Cloudflare se descifró con la `secret.key` copiada. Falta en el producto:
   - [ ] `walroos hub install` (como `node install`): la unidad `walroos-hub.service` se escribió a mano.
   - [ ] Documentar la mudanza y el respaldo del hub (`hub.db` + `secret.key` + `tsnet/` van juntos; nunca dos hubs con la misma `tsnet/`).
-- [ ] **El panel no se abre desde una laptop con `tailscaled` en modo userspace** (la de NordVPN): el navegador no tiene ruta a la tailnet. Arreglo usado: un PAC que manda solo `walroos-home`, `*.ts.net` y `100.64.0.0/10` por el SOCKS `localhost:1055` (en Helium, `"--proxy-pac-url=data:…"` en `~/.config/helium-browser-flags.conf`, entre comillas porque el wrapper hace `eval` y el `;` del `data:` lo corta). Mejor en el producto: `walroos ui`, que levante un tsnet efímero (el binario ya lo trae) y sirva el panel en `127.0.0.1:<puerto>`, con ese host permitido en `AllowHosts`.
-- Repos privados: el nodo clona con el `git` y las llaves SSH del usuario del nodo (en `arch`, `~/.ssh/id_ed25519` sin passphrase). Funciona desde el servicio de systemd, sin agente SSH. Con una llave con passphrase no funcionaría: no hay credenciales de git en walroos.
+- [ ] **El panel no se abre desde una laptop con `tailscaled` en modo userspace** (la de la otra VPN): el navegador no tiene ruta a la tailnet. Arreglo usado: un PAC que manda solo el hub, `*.ts.net` y `100.64.0.0/10` por el SOCKS `localhost:1055` (en Chromium, `--proxy-pac-url=data:…`). Mejor en el producto: `walroos ui`, que levante un tsnet efímero (el binario ya lo trae) y sirva el panel en `127.0.0.1:<puerto>`, con ese host permitido en `AllowHosts`.
+- Repos privados: el nodo clona con el `git` y las llaves SSH del usuario del nodo (una llave sin passphrase). Funciona desde el servicio de systemd, sin agente SSH. Con una llave con passphrase no funcionaría: no hay credenciales de git en walroos.
 
 ## Casos tristes que walroos no detecta
 
-- [ ] **Netns rootless sin salida, y el nodo reporta `online`** (encontrado 2026-11-19 en `arch`, Arch + NordVPN).
-  - Qué pasó: el proceso `pasta` del netns rootless murió (con 2 h de uptime; probablemente un cambio de red, como NordVPN reconectando). El netns siguió existiendo sin interfaz de salida ni ruta por defecto. Todo contenedor en una red bridge se quedó sin internet ni DNS: el workspace (`go build` no bajaba módulos) y también `obsidian-livesync`, ajeno a walroos.
+- [ ] **Netns rootless sin salida, y el nodo reporta `online`** (encontrado 2026-11-19 en un nodo Arch con otra VPN).
+  - Qué pasó: el proceso `pasta` del netns rootless murió (con 2 h de uptime; probablemente un cambio de red, como la VPN reconectando). El netns siguió existiendo sin interfaz de salida ni ruta por defecto. Todo contenedor en una red bridge se quedó sin internet ni DNS: el workspace (`go build` no bajaba módulos) y también un servicio ajeno a walroos.
   - Qué vio walroos: nada. El nodo seguía `online` con telemetría normal, el workspace `running` y el SSH funcionando. El primer síntoma fue un `lookup … i/o timeout` dentro del workspace.
   - Cómo se arregló: parar todos los contenedores del netns (podman lo destruye), arrancar uno (lo recrea con un `pasta` nuevo).
   - Qué haría walroos: el agente comprueba en cada heartbeat que el netns rootless tiene ruta por defecto y que hay un `pasta` vivo para él (o un `getent hosts` desde `podman unshare --rootless-netns`), lo manda en la telemetría y la UI marca el nodo como degradado con el arreglo en una línea. Repararlo solo (parar y arrancar contenedores ajenos) no: puede cortar servicios del dueño.

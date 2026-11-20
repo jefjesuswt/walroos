@@ -54,6 +54,7 @@ index.html (root)       Open Design prototype the UI is ported from; reference f
   - Port new screens from the prototype `index.html`, restyled to M3.
   - Check every change at mobile width (no horizontal scroll), in light and dark, and with a non-default theme.
 - **Commits:** conventional style (`feat:`, `fix:` …). Work on a branch, not `main`.
+- **The repo is public.** Never write the owner's own setup into tracked files, commits or PRs: machine names or hardware, LAN/tailnet IPs, tailnet or hub hostnames, real domains or subdomains, token or tunnel names, other services they run. Use stand-ins (`prod-1`, `example.com`, `100.64.0.x`, "a node with another VPN"). Grep the diff for them before pushing.
 
 ## Brand
 

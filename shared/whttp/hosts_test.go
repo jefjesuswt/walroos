@@ -12,8 +12,8 @@ func TestAllowHosts(t *testing.T) {
 		"walroos-hub":                     200,
 		"WALROOS-HUB:80":                  200,
 		"walroos-hub.tail1.ts.net.":       200,
-		"100.74.12.17":                    200,
-		"100.74.12.17:80":                 200,
+		"100.64.0.1":                      200,
+		"100.64.0.1:80":                   200,
 		"[fd7a:115c::1]:80":               200,
 		"evil.example":                    421, // DNS rebinding
 		"walroos-hub.evil.example":        421,
