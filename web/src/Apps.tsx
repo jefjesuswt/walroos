@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, type App, type Cloudflare, type Deployment, type Node } from './api';
+import { api, type App, type Cloudflare, type Deployment, type Node, type Volume } from './api';
 import { ago, Badge, Confirm, EmptyState, EnvModal, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 // What the app is doing, from the node's live release first: a deployment's state is only
@@ -89,6 +89,8 @@ export function AppDetail({ name }: { name: string }) {
   const [deploying, setDeploying] = useState(false);
   const [editingEnv, setEditingEnv] = useState(false);
   const [editingDomains, setEditingDomains] = useState(false);
+  const [editingVolumes, setEditingVolumes] = useState(false);
+  const [purge, setPurge] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [open, setOpen] = useState<string | null>(null); // deployment id in the log modal
 
@@ -105,7 +107,7 @@ export function AppDetail({ name }: { name: string }) {
   if (!a) return <div className="skel-list" aria-busy="true" aria-label="Loading"><div className="skel-row"><i className="skel w30" /><i className="skel w50" /></div></div>;
 
   const [s, label] = appState(a);
-  const remove = () => api.deleteApp(a.name).then(
+  const remove = () => api.deleteApp(a.name, purge).then(
     () => { toast(`${a.name} deleted`); location.hash = '#/apps'; },
     e => { setRemoving(false); toast(e.message, 'bad'); },
   );
@@ -177,6 +179,20 @@ export function AppDetail({ name }: { name: string }) {
         </div>
       </section>
 
+      <section className="card" aria-labelledby="volumes-h">
+        <div className="card-head">
+          <div><h2 id="volumes-h">Volumes</h2><p className="muted">Data that outlives releases. With any, a deploy stops the running release before starting the new one.</p></div>
+          <button className="btn" onClick={() => setEditingVolumes(true)}><Icon n="settings" />Edit</button>
+        </div>
+        <div className="card-body">
+          {a.volumes.length === 0 ? <p className="muted">None: every deploy starts from the image's files.</p> : (
+            <ul className="domain-list">
+              {a.volumes.map(v => <li key={v.target} className="mono od-truncate">{volumeLine(v)}</li>)}
+            </ul>
+          )}
+        </div>
+      </section>
+
       <RuntimeLogs app={a} />
 
       <section className="card" aria-labelledby="build-h">
@@ -204,10 +220,17 @@ export function AppDetail({ name }: { name: string }) {
           load={() => api.appEnv(a.name)} save={vars => api.setAppEnv(a.name, vars)}
           onClose={() => setEditingEnv(false)} onSaved={() => setEditingEnv(false)} />
       )}
+      {editingVolumes && <VolumesModal app={a} onClose={() => setEditingVolumes(false)} onSaved={() => { setEditingVolumes(false); load(); }} />}
       {editingDomains && <DomainsModal app={a} onClose={() => setEditingDomains(false)} onSaved={() => { setEditingDomains(false); load(); }} />}
       {removing && (
         <Confirm title={`Delete ${a.name}?`} confirmLabel="Delete app" danger onClose={() => setRemoving(false)} onConfirm={remove}>
           <p className="muted">Stops the app on <span className="mono">{a.node_name}</span> and removes its images, environment and deployment history. It can't be undone.</p>
+          {a.volumes.some(v => v.name) && (
+            <label className="check" style={{ marginTop: 'var(--sp3)' }}>
+              <input type="checkbox" checked={purge} onChange={e => setPurge(e.target.checked)} />
+              Also delete its named volumes. Otherwise an app created again as {a.name} gets them back.
+            </label>
+          )}
         </Confirm>
       )}
     </>
@@ -320,6 +343,41 @@ function DeploymentModal({ app, id, onClose, onRollback }: {
           : <div className="log-lines">{lines.map((l, i) => (
             <div key={i} className={`ln plain${/never got healthy|^error|failed|fatal/i.test(l) ? ' err' : /^(cloning|building|starting|health check|stopping|rollback)|is live/.test(l) ? '' : ' dim'}`}><span className="t">{l}</span></div>
           ))}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+// Compose-like: name:/target for a podman volume, ./dir:/target for a directory under the
+// node's ~/walroos-data; :ro at the end mounts it read-only.
+const volumeLine = (v: Volume) => `${v.name ?? `./${v.host_path}`}:${v.target}${v.ro ? ':ro' : ''}`;
+const parseVolume = (line: string): Volume => {
+  const [src = '', target = '', opt] = line.split(':');
+  const v: Volume = src.startsWith('./') ? { host_path: src.slice(2), target } : { name: src, target };
+  return opt === 'ro' ? { ...v, ro: true } : v;
+};
+
+function VolumesModal({ app, onClose, onSaved }: { app: App; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [text, setText] = useState(app.volumes.map(volumeLine).join('\n'));
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = () => {
+    setBusy(true);
+    api.setVolumes(app.name, text.split('\n').map(l => l.trim()).filter(Boolean).map(parseVolume)).then(
+      () => { toast('Volumes saved: deploy to apply them'); onSaved(); },
+      e => { setError(e.message); setBusy(false); },
+    );
+  };
+  return (
+    <Modal title={`Volumes · ${app.name}`} onClose={onClose}
+      sub="They apply on the next deploy. Removing one here leaves its data on the node."
+      foot={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={submit}><Icon n="check" />{busy ? 'Saving…' : 'Save'}</button></>}>
+      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't save them</strong><span className="muted">{error}</span></div></div>}
+      <div className="form">
+        <Field label="One per line" hint={<><span className="mono">name:/path</span> is a podman volume; <span className="mono">./dir:/path</span> is a directory in <span className="mono">~/walroos-data</span> on {app.node_name} (made if missing). Add <span className="mono">:ro</span> for read-only.</>}>
+          <textarea className="input mono" rows={4} value={text} onChange={e => setText(e.target.value)} placeholder={'data:/var/lib/data\n./photos:/photos:ro'} spellCheck={false} autoFocus />
+        </Field>
       </div>
     </Modal>
   );

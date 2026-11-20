@@ -37,6 +37,7 @@ func (h *Handler) Routes(r *whttp.Router) {
 	r.Get("/api/apps/{name}/deployments/{id}", h.handleDeployment)
 	r.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
 	r.Put("/api/apps/{name}/domains", h.handlePutDomains)
+	r.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
 	r.Get("/api/settings/cloudflare", h.handleGetCloudflare)
 	r.Put("/api/settings/cloudflare", h.handlePutCloudflare)
 }
@@ -45,6 +46,14 @@ func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []string
 	if decode(w, r, &domains) {
 		a, err := h.svc.SetDomains(r.Context(), r.PathValue("name"), domains)
+		reply(w, http.StatusOK, a, err)
+	}
+}
+
+func (h *Handler) handlePutVolumes(w http.ResponseWriter, r *http.Request) {
+	var vols []agent.Volume
+	if decode(w, r, &vols) {
+		a, err := h.svc.SetVolumes(r.Context(), r.PathValue("name"), vols)
 		reply(w, http.StatusOK, a, err)
 	}
 }
@@ -99,7 +108,7 @@ func (h *Handler) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.Delete(r.Context(), r.PathValue("name")); err != nil {
+	if err := h.svc.Delete(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
 		errorJSON(w, err)
 		return
 	}
@@ -168,7 +177,7 @@ func (h *Handler) handleRollback(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone):
+	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())

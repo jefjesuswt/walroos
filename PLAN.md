@@ -278,6 +278,17 @@ Una app puede ser una imagen (`ghcr.io/owner/app:tag`) en vez de un repo: sin cl
 - Probado: test del hub (validación, sin build aunque haya nodo build, rollback) y podman real (`TestAppSourcePodman`: pull de `nginx:alpine`, redeploy, rollback).
 - Límite (`ponytail:`): el tag original queda en el nodo (el dueño puede usarlo), así que borrar la app deja su imagen actual. Sin `command` por app: la imagen tiene que arrancar su servidor sola.
 
+## Volúmenes de apps (2026-11-20)
+
+Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un Immich, por ejemplo).
+- `apps.volumes` (migración 008, JSON). Se editan en la tarjeta "Volumes" del detalle (`nombre:/ruta` o `./dir:/ruta`, `:ro` opcional), con `PUT /api/apps/{name}/volumes` o la herramienta MCP `set_app_volumes`. Aplican en el próximo deploy.
+- **Volumen con nombre:** `walroos-app-<app>-<nombre>`, con la etiqueta `walroos.app`.
+- **Directorio:** solo bajo `~/walroos-data` del nodo, relativo a esa raíz. Se crea con `os.Root` (no sigue symlinks que salgan) y se vuelve a resolver: un symlink hacia fuera de la raíz, o a la raíz entera, se rechaza. La raíz misma puede ser un symlink a otro disco.
+- **Recreate:** una app con volúmenes para la release vieja antes de arrancar la nueva (dos Postgres sobre los mismos archivos los rompen). Si la nueva no arranca, no pasa el health check o no entra a `walroos-edge`, se borra y la vieja vuelve a arrancar.
+- **Borrar la app** deja los volúmenes: una app creada otra vez con el mismo nombre los recupera. `DELETE ?purge=1` (casilla en el diálogo de borrar) quita los volúmenes con nombre; los directorios de `~/walroos-data` nunca se tocan.
+- Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
+- Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
+
 ## Apps fuera de la LAN (2026-11-19)
 
 Para el homelab: una app expuesta que cae no debe abrir la red de casa. Detalle en ARCHITECTURE.md, "Exponer apps desde un homelab".

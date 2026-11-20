@@ -142,8 +142,13 @@ func (c *Client) AppLogs(ctx context.Context, address, tokenHash, name string, l
 	return logs, c.do(ctx, http.MethodGet, address, tokenHash, "/v1/apps/"+name+"/logs?lines="+strconv.Itoa(lines), nil, &logs)
 }
 
-func (c *Client) DeleteApp(ctx context.Context, address, tokenHash, name string) error {
-	return c.do(ctx, http.MethodDelete, address, tokenHash, "/v1/apps/"+name, nil, nil)
+// DeleteApp removes the app from the node; purge also removes its named volumes.
+func (c *Client) DeleteApp(ctx context.Context, address, tokenHash, name string, purge bool) error {
+	q := ""
+	if purge {
+		q = "?purge=1"
+	}
+	return c.do(ctx, http.MethodDelete, address, tokenHash, "/v1/apps/"+name+q, nil, nil)
 }
 
 // DeployApp runs a deploy on the node, calling onLog with each line of output as it comes.

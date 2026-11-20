@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -48,8 +49,19 @@ type AppSpec struct {
 	HealthPath string   `json:"health_path"` // default /
 	Image      string   `json:"image"`
 	Env        []string `json:"env"`
+	Volumes    []Volume `json:"volumes,omitempty"`    // with any, a deploy stops the old release before starting the new one
 	Pull       string   `json:"pull,omitempty"`       // build node's registry (tailnet host:port): pull Sha from it, don't build
 	PullToken  string   `json:"pull_token,omitempty"` // PullToken for this app on that node
+}
+
+// Volume is storage that outlives releases: a named podman volume (Name) or a directory
+// under the node's data root (HostPath, relative to it). Deleting the app keeps both unless
+// it's purged, and then only named volumes go.
+type Volume struct {
+	Name     string `json:"name,omitempty"`
+	HostPath string `json:"host_path,omitempty"`
+	Target   string `json:"target"` // absolute path in the container
+	RO       bool   `json:"ro,omitempty"`
 }
 
 // Release is what a successful deploy left running.
@@ -75,6 +87,7 @@ type Apps struct {
 	busy  map[string]bool
 	relay []string                                                          // `walroos node relay`, for health checks inside the container's netns
 	dir   string                                                            // where the Quadlet files go; systemd's generator reads it
+	data  string                                                            // data root: volumes' HostPath lives under it
 	dial  func(ctx context.Context, network, addr string) (net.Conn, error) // to the tailnet, for pulls
 
 	regMu   sync.Mutex
@@ -83,7 +96,9 @@ type Apps struct {
 
 func NewApps() *Apps {
 	cfg, _ := os.UserConfigDir()
-	return &Apps{busy: map[string]bool{}, dir: filepath.Join(cfg, "containers", "systemd")}
+	home, _ := os.UserHomeDir()
+	// ponytail: fixed data root; make it a symlink to put app data on another disk.
+	return &Apps{busy: map[string]bool{}, dir: filepath.Join(cfg, "containers", "systemd"), data: filepath.Join(home, "walroos-data")}
 }
 
 var (
@@ -92,6 +107,8 @@ var (
 	refRe        = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,199}$`)    // branch, dockerfile: no leading "-" (git/podman options)
 	healthPathRe = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,511}$`) // goes into the raw HTTP request line
 	tokenRe      = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	volNameRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
+	pathRe       = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,255}$`) // no ':' or ',': it goes into a Volume= line
 	// A fully qualified image: a registry host with a dot (no short-name lookup, no localhost),
 	// then a lowercase repo path, an optional tag and an optional digest.
 	imageRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+)+(:[0-9]{1,5})?/[a-z0-9]+((\.|_|__|-+|/)[a-z0-9]+)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[0-9a-f]{64})?$`)
@@ -108,7 +125,23 @@ func (spec AppSpec) Valid() bool {
 		(spec.Source == "" || len(spec.Source) <= 255 && imageRe.MatchString(spec.Source) && spec.RepoURL == "" && spec.Pull == "") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
 		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) && // rollback runs only this app's own builds
+		validVolumes(spec.Volumes) &&
 		(spec.Pull == "" || validHostPort(spec.Pull) && tokenRe.MatchString(spec.PullToken) && len(spec.Sha) >= 12 && spec.Image == "")
+}
+
+func validVolumes(vols []Volume) bool {
+	clean := func(p string, abs bool) bool {
+		return pathRe.MatchString(p) && path.Clean(p) == p && path.IsAbs(p) == abs && p != "/" && p != "." && p != ".." && !strings.HasPrefix(p, "../")
+	}
+	targets := map[string]bool{}
+	for _, v := range vols {
+		if (v.Name == "") == (v.HostPath == "") || v.Name != "" && !volNameRe.MatchString(v.Name) ||
+			v.HostPath != "" && !clean(v.HostPath, false) || !clean(v.Target, true) || targets[v.Target] {
+			return false
+		}
+		targets[v.Target] = true
+	}
+	return len(vols) <= 16
 }
 
 func validHostPort(v string) bool {
@@ -156,20 +189,37 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 	if err != nil {
 		return Release{}, err
 	}
+	// Two releases writing the same database files corrupt them, so an app with volumes
+	// stops first and comes back if the new release fails. ponytail: downtime for every app
+	// with volumes, read-only ones too.
+	recreate := len(spec.Volumes) > 0
+	if recreate {
+		for _, c := range old {
+			fmt.Fprintf(log, "stopping %s first: the app has volumes\n", c)
+			run(bg, nil, "systemctl", "--user", "stop", c+".service")
+		}
+	}
+	fail := func(err error, why string) (Release, error) {
+		fmt.Fprintf(log, "%s, removing it; the previous release keeps serving\n", why)
+		a.remove(bg, rel.Container)
+		for _, c := range old {
+			if recreate {
+				fmt.Fprintf(log, "starting %s again\n", c)
+				run(bg, nil, "systemctl", "--user", "start", c+".service")
+			}
+		}
+		return Release{}, err
+	}
 	fmt.Fprintf(log, "starting %s\n", rel.Container)
 	if err := a.start(ctx, spec, rel); err != nil {
-		a.remove(bg, rel.Container)
-		return Release{}, err
+		return fail(err, "couldn't start "+rel.Container)
 	}
 	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmpOr(spec.HealthPath, "/"), log); err != nil {
-		fmt.Fprintf(log, "%s never got healthy, removing it; the previous release keeps serving\n%s", rel.Container, journal(bg, rel.Container, 20))
-		a.remove(bg, rel.Container)
-		return Release{}, err
+		fmt.Fprint(log, journal(bg, rel.Container, 20))
+		return fail(err, rel.Container+" never got healthy")
 	}
 	if err := a.expose(ctx, spec.Name, rel.Container); err != nil {
-		fmt.Fprintf(log, "couldn't put %s on %s, removing it; the previous release keeps serving\n", rel.Container, EdgeNetwork)
-		a.remove(bg, rel.Container)
-		return Release{}, err
+		return fail(err, "couldn't put "+rel.Container+" on "+EdgeNetwork)
 	}
 	for _, c := range old {
 		fmt.Fprintf(log, "stopping previous release %s\n", c)
@@ -260,6 +310,10 @@ func (a *Apps) start(ctx context.Context, spec AppSpec, rel Release) error {
 	if err != nil {
 		return err
 	}
+	mounts, err := a.mounts(ctx, spec)
+	if err != nil {
+		return err
+	}
 	unit := fmt.Sprintf(`# Written by walroos. Rollback and redeploy replace it; don't edit.
 [Unit]
 Description=walroos app %[1]s (%[3]s)
@@ -275,7 +329,7 @@ NoNewPrivileges=true
 # ponytail: same limits for every app; per-app limits when one needs more
 Memory=2g
 PidsLimit=2048
-
+%[10]s
 [Quadlet]
 # The default waits for network-online.target, which many hosts (WSL) never reach.
 DefaultDependencies=false
@@ -286,7 +340,7 @@ Restart=always
 
 [Install]
 WantedBy=default.target
-`, spec.Name, rel.Container, rel.Sha, rel.Image, AppNetwork, labelApp, labelSha, envFile, guard)
+`, spec.Name, rel.Container, rel.Sha, rel.Image, AppNetwork, labelApp, labelSha, envFile, guard, mounts)
 	if err := os.WriteFile(filepath.Join(a.dir, rel.Container+".container"), []byte(unit), 0o644); err != nil {
 		return err
 	}
@@ -294,6 +348,57 @@ WantedBy=default.target
 		return err
 	}
 	return run(ctx, nil, "systemctl", "--user", "start", rel.Container+".service")
+}
+
+// mounts creates the app's volumes and returns their Quadlet Volume= lines. ponytail: no
+// SELinux relabel (:Z); rootless podman on the hosts we target doesn't enforce it.
+func (a *Apps) mounts(ctx context.Context, spec AppSpec) (string, error) {
+	var b strings.Builder
+	for _, v := range spec.Volumes {
+		src := "walroos-app-" + spec.Name + "-" + v.Name
+		if v.HostPath != "" {
+			var err error
+			if src, err = a.bindDir(v.HostPath); err != nil {
+				return "", err
+			}
+		} else if err := ensureVolume(ctx, src, labelApp, spec.Name); err != nil { // labeled, so a purge finds it
+			return "", err
+		}
+		ro := ""
+		if v.RO {
+			ro = ":ro"
+		}
+		fmt.Fprintf(&b, "Volume=%s:%s%s\n", src, v.Target, ro)
+	}
+	return b.String(), nil
+}
+
+// bindDir makes rel under the data root and returns its real path. A symlink can't take it
+// outside the root, or to the root itself (every app's data).
+func (a *Apps) bindDir(rel string) (string, error) {
+	if err := os.MkdirAll(a.data, 0o755); err != nil {
+		return "", err
+	}
+	root, err := filepath.EvalSymlinks(a.data) // the root itself may point at another disk
+	if err != nil {
+		return "", err
+	}
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+	if err := r.MkdirAll(rel, 0o755); err != nil {
+		return "", fmt.Errorf("volume %s: %w", rel, err)
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Join(root, rel))
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(dir, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("volume %s: a symlink leads outside %s", rel, a.data)
+	}
+	return dir, nil
 }
 
 // waitHealthy GETs path on the container's port from inside its network namespace until it
@@ -417,8 +522,9 @@ func (a *Apps) Logs(ctx context.Context, app string, lines int) (string, error) 
 	return strings.ReplaceAll(string(out), "\n\n", "\n"), nil // podman keeps the app's newline in MESSAGE
 }
 
-// Delete stops every release of app and removes its images.
-func (a *Apps) Delete(ctx context.Context, app string) error {
+// Delete stops every release of app and removes its images. purge also removes its named
+// volumes; directories under the data root always stay.
+func (a *Apps) Delete(ctx context.Context, app string, purge bool) error {
 	unlock, err := a.lock(app) // else a deploy mid-build would start its release after this
 	if err != nil {
 		return err
@@ -432,6 +538,17 @@ func (a *Apps) Delete(ctx context.Context, app string) error {
 		a.remove(ctx, c)
 	}
 	pruneImages(ctx, app, "")
+	if purge {
+		vols, err := podman(ctx, "volume", "ls", "-q", "--filter", "label="+labelApp+"="+app)
+		if err != nil {
+			return err
+		}
+		for _, v := range strings.Fields(vols) {
+			if _, err := podman(ctx, "volume", "rm", v); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

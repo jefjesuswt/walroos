@@ -125,6 +125,11 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, l
 	return s
 }
 
+type volumesIn struct {
+	Name    string         `json:"name" jsonschema:"app name"`
+	Volumes []agent.Volume `json:"volumes" jsonschema:"each: name (a podman volume, walroos-app-<app>-<name>) or host_path (a directory relative to the node's ~/walroos-data), target (absolute path in the container), ro"`
+}
+
 type domainsIn struct {
 	Name    string   `json:"name" jsonschema:"app name"`
 	Domains []string `json:"domains" jsonschema:"hostnames like app.example.com"`
@@ -227,6 +232,13 @@ func addAppTools(s *sdk.Server, apps *app.Service) {
 		Description: "Make exactly these hostnames public for the app, with TLS, through its node's Cloudflare Tunnel (an empty list removes them). Needs a Cloudflare token in Settings; each hostname must be in one of its zones."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in domainsIn) (*sdk.CallToolResult, any, error) {
 			a, err := apps.SetDomains(ctx, in.Name, in.Domains)
+			return nil, a, err
+		})
+
+	sdk.AddTool(s, &sdk.Tool{Name: "set_app_volumes",
+		Description: "Replace the app's persistent volumes (an empty list removes them from the app; their data stays on the node). They apply on the next deploy_app. An app with volumes deploys by stopping the old release first, so two never share the data."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in volumesIn) (*sdk.CallToolResult, any, error) {
+			a, err := apps.SetVolumes(ctx, in.Name, in.Volumes)
 			return nil, a, err
 		})
 

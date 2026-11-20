@@ -85,7 +85,7 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 	case r.Method == "DELETE" && f.busy:
 		http.Error(w, `{"error":"busy"}`, 409)
 	case r.Method == "DELETE":
-		f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.Path, "/v1/apps/"))
+		f.deleted = append(f.deleted, strings.TrimPrefix(r.URL.RequestURI(), "/v1/apps/"))
 		w.WriteHeader(204)
 	default:
 		http.Error(w, `{"error":"unexpected"}`, 500)
@@ -373,5 +373,45 @@ func TestAppImage(t *testing.T) {
 	h.call(t, "POST", "/api/apps/img/deployments/"+v1.ID+"/rollback", nil, &d)
 	if back := h.wait(t, "img", d.ID); back.State != "succeeded" || h.agent.specs[1].Image != v1.Image {
 		t.Fatalf("rollback = %+v, spec %+v", back, h.agent.specs[1])
+	}
+}
+
+func TestAppVolumes(t *testing.T) {
+	h := newHub(t, "prod")
+	h.call(t, "POST", "/api/apps", app.CreateInput{Name: "db", Image: "docker.io/library/postgres:17", Port: 5432}, nil)
+	vols := []agent.Volume{{Name: "data", Target: "/var/lib/postgresql/data"}, {HostPath: "photos/library", Target: "/library", RO: true}}
+	var a app.App
+	if code := h.call(t, "PUT", "/api/apps/db/volumes", vols, &a); code != 200 || len(a.Volumes) != 2 || a.Volumes[1] != vols[1] {
+		t.Fatalf("set: %d %+v", code, a.Volumes)
+	}
+	for _, bad := range [][]agent.Volume{
+		{{Name: "x", HostPath: "x", Target: "/x"}}, // both
+		{{Target: "/x"}},                           // neither
+		{{HostPath: "../home", Target: "/x"}},
+		{{HostPath: "a/../../b", Target: "/x"}},
+		{{HostPath: "/etc", Target: "/x"}}, // absolute: only under the data root
+		{{HostPath: "a:b", Target: "/x"}},
+		{{HostPath: ".", Target: "/x"}}, // the whole root
+		{{Name: "Data", Target: "/x"}},
+		{{Name: "x", Target: "relative"}},
+		{{Name: "x", Target: "/"}},
+		{{Name: "x", Target: "/a,ro"}},
+		{{Name: "x", Target: "/a"}, {Name: "y", Target: "/a"}},
+	} {
+		if code := h.call(t, "PUT", "/api/apps/db/volumes", bad, nil); code != 400 {
+			t.Errorf("volumes %+v: %d", bad, code)
+		}
+	}
+	if h.call(t, "GET", "/api/apps/db", nil, &a); len(a.Volumes) != 2 {
+		t.Errorf("a rejected list changed them: %+v", a.Volumes)
+	}
+
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/db/deploy", map[string]string{}, &d)
+	if h.wait(t, "db", d.ID); len(h.agent.specs[0].Volumes) != 2 || h.agent.specs[0].Volumes[0] != vols[0] {
+		t.Fatalf("deploy spec volumes: %+v", h.agent.specs[0].Volumes)
+	}
+	if code := h.call(t, "DELETE", "/api/apps/db?purge=1", nil, nil); code != 204 || strings.Join(h.agent.deleted, ",") != "db?purge=1" {
+		t.Fatalf("purge: %d %v", code, h.agent.deleted)
 	}
 }
