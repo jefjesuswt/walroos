@@ -67,6 +67,20 @@ func (s *Service) AgentTarget(ctx context.Context, id string) (address, tokenHas
 	return s.store.AgentTarget(ctx, id)
 }
 
+// Online says which nodes are online, from their heartbeats: no network call. Lists use it to
+// skip nodes known to be down instead of waiting out an agent timeout for each.
+func (s *Service) Online(ctx context.Context) (map[string]bool, error) {
+	nodes, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	online := make(map[string]bool, len(nodes))
+	for _, n := range nodes {
+		online[n.ID] = n.Status == "online"
+	}
+	return online, nil
+}
+
 func (s *Service) List(ctx context.Context) ([]Node, error) {
 	nodes, err := s.store.List(ctx)
 	if err != nil {

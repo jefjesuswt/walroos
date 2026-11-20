@@ -75,7 +75,7 @@ There are no release binaries yet, so build from source:
 ```bash
 git clone https://github.com/jefjesuswt/walroos && cd walroos
 cd web && bun install && bun run build && cd ..   # web UI, embedded into the binary
-go build -o bin/walroos ./cmd/walroos
+CGO_ENABLED=0 go build -o bin/walroos ./cmd/walroos
 ```
 
 **1. Start the hub.** The first run needs your tailnet login as owner. To join the tailnet, either open the login URL it prints or pass an auth key:

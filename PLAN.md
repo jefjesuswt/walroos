@@ -17,7 +17,7 @@ Requisitos: Go ≥ 1.27.4 (lo exige `tailscale.com` v1.104), [bun](https://bun.s
 
 ```bash
 cd web && bun install && bun run build && cd ..
-go build -o bin/walroos ./cmd/walroos
+CGO_ENABLED=0 go build -o bin/walroos ./cmd/walroos
 go test ./...
 go run ./cmd/walroos hub --dev        # http://127.0.0.1:8080
 ```
@@ -328,6 +328,32 @@ Pendiente (`ponytail:`):
 | M3 Deploy | Probar M3.2 en un nodo Linux real (homelab). |
 | M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
+
+## Desarrollo remoto real: laptop → PC (2026-11-19)
+
+Hub `walroos-hub` en la laptop, nodo `pc` en la PC (Arch, Podman 6.2, NordVPN en las dos). `walroos node join` + `node install` (servicio de systemd, linger) sin `tailscaled` en `pc`: el nodo va por su propio tsnet. Workspace `walroos` desde la detección de stack (`devcontainers/go:1.27`), listo en 49 s.
+- Desde la laptop, `ssh walroos.walroos` (por el proxy userspace) entra como `vscode` en `/workspaces/walroos`; `go build` en 37 s y tests OK, con 12 hilos de `pc`.
+- nvim 0.12.6 instalado en `~/.local` (volumen del home), PTY, `TERM` del cliente propagado, 256 colores, `gopls` en la imagen.
+- Zed 1.29 con `zeditor ssh://walroos.walroos/workspaces/walroos`: instala su servidor en `~/.zed_server`, abre el repo y git, y corre el language server en `pc` (tras arreglar `sftp-server`, ver abajo).
+- VS Code: sin probar (no está instalado en la laptop).
+- **Hub mudado a `pc`** (2026-11-19): parar el hub viejo, copiar `hub.db`, `secret.key` y `tsnet/` (misma identidad `walroos-hub` y misma IP de tailnet), arrancarlo allí. Los tres nodos se reconectaron solos en 5 s y el token de Cloudflare se descifró con la `secret.key` copiada. Falta en el producto:
+  - [ ] `walroos hub install` (como `node install`): la unidad `walroos-hub.service` se escribió a mano.
+  - [ ] Documentar la mudanza y el respaldo del hub (`hub.db` + `secret.key` + `tsnet/` van juntos; nunca dos hubs con la misma `tsnet/`).
+- [ ] **El panel no se abre desde una laptop con `tailscaled` en modo userspace** (la de NordVPN): el navegador no tiene ruta a la tailnet. Arreglo usado: un PAC que manda solo `walroos-hub`, `*.ts.net` y `100.64.0.0/10` por el SOCKS `localhost:1055` (en Chromium, `--proxy-pac-url=data:…`). Mejor en el producto: `walroos ui`, que levante un tsnet efímero (el binario ya lo trae) y sirva el panel en `127.0.0.1:<puerto>`, con ese host permitido en `AllowHosts`.
+- Repos privados: el nodo clona con el `git` y las llaves SSH del usuario del nodo (en `pc`, `~/.ssh/id_ed25519` sin passphrase). Funciona desde el servicio de systemd, sin agente SSH. Con una llave con passphrase no funcionaría: no hay credenciales de git en walroos.
+
+## Casos tristes que walroos no detecta
+
+- [ ] **Netns rootless sin salida, y el nodo reporta `online`** (encontrado 2026-11-19 en `pc`, Arch + NordVPN).
+  - Qué pasó: el proceso `pasta` del netns rootless murió (con 2 h de uptime; probablemente un cambio de red, como NordVPN reconectando). El netns siguió existiendo sin interfaz de salida ni ruta por defecto. Todo contenedor en una red bridge se quedó sin internet ni DNS: el workspace (`go build` no bajaba módulos) y también un servicio ajeno a walroos.
+  - Qué vio walroos: nada. El nodo seguía `online` con telemetría normal, el workspace `running` y el SSH funcionando. El primer síntoma fue un `lookup … i/o timeout` dentro del workspace.
+  - Cómo se arregló: parar todos los contenedores del netns (podman lo destruye), arrancar uno (lo recrea con un `pasta` nuevo).
+  - Qué haría walroos: el agente comprueba en cada heartbeat que el netns rootless tiene ruta por defecto y que hay un `pasta` vivo para él (o un `getent hosts` desde `podman unshare --rootless-netns`), lo manda en la telemetría y la UI marca el nodo como degradado con el arreglo en una línea. Repararlo solo (parar y arrancar contenedores ajenos) no: puede cortar servicios del dueño.
+- [x] **Imágenes de devcontainer sin `sftp-server`** (encontrado 2026-11-19 con `devcontainers/go:1.27`; arreglado 2026-11-19). `scp`, `sftp` y las extensiones de Zed fallaban. Ahora, si la imagen no trae `sftp-server`, el gateway copia el binario del agente al contenedor una vez (`/usr/local/bin/.walroos-sftp-<hash>`; una versión nueva reemplaza la vieja) y corre `walroos sftp-server` (`pkg/sftp`) como el usuario del workspace. Sirve en workspaces ya creados, sin rebuild. Límite: un walroos con CGO necesita glibc; para imágenes musl (Alpine) compilar con `CGO_ENABLED=0`, y el subsistema lo explica si no puede correr.
+- [x] **Zed (y VS Code) abrían `$HOME`** en vez del repo (arreglado 2026-11-19): el hub devuelve `folder` (la carpeta real, viva desde el nodo) y la tarjeta Connect da `zed ssh://<ws>.walroos/workspaces/<repo>` y `code --remote ssh-remote+<ws>.walroos /workspaces/<repo>`. Para la UI de Zed (*Open Remote*), `walroos ssh-config --zed --write` escribe en su `settings.json` una entrada por workspace con su carpeta como proyecto (JSONC: comentarios y resto intactos, symlinks seguidos, duplicados fusionados, entradas de workspaces borrados quitadas, idempotente; un archivo inválido no se toca). La opción "Connect Dev Container" de Zed 1.29 es de Zed (Docker local), no de walroos.
+- [ ] **Terminal sin terminfo** (Ghostty manda `TERM=xterm-ghostty`; kitty, `xterm-kitty`): las imágenes no traen esas entradas y `nvim`, `clear` o `tput` fallan con "unknown terminal type". Arreglo por workspace, persistente en el volumen del home: `infocmp -x xterm-ghostty | ssh <ws>.walroos -- tic -x -`. Opciones: que `walroos ssh-config` lo documente o lo haga, `shell-integration-features = ssh-terminfo` en Ghostty, o instalar `ncurses-term` en la imagen base.
+- [ ] **Sin identidad de git en el workspace**: `git commit` falla hasta configurar `user.name` y `user.email`. Opción: que el hub los guarde por usuario y el agente los pase como `GIT_AUTHOR_*`/`GIT_COMMITTER_*` (o los escriba en `~/.gitconfig` del volumen del home al crear).
+- [ ] **Un intento de `ssh` por el proxy userspace falló** con `SOCKS server failure` justo después de reiniciar el workspace; el reintento funcionó. Ver si se repite antes de tocar nada.
 
 ## Backlog chico
 

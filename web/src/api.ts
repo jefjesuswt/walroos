@@ -46,6 +46,7 @@ export interface Workspace {
   devcontainer_path: string;
   image?: string;
   stack?: string; // what detect found at create time (android, go…); absent = unknown
+  folder?: string; // the repo inside the container (/workspaces/<repo>); absent while the node is unreachable
   state: WorkspaceState;
   error?: string;
   created_at: string;

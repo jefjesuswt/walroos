@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/pkg/sftp v1.13.11
 	github.com/shirou/gopsutil/v4 v4.26.10
 	github.com/spf13/cobra v1.10.2
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
@@ -37,6 +38,7 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jsimonetti/rtnetlink v1.4.2 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mdlayher/netlink v1.11.2 // indirect
