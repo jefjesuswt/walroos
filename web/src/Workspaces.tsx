@@ -297,10 +297,10 @@ function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
     <Modal title={`Connect to ${w.name}`} wide onClose={onClose}>
       <div className="form">
         <div className="field">
-          <span className="label">1 · SSH config, once per machine</span>
+          <span className="label">1 · SSH config, again when you add a workspace</span>
           {/* The CLI defaults to walroos-hub; the hub you opened this page on may have another name. */}
-          <Cmd text={`walroos ssh-config --hub ${window.location.host} >> ~/.ssh/config`} />
-          <span className="help">With <span className="mono">tailscaled</span> in userspace mode, add <span className="mono">--proxy localhost:1055</span>.</span>
+          <Cmd text={`walroos ssh-config --hub ${window.location.host} --write`} />
+          <span className="help">Keeps every workspace in a walroos section of <span className="mono">~/.ssh/config</span>. With <span className="mono">tailscaled</span> in userspace mode it goes through its proxy on <span className="mono">localhost:1055</span> by itself.</span>
         </div>
         <div className="field">
           <span className="label">2 · A shell in the container</span>

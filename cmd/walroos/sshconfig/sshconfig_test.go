@@ -16,7 +16,7 @@ func TestFormat(t *testing.T) {
 	}
 
 	plain := Format(list, "", 2222, ".walroos")
-	want := `# walroos workspaces — append to ~/.ssh/config
+	want := `# walroos workspaces — or let ` + "`walroos ssh-config --write`" + ` keep them in ~/.ssh/config
 
 Host api.walroos
   HostName homelab-2

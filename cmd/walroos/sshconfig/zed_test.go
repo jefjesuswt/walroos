@@ -167,7 +167,7 @@ func TestWriteZedThroughSymlink(t *testing.T) {
 	if fi, _ := os.Stat(real); fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v, want the original 0600", fi.Mode().Perm())
 	}
-	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(real), ".settings-*")); len(left) != 0 {
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(real), ".settings.json-*")); len(left) != 0 {
 		t.Errorf("temp files left: %v", left)
 	}
 

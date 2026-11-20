@@ -105,7 +105,7 @@ Tailscale sends its own traffic around other VPNs, and some VPN firewalls (NordV
 FLAGS="--tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055"
 ```
 
-Clients on that machine then reach the tailnet through the proxy, for example `walroos ssh-config --proxy localhost:1055`.
+Clients on that machine then reach the tailnet through the proxy. `walroos ssh-config` finds it on `localhost:1055` by itself (`--proxy` for another address) and gives each Host block a `ProxyCommand` through it, which needs openbsd-netcat. A browser needs it too to open the panel: point it at the proxy for the tailnet's addresses, for example with a PAC file that sends `100.64.0.0/10` and your tailnet's `*.ts.net` names to `PROXY localhost:1055`.
 
 </details>
 
@@ -156,7 +156,7 @@ M1 progress:
 - [x] walroos base image for repos without a devcontainer (Debian, git, mise, sftp-server; user `dev`)
 - [x] SSH gateway on the agent (`pty`, `exec`, port forwarding, `sftp`, agent forwarding for `git push`)
 - [x] Workspace service on the hub (pick a node, call its agent, keep the state)
-- [x] `walroos ssh-config` (add `--proxy` on machines with userspace tailscaled)
+- [x] `walroos ssh-config --write` (a managed section in `~/.ssh/config`; goes through userspace tailscaled's proxy when needed)
 - [x] Workspaces page and SSH keys in the UI
 - [x] Rebuild a workspace without losing `$HOME`
 - [x] Per-workspace environment variables and secrets (encrypted at rest)

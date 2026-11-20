@@ -269,7 +269,7 @@ func sshInfo(w workspace.Workspace) map[string]string {
 		"host":       alias,
 		"ssh_config": fmt.Sprintf("Host %s\n  HostName %s\n  Port %s\n  User %s\n", alias, host, agent.SSHPort, w.Name),
 		"command":    fmt.Sprintf("ssh -p %s %s@%s", agent.SSHPort, w.Name, host),
-		"all_hosts":  "walroos ssh-config >> ~/.ssh/config  # every workspace at once",
+		"all_hosts":  "walroos ssh-config --hub <hub> --write  # every workspace, kept in a walroos section of ~/.ssh/config",
 	}
 }
 
