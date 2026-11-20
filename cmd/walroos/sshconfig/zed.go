@@ -62,6 +62,9 @@ func MergeZed(settings []byte, list []workspace, suffix string) (out []byte, cha
 		}
 	}
 
+	// Before anything below touches them: the entries kept are the same maps, edited in place.
+	before, _ := json.Marshal(current)
+
 	wanted := map[string]workspace{}
 	for _, ws := range list {
 		wanted[ws.Name+suffix] = ws
@@ -112,7 +115,6 @@ func MergeZed(settings []byte, list []workspace, suffix string) (out []byte, cha
 		merged = []any{}
 	}
 
-	before, _ := json.Marshal(current)
 	after, _ := json.Marshal(merged)
 	if bytes.Equal(before, after) || (len(current) == 0 && len(merged) == 0) {
 		return settings, false, warnings, nil

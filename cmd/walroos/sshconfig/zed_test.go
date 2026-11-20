@@ -109,6 +109,14 @@ func TestMergeZedSadPaths(t *testing.T) {
 	}
 	decodeZed(t, out)
 
+	// The owner's real case: one entry, Zed left it with no projects. The project must be added
+	// (the change detection once compared the entry with itself after editing it in place).
+	solo := `{"ssh_connections": [{"host": "app.walroos", "args": [], "projects": []}]}`
+	out, changed, _, err = MergeZed([]byte(solo), ws, ".walroos")
+	if err != nil || !changed || !strings.Contains(string(out), `"/workspaces/app"`) {
+		t.Errorf("single entry without projects: changed=%v err=%v\n%s", changed, err, out)
+	}
+
 	// Node down: no folder. Keep what Zed had, warn, don't invent a path.
 	had := `{"ssh_connections": [{"host": "app.walroos", "projects": [{"paths": ["/workspaces/app"]}]}]}`
 	out, changed, warnings, err := MergeZed([]byte(had), []workspace{{Name: "app"}}, ".walroos")
