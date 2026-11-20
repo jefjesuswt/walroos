@@ -96,12 +96,24 @@ func TestSSHGatewayPodman(t *testing.T) {
 		if got := runSSH(t, c, "whoami"); got != "dev" {
 			t.Errorf("whoami on the devcontainer image: %q", got)
 		}
+		// The image (alpine) has no sftp-server, so the gateway copies the agent's binary in.
+		// A static binary runs there and answers SFTP; a glibc one (a plain `go test` build)
+		// can't on musl, and the subsystem says why. A glibc image is TestWorkspaceSFTPHelper.
+		if out, _ := exec.Command("file", os.Args[0]).Output(); strings.Contains(string(out), "statically linked") {
+			ch := sftpChannel(t, c)
+			ch.Write([]byte{0, 0, 0, 5, 1, 0, 0, 0, 3}) // INIT v3
+			head := make([]byte, 5)
+			if _, err := io.ReadFull(ch, head); err != nil || head[4] != 2 {
+				t.Errorf("sftp through the helper: %v %v, want VERSION", head, err)
+			}
+			return
+		}
 		ch, codes := sessionChannel(t, c)
 		if ok, _ := ch.SendRequest("subsystem", true, ssh.Marshal(struct{ Name string }{"sftp"})); !ok {
 			t.Fatal("sftp refused")
 		}
 		stderr, _ := io.ReadAll(ch.Stderr())
-		if code := <-codes; code != 127 || !strings.Contains(string(stderr), "no sftp-server in this workspace image") {
+		if code := <-codes; code != 127 || !strings.Contains(string(stderr), "can't run in this image") || !strings.Contains(string(stderr), "CGO_ENABLED=0") {
 			t.Errorf("exit %d, stderr %q", code, stderr)
 		}
 	})

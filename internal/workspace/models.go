@@ -47,8 +47,9 @@ type Workspace struct {
 	Branch           string    `json:"branch"`
 	DevcontainerPath string    `json:"devcontainer_path"`
 	Image            string    `json:"image,omitempty"`
-	Stack            string    `json:"stack,omitempty"` // detected at create time; "" = unknown
-	State            string    `json:"state"`           // creating, running, stopped, failed, deleting
+	Stack            string    `json:"stack,omitempty"`  // detected at create time; "" = unknown
+	Folder           string    `json:"folder,omitempty"` // repo path inside the container, from the node (not stored)
+	State            string    `json:"state"`            // creating, running, stopped, failed, deleting
 	Error            string    `json:"error,omitempty"`
 	CreatedAt        time.Time `json:"created_at"`
 }

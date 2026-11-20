@@ -81,7 +81,7 @@ func (s *Service) List(ctx context.Context) ([]App, error) {
 	if err != nil {
 		return nil, err
 	}
-	live := map[string][]agent.App{} // per node, asked once
+	live := s.downNodes(ctx) // per node, asked once; nodes known to be down are never asked
 	domains, err := s.store.domains(ctx)
 	if err != nil {
 		return nil, err
@@ -98,10 +98,24 @@ func (s *Service) Get(ctx context.Context, name string) (App, error) {
 	if err != nil {
 		return a, err
 	}
-	s.withLast(ctx, &a, map[string][]agent.App{})
+	s.withLast(ctx, &a, s.downNodes(ctx))
 	domains, err := s.store.domains(ctx)
 	a.Domains = append([]string{}, domains[a.ID]...)
 	return a, err
+}
+
+// downNodes seeds withLast's per-node cache with nil (NodeDown) for nodes whose heartbeats
+// stopped, so listing apps doesn't wait out an agent timeout for each of them.
+func (s *Service) downNodes(ctx context.Context) map[string][]agent.App {
+	live := map[string][]agent.App{}
+	if online, err := s.nodes.Online(ctx); err == nil {
+		for id, up := range online {
+			if !up {
+				live[id] = nil
+			}
+		}
+	}
+	return live
 }
 
 // withLast adds the last deployment and the release the node is running: that one is the
