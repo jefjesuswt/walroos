@@ -17,8 +17,13 @@ import (
 // untouched. Workspaces (walroos-dev) are the owner's own code and keep LAN access.
 //
 // The netns is torn down when no container runs and rebuilt without the rule, so every app and
-// tunnel unit applies it right after starting (ExecStartPost). If that fails the unit fails:
-// an app never runs without the guard.
+// tunnel unit applies it right after starting (ExecStartPost). If that fails, the container is
+// SIGKILLed on the spot and the unit fails. A plain failing ExecStartPost isn't enough: systemd
+// then stops the container gracefully, and an app that ignores SIGTERM ran unguarded for ~50 s
+// (and again on every Restart=always cycle).
+//
+// ponytail: between the container starting and the rule landing (milliseconds, and only when
+// the netns was just rebuilt) the app is unguarded.
 //
 // ponytail: no per-app allowlist; add one when an app must reach a LAN service (a NAS database).
 const guardFile = "walroos-guard.nft"
@@ -30,8 +35,8 @@ var guardBlocked = [...]string{
 
 var bridgeRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`) // goes into the nft file
 
-// guard writes the rule for the app networks and returns the unit line that applies it.
-func (a *Apps) guard(ctx context.Context) (string, error) {
+// guard writes the rule for the app networks and returns the unit line that applies it to container.
+func (a *Apps) guard(ctx context.Context, container string) (string, error) {
 	for _, n := range []string{AppNetwork, EdgeNetwork} {
 		if err := ensureNetwork(ctx, n); err != nil {
 			return "", err
@@ -58,7 +63,18 @@ func (a *Apps) guard(ctx context.Context) (string, error) {
 	if err := os.WriteFile(f, []byte(guardRules(strings.Join(bridges, ", "))), 0o644); err != nil {
 		return "", err
 	}
-	return "ExecStartPost=podman unshare --rootless-netns nft -f " + f, nil
+	return guardExec(f, container)
+}
+
+var guardArgRe = regexp.MustCompile(`^[A-Za-z0-9._/+-]+$`) // no quotes, %, $ or spaces: systemd would read them
+
+// guardExec is the ExecStartPost line: apply the rule, or kill the container right away.
+// "$$" is a literal "$" for systemd, so the shell sees "$0" and "$1".
+func guardExec(file, container string) (string, error) {
+	if !guardArgRe.MatchString(file) || !guardArgRe.MatchString(container) {
+		return "", fmt.Errorf("guard: unsafe path or container name %q, %q", file, container)
+	}
+	return `ExecStartPost=/bin/sh -c 'podman unshare --rootless-netns nft -f "$$0" || { podman kill --signal KILL "$$1"; exit 1; }' ` + file + " " + container, nil
 }
 
 // guardRules replaces the table in one transaction: declaring it first makes the delete safe.
