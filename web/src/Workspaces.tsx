@@ -308,8 +308,15 @@ function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
           <span className="help">A stopped workspace starts on connect. <span className="mono">claude</span>, bun and your runtimes live inside.</span>
         </div>
         <div className="field">
-          <span className="label">VS Code / Claude Code</span>
-          <span className="help">Remote-SSH and pick <span className="mono">{alias}</span>. Ports: <span className="mono">ssh -L 3000:localhost:3000 {alias}</span>.</span>
+          <span className="label">3 · Your editor, opened on the repo</span>
+          {w.folder ? <>
+            {/* Without a path, Zed and VS Code open $HOME: hand them the repo folder. */}
+            <Cmd text={`zed ssh://${alias}${w.folder}`} />
+            <Cmd text={`code --remote ssh-remote+${alias} ${w.folder}`} />
+          </> : (
+            <span className="help">Connect to <span className="mono">{alias}</span> and open <span className="mono">/workspaces/&lt;repo&gt;</span> (the node didn't answer, so the exact folder isn't known).</span>
+          )}
+          <span className="help">Claude Code: Remote-SSH to <span className="mono">{alias}</span>. Ports: <span className="mono">ssh -L 3000:localhost:3000 {alias}</span>.</span>
         </div>
         <div className="field">
           <span className="label">On the node</span>

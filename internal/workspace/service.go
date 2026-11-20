@@ -206,6 +206,7 @@ func (s *Service) refresh(ctx context.Context, w Workspace) (Workspace, error) {
 	if err != nil {
 		return w, err
 	}
+	w.Folder = ws.Folder // live only: editors open it (zed ssh://host/<folder>)
 	if ws.State == w.State && ws.Image == w.Image && ws.Error == w.Error {
 		return w, nil
 	}
