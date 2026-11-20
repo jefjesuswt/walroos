@@ -41,6 +41,21 @@ export const Badge = ({ s, label = s }: { s: string; label?: string }) => (
   <span className={`badge s-${ST[s] || 'idle'}`}><span className="dot" aria-hidden="true" />{label}</span>
 );
 
+// ErrorAlert is a form's error. It scrolls itself into view when it appears or changes: in a tall
+// modal (a bottom sheet on phones) the submit button is at the bottom and the alert at the top.
+export function ErrorAlert({ title, msg }: { title: string; msg: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ref.current?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [title, msg]);
+  return (
+    <div ref={ref} className="alert alert-bad" role="alert"><Icon n="alert" />
+      <div className="alert-text"><strong>{title}</strong><span className="muted">{msg}</span></div>
+    </div>
+  );
+}
+
 export const Chip = ({ children }: { children: ReactNode }) => <span className="chip">{children}</span>;
 
 export function Meter({ label, pct, text }: { label: string; pct: number; text: string }) {
@@ -222,7 +237,7 @@ export function EnvModal({ title, sub, savedMsg, load, save, onClose, onSaved }:
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !vars} onClick={submit}>{busy ? 'Saving…' : 'Save'}</button>
       </>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't load or save</strong><span className="muted">{error}</span></div></div>}
+      {error && <ErrorAlert title="Couldn't load or save" msg={error} />}
       {!vars ? <div className="skel-row"><i className="skel w50" /></div> : (
         <div className="form">
           {vars.length === 0 && <p className="muted">No variables yet.</p>}

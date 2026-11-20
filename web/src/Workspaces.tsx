@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Detection, type GitHub, type Node, type ProjectStack, type Workspace } from './api';
 import { stackLabel } from './stack';
-import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
   const toast = useToast();
@@ -232,7 +232,7 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
           {busy ? 'Creating…' : fresh ? 'Create project' : 'Create workspace'}
         </button>
       </>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>{error.title}</strong><span className="muted">{error.msg}</span></div></div>}
+      {error && <ErrorAlert title={error.title} msg={error.msg} />}
       <div className="form">
         <div className="seg" role="group" aria-label="Source">
           <button type="button" aria-pressed={!fresh} onClick={() => { setFresh(false); setError(null); }}>{!fresh && <Icon n="check" />}From repo</button>

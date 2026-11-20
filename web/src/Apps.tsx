@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type App, type Cloudflare, type Deployment, type Node, type Volume } from './api';
-import { ago, Badge, Confirm, EmptyState, EnvModal, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Confirm, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 // What the app is doing, from the node's live release first: a deployment's state is only
 // what the hub saw (it can say failed for a deploy the node finished after a hub restart).
@@ -373,7 +373,7 @@ function VolumesModal({ app, onClose, onSaved }: { app: App; onClose: () => void
     <Modal title={`Volumes · ${app.name}`} onClose={onClose}
       sub="They apply on the next deploy. Removing one here leaves its data on the node."
       foot={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={submit}><Icon n="check" />{busy ? 'Saving…' : 'Save'}</button></>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't save them</strong><span className="muted">{error}</span></div></div>}
+      {error && <ErrorAlert title="Couldn't save them" msg={error} />}
       <div className="form">
         <Field label="One per line" hint={<><span className="mono">name:/path</span> is a podman volume; <span className="mono">./dir:/path</span> is a directory in <span className="mono">~/walroos-data</span> on {app.node_name} (made if missing). Add <span className="mono">:ro</span> for read-only.</>}>
           <textarea className="input mono" rows={4} value={text} onChange={e => setText(e.target.value)} placeholder={'data:/var/lib/data\n./photos:/photos:ro'} spellCheck={false} autoFocus />
@@ -406,7 +406,7 @@ function DomainsModal({ app, onClose, onSaved }: { app: App; onClose: () => void
           <div className="alert-text"><strong>Cloudflare isn't set up</strong><span className="muted">Add an API token in <a href="#/settings">Settings</a> first.</span></div>
         </div>
       )}
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't save them</strong><span className="muted">{error}</span></div></div>}
+      {error && <ErrorAlert title="Couldn't save them" msg={error} />}
       <div className="form">
         <Field label="Hostnames, one per line" hint={cf?.zones.length ? <>In a zone the token can edit: <span className="mono">{cf.zones.join(', ')}</span>. Empty removes them all.</> : 'Empty removes them all.'}>
           <textarea className="input mono" rows={4} value={text} onChange={e => setText(e.target.value)} placeholder={`${app.name}.example.com`} spellCheck={false} autoFocus />
@@ -432,7 +432,7 @@ function DeployModal({ app, onClose, onQueued }: { app: App; onClose: () => void
     <Modal title={`Deploy ${app.name}`} onClose={onClose}
       sub={`${app.image ? `Pulls ${app.image}` : 'Builds'} on ${app.node_name} and starts next to the running release; the old one stops only once the new one answers.`}
       foot={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={submit}><Icon n="deploy" />{busy ? 'Queuing…' : 'Deploy'}</button></>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't queue it</strong><span className="muted">{error}</span></div></div>}
+      {error && <ErrorAlert title="Couldn't queue it" msg={error} />}
       {!app.image && <div className="form">
         <Field label={<>Commit <span className="muted">(optional)</span></>} hint={<>Empty deploys the head of <span className="mono">{app.branch || 'the default branch'}</span>. A SHA (7 to 40 hex) pins a commit.</>}>
           <input className="input mono" value={sha} onChange={e => setSha(e.target.value)} placeholder="branch head" autoFocus
@@ -476,7 +476,7 @@ function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <Icon n="deploy" />{busy ? 'Creating…' : 'Create and deploy'}
         </button>
       </>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't create it</strong><span className="muted">{error}</span></div></div>}
+      {error && <ErrorAlert title="Couldn't create it" msg={error} />}
       <div className="form">
         <div className="seg" role="group" aria-label="Source">
           <button aria-pressed={!fromImage} onClick={() => setFromImage(false)}>{!fromImage && <Icon n="check" />}Repository</button>

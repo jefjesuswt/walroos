@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { api, type Cloudflare, type GitHub, type SSHKey } from './api';
 import { addCustomTheme, allThemes, applyTheme, contrastWarnings, parseTheme, pick, removeCustomTheme, savedPref, type Mode, type Theme } from './theme';
-import { ago, Badge, Confirm, EmptyState, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Confirm, EmptyState, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function SettingsPage() {
   const toast = useToast();
@@ -94,7 +94,7 @@ function AddKeyModal({ onClose, onAdded }: { onClose: () => void; onAdded: () =>
       sub="Paste the public key (the .pub file). The agent matches it when you connect."
       foot={<><button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !name || !pub.trim()} onClick={submit}>{busy ? 'Adding…' : 'Add key'}</button></>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't add it</strong><span className="muted">{error}</span></div></div>}
+      {error && <ErrorAlert title="Couldn't add it" msg={error} />}
       <div className="form">
         <Field label="Name">
           <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="laptop" autoFocus />
