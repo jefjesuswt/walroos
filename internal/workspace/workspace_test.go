@@ -598,3 +598,31 @@ func TestWorkspaceStack(t *testing.T) {
 		t.Errorf("an invalid stack still reached the node: %+v", h.agent.last)
 	}
 }
+
+// folder comes live from the node, so editors can open the repo (zed ssh://host/<folder>), and is
+// simply absent when the node doesn't answer.
+func TestWorkspaceFolder(t *testing.T) {
+	h := newHub(t, true)
+	if code := h.call(t, "POST", "/api/workspaces", map[string]any{"name": "app", "repo_url": "https://github.com/me/app"}, nil); code != 201 {
+		t.Fatalf("create: %d", code)
+	}
+	h.agent.set("app", agent.Workspace{Name: "app", State: "running", Folder: "/workspaces/app"})
+	var w workspace.Workspace
+	h.call(t, "GET", "/api/workspaces/app", nil, &w)
+	if w.Folder != "/workspaces/app" {
+		t.Fatalf("folder = %q, want the node's /workspaces/app", w.Folder)
+	}
+	var list []workspace.Workspace
+	h.call(t, "GET", "/api/workspaces", nil, &list)
+	if len(list) != 1 || list[0].Folder != "/workspaces/app" {
+		t.Fatalf("list: %+v", list)
+	}
+
+	h.agent.mu.Lock()
+	h.agent.down = true
+	h.agent.mu.Unlock()
+	w = workspace.Workspace{}
+	if code := h.call(t, "GET", "/api/workspaces/app", nil, &w); code != 200 || w.Folder != "" || w.State != "running" {
+		t.Fatalf("node down: %d %+v (want the last known row, no folder)", code, w)
+	}
+}
