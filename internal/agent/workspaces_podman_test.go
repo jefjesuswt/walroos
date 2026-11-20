@@ -770,3 +770,42 @@ func TestWorkspaceSFTPHelperMusl(t *testing.T) {
 		t.Fatalf("glibc helper on musl: %q, want the explanation", out)
 	}
 }
+
+// TestWorkspaceHomeRepoLink: Zed's Open Folder starts in $HOME, so ~/<repo> links to the clone;
+// something the user put at that path is never replaced, not even by a rebuild.
+func TestWorkspaceHomeRepoLink(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	repo := gitRepo(t, map[string]string{
+		".devcontainer/Dockerfile":        "FROM docker.io/library/alpine:3.22\nRUN adduser -D -u 1001 dev\n",
+		".devcontainer/devcontainer.json": `{"build":{"dockerfile":"Dockerfile"},"remoteUser":"dev"}`,
+	})
+	name := testName()
+	w := NewWorkspaces()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "running")
+	sh := func(script string) (string, error) {
+		return podman(ctx, "exec", "--user", ws.User, "ws-"+name, "/bin/sh", "-c", script)
+	}
+	link := "~/" + repoName(repo)
+	if out, err := sh("readlink " + link + "; ls -a " + link + "/"); err != nil || !strings.HasPrefix(out, ws.Folder+"\n") || !strings.Contains(out, ".devcontainer") {
+		t.Fatalf("~/<repo>: %q, %v (want a link to %s)", out, err, ws.Folder)
+	}
+	if out, _ := sh("cd " + ws.Folder + " && git status --porcelain"); out != "" {
+		t.Errorf("the link dirtied the clone: %q", out)
+	}
+
+	if _, err := sh("rm " + link + " && echo mine > " + link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Rebuild(ctx, name, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w, name, "running", 5*time.Minute)
+	if out, err := sh("cat " + link); err != nil || out != "mine" {
+		t.Errorf("the user's file at ~/<repo> after a rebuild: %q, %v", out, err)
+	}
+}
