@@ -183,7 +183,7 @@ func build(ctx context.Context, spec AppSpec, log io.Writer) (sha, image string,
 		args = append(args, "--branch", spec.Branch)
 	}
 	fmt.Fprintf(log, "cloning %s %s\n", redact(spec.RepoURL), spec.Branch)
-	if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", append(args, "--", httpsURL(spec.RepoURL), dir)...); err != nil {
+	if _, err := gitClone(ctx, args, spec.RepoURL, dir); err != nil {
 		msg := strings.ReplaceAll(err.Error(), httpsURL(spec.RepoURL), redact(httpsURL(spec.RepoURL)))
 		return "", "", errors.New(strings.ReplaceAll(msg, spec.RepoURL, redact(spec.RepoURL)))
 	}
