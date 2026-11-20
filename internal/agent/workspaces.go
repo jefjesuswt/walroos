@@ -127,10 +127,8 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 		if spec.Branch != "" {
 			args = append(args, "--branch", spec.Branch)
 		}
-		url := httpsURL(spec.RepoURL)
-		args = append(args, "--", url, repo)
-		// ponytail: no credentials yet, so only public repos (or a token in the URL) clone
-		if err := run(ctx, []string{"GIT_TERMINAL_PROMPT=0"}, "git", args...); err != nil {
+		url, err := gitClone(ctx, args, spec.RepoURL, repo)
+		if err != nil {
 			return fmt.Errorf("clone %s: %w", spec.RepoURL, err)
 		}
 		if url != spec.RepoURL { // push from inside the workspace with the user's own key
@@ -431,10 +429,53 @@ func rebuild(ctx context.Context, name string, env []string) error {
 	return create(ctx, spec, env)
 }
 
+// gitClone clones url into dir (empty or missing) with the extra git args. An SSH URL is tried
+// first with the node user's own SSH keys, which is how private repos clone; if that fails it
+// falls back to the https form, so public repos still clone on a node without keys (GitHub
+// wants a key even for public repos over SSH). It returns the URL that worked.
+// ponytail: accept-new trusts a forge's host key the first time the node sees it.
+func gitClone(ctx context.Context, args []string, url, dir string) (string, error) {
+	env := []string{"GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=" + gitSSH}
+	clone := func(u string) error {
+		return run(ctx, env, "git", append(append(append([]string{}, args...), "--"), u, dir)...)
+	}
+	err := clone(url)
+	https := httpsURL(url)
+	if err == nil || https == url {
+		return url, err
+	}
+	if err := emptyDir(dir); err != nil {
+		return url, err
+	}
+	if err2 := clone(https); err2 != nil {
+		return url, fmt.Errorf("over SSH: %v; over https: %v (a private repo needs an SSH key on the node with access to it)", err, err2)
+	}
+	return https, nil
+}
+
+// gitSSH never prompts (BatchMode: a key with a passphrase and no agent just fails) and accepts
+// a forge's host key the first time, so a fresh node doesn't fail on known_hosts. Tests extend it.
+var gitSSH = "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+
+// emptyDir removes what a failed clone left in dir, keeping dir itself (a volume's mountpoint).
+func emptyDir(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // httpsURL turns an SSH remote (git@host:owner/repo, ssh://git@host/owner/repo) into its https
-// form; anything else comes back as is. The node has no SSH keys, and GitHub wants one even for
-// public repos over SSH.
-// ponytail: public repos only, private ones need node credentials
+// form; anything else comes back as is.
 func httpsURL(u string) string {
 	if rest, ok := strings.CutPrefix(u, "ssh://"); ok {
 		hostport, path, _ := strings.Cut(rest, "/")

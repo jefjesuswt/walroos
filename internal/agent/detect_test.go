@@ -149,3 +149,38 @@ func TestDetectSkipsSymlinks(t *testing.T) {
 		t.Errorf("stack = %q, want node (the go.mod symlink ignored)", d.Stack)
 	}
 }
+
+func TestGitClone(t *testing.T) {
+	ctx := context.Background()
+
+	// A plain URL clones as given: no SSH, no fallback.
+	src := gitRepo(t, map[string]string{"README.md": "x\n"})
+	dst := filepath.Join(t.TempDir(), "plain")
+	if used, err := gitClone(ctx, []string{"clone"}, src, dst); err != nil || used != src {
+		t.Fatalf("local clone: used %q, %v", used, err)
+	}
+
+	// Both ways fail: the error says both, hints at the node's key, and leaves dir empty.
+	dir := t.TempDir()
+	_, err := gitClone(ctx, []string{"clone", "--depth", "1"}, "git@nonexistent.invalid:owner/repo.git", dir)
+	if err == nil || !strings.Contains(err.Error(), "over SSH") || !strings.Contains(err.Error(), "over https") || !strings.Contains(err.Error(), "SSH key on the node") {
+		t.Fatalf("unreachable SSH URL: %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("a failed clone left %d entries behind", len(entries))
+	}
+
+	// Public repo by SSH URL on a node without keys: SSH fails, https works. Needs the network.
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		return
+	}
+	// Like a node without keys: no config, no identities, no agent. (ssh ignores $HOME.)
+	orig := gitSSH
+	gitSSH += " -F /dev/null -o IdentitiesOnly=yes -o IdentityFile=/nonexistent"
+	t.Cleanup(func() { gitSSH = orig })
+	t.Setenv("SSH_AUTH_SOCK", "")
+	used, err := gitClone(ctx, []string{"clone", "--depth", "1"}, "git@github.com:octocat/Hello-World.git", filepath.Join(t.TempDir(), "pub"))
+	if err != nil || used != "https://github.com/octocat/Hello-World.git" {
+		t.Fatalf("public repo, no keys: used %q, %v", used, err)
+	}
+}
