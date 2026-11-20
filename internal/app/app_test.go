@@ -336,3 +336,42 @@ func TestAppBuildNode(t *testing.T) {
 		t.Fatalf("builds %d, spec %+v", len(h.agent.builds), h.agent.specs[2])
 	}
 }
+
+func TestAppImage(t *testing.T) {
+	h := newHub(t, "prod")
+	now := time.Now().UTC()
+	if _, err := h.db.Write.Exec(`INSERT INTO nodes (id, name, roles, token_hash, address, created_at, last_seen)
+		VALUES ('b1', 'builder', 'build', 'hb', '100.64.0.9', ?, ?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []app.CreateInput{
+		{Name: "x", Image: "ghcr.io/a/b:1", RepoURL: "https://example.com/x.git", Port: 80}, // both
+		{Name: "x", Image: "ghcr.io/a/b:1", Branch: "main", Port: 80},                       // nothing to check out
+		{Name: "x", Image: "python:3", Port: 80},                                            // short name: registry lookup
+		{Name: "x", Image: "localhost/walroos-app-web:abc", Port: 80},                       // another app's build
+		{Name: "x", Image: "ghcr.io/a/b:1 --privileged", Port: 80},
+		{Name: "x", Image: "ghcr.io/-a/b", Port: 80},
+		{Name: "x", Port: 80}, // neither
+	} {
+		if code := h.call(t, "POST", "/api/apps", bad, nil); code != 400 {
+			t.Errorf("create %+v: %d", bad, code)
+		}
+	}
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps", app.CreateInput{Name: "img", Image: "docker.io/library/python:3-alpine", Port: 8000}, &a); code != 201 || a.Image != "docker.io/library/python:3-alpine" {
+		t.Fatalf("create: %d %+v", code, a)
+	}
+	if code := h.call(t, "POST", "/api/apps/img/deploy", map[string]string{"sha": "abc1234"}, nil); code != 400 {
+		t.Errorf("deploy an image app at a sha: %d", code)
+	}
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/img/deploy", map[string]string{}, &d)
+	v1 := h.wait(t, "img", d.ID)
+	if s := h.agent.specs[0]; v1.State != "succeeded" || s.Source != "docker.io/library/python:3-alpine" || s.RepoURL != "" || s.Pull != "" || len(h.agent.builds) != 0 {
+		t.Fatalf("v1 = %+v, spec %+v, builds %d", v1, s, len(h.agent.builds)) // pulled on the prod node, never built
+	}
+	h.call(t, "POST", "/api/apps/img/deployments/"+v1.ID+"/rollback", nil, &d)
+	if back := h.wait(t, "img", d.ID); back.State != "succeeded" || h.agent.specs[1].Image != v1.Image {
+		t.Fatalf("rollback = %+v, spec %+v", back, h.agent.specs[1])
+	}
+}

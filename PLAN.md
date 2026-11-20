@@ -268,6 +268,16 @@ Probado:
   - un token sin permiso de túnel ahora da un 502 claro, no un 500;
   - `cloudflared` reintenta cada 10 s (`RestartSec`), porque antes systemd se rendía tras 5 fallos rápidos.
 
+## Apps desde una imagen publicada (2026-11-20)
+
+Una app puede ser una imagen (`ghcr.io/owner/app:tag`) en vez de un repo: sin clone, sin build, sin nodo build. Primer paso para servicios como Immich.
+- `apps.image` (migración 007). Repo **o** imagen, nunca los dos; con imagen no hay branch ni Dockerfile.
+- La imagen tiene que venir con su registry (un host con punto): nada de nombres cortos ni `localhost/` (las builds de otras apps).
+- Cada deploy hace `podman pull` en el nodo prod y etiqueta el id de la imagen como `localhost/walroos-app-<app>:<id12>`. El "sha" del deploy es ese id: el rollback corre esa imagen exacta aunque el tag se haya movido. Deploy con un sha → 400.
+- UI: selector Repository / Published image en "New app"; la tarjeta "Build" pasa a "Source". MCP: `create_app` acepta `image`.
+- Probado: test del hub (validación, sin build aunque haya nodo build, rollback) y podman real (`TestAppSourcePodman`: pull de `nginx:alpine`, redeploy, rollback).
+- Límite (`ponytail:`): el tag original queda en el nodo (el dueño puede usarlo), así que borrar la app deja su imagen actual. Sin `command` por app: la imagen tiene que arrancar su servidor sola.
+
 ## Apps fuera de la LAN (2026-11-19)
 
 Para el homelab: una app expuesta que cae no debe abrir la red de casa. Detalle en ARCHITECTURE.md, "Exponer apps desde un homelab".

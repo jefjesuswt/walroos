@@ -136,7 +136,8 @@ type appIn struct {
 
 type createAppIn struct {
 	Name       string `json:"name" jsonschema:"DNS label: lowercase letters, digits and '-'"`
-	RepoURL    string `json:"repo_url" jsonschema:"git URL of a repo with a Dockerfile (https or git@host:owner/repo)"`
+	RepoURL    string `json:"repo_url,omitempty" jsonschema:"git URL of a repo with a Dockerfile (https or git@host:owner/repo); or set image instead"`
+	Image      string `json:"image,omitempty" jsonschema:"a published image instead of a repo, fully qualified (ghcr.io/owner/app:tag); pulled again on each deploy"`
 	Port       int    `json:"port" jsonschema:"port the container listens on"`
 	Branch     string `json:"branch,omitempty" jsonschema:"branch to build; default branch if empty"`
 	Dockerfile string `json:"dockerfile,omitempty" jsonschema:"path of the Dockerfile in the repo; Dockerfile if empty"`
@@ -146,7 +147,7 @@ type createAppIn struct {
 
 type deployIn struct {
 	Name string `json:"name" jsonschema:"app name"`
-	Sha  string `json:"sha,omitempty" jsonschema:"commit to deploy (7 to 40 hex); empty deploys the branch head"`
+	Sha  string `json:"sha,omitempty" jsonschema:"commit to deploy (7 to 40 hex); empty deploys the branch head, or pulls an image app's tag again"`
 }
 
 type deploymentIn struct {
@@ -192,9 +193,9 @@ func addAppTools(s *sdk.Server, apps *app.Service) {
 		})
 
 	sdk.AddTool(s, &sdk.Tool{Name: "create_app",
-		Description: "Create an app from a git repo with a Dockerfile, on a node with the prod role. Nothing runs until deploy_app."},
+		Description: "Create an app from a git repo with a Dockerfile, or from a published image, on a node with the prod role. Nothing runs until deploy_app."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in createAppIn) (*sdk.CallToolResult, any, error) {
-			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, Dockerfile: in.Dockerfile,
+			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile,
 				Port: in.Port, HealthPath: in.HealthPath, Node: in.Node})
 			return nil, a, err
 		})
