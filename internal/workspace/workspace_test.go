@@ -163,6 +163,7 @@ type hub struct {
 	nodeID  string
 	login   string
 	agentsC *agent.Client
+	svc     *workspace.Service
 }
 
 // newHub wires the same routes as `walroos hub`, on a temp SQLite, with the caller as owner.
@@ -201,7 +202,8 @@ func newHub(t *testing.T, withDevNode bool) *hub {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wsHandler := workspace.NewHandler(workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box))
+	h.svc = workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box)
+	wsHandler := workspace.NewHandler(h.svc)
 
 	r := whttp.NewRouter()
 	fleetHandler.NodeRoutes(r)

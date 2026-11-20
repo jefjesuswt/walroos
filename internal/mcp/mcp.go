@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/app"
@@ -44,6 +45,24 @@ type createIn struct {
 	DevcontainerPath string         `json:"devcontainer_path,omitempty" jsonschema:"path of the repo's devcontainer.json, if not in a standard location"`
 	Devcontainer     map[string]any `json:"devcontainer,omitempty" jsonschema:"devcontainer.json to use instead of the repo's, e.g. the one detect_stack proposes"`
 	Stack            string         `json:"stack,omitempty" jsonschema:"the stack detect_stack returned (android, go, dotnet...), shown in the UI"`
+}
+
+type projectIn struct {
+	Name    string `json:"name" jsonschema:"DNS label: lowercase letters, digits and '-'; also the GitHub repo's name"`
+	Stack   string `json:"stack" jsonschema:"one of the stacks in the tool description"`
+	Version string `json:"version" jsonschema:"one of that stack's versions in the tool description"`
+	GitHub  bool   `json:"github,omitempty" jsonschema:"create the repo on GitHub with the token saved in Settings; false makes a local git repo the user pushes later"`
+	Private bool   `json:"private,omitempty" jsonschema:"with github: make the repo private"`
+	Node    string `json:"node,omitempty" jsonschema:"node name or ID; empty picks the dev node with the fewest workspaces"`
+}
+
+// projectStacks lists what create_project accepts: "go (1.27, 1.26), node (24, 22)".
+func projectStacks() string {
+	var out []string
+	for _, s := range agent.ProjectStacks {
+		out = append(out, fmt.Sprintf("%s (%s)", s.ID, strings.Join(s.Versions, ", ")))
+	}
+	return strings.Join(out, "; ")
 }
 
 func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, login string) *sdk.Server {
@@ -86,6 +105,17 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, l
 			}
 			w, err := ws.Create(ctx, login, workspace.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch,
 				Node: in.Node, DevcontainerPath: in.DevcontainerPath, Devcontainer: dc, Stack: in.Stack})
+			return nil, w, err
+		})
+
+	sdk.AddTool(s, &sdk.Tool{Name: "create_project",
+		Description: "Start a new project that has no repo yet: a workspace whose repo has a .devcontainer/devcontainer.json for the stack and version, " +
+			"and a README. With github=true the hub creates the repo on GitHub and commits them (needs a token in Settings); " +
+			"else the node runs git init and stages them, and the user adds origin later. Stacks and versions: " + projectStacks() + ". " +
+			"Returns in state 'creating'; poll get_workspace like create_workspace."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in projectIn) (*sdk.CallToolResult, any, error) {
+			w, err := ws.CreateProject(ctx, login, workspace.ProjectInput{Name: in.Name, Stack: in.Stack, Version: in.Version,
+				GitHub: in.GitHub, Private: in.Private, Node: in.Node})
 			return nil, w, err
 		})
 

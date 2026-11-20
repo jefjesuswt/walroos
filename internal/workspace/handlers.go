@@ -9,6 +9,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/github"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -32,6 +33,64 @@ func (h *Handler) Routes(r *whttp.Router) {
 	r.Get("/api/workspaces/{name}/env", h.handleGetEnv)
 	r.Put("/api/workspaces/{name}/env", h.handlePutEnv)
 	r.Delete("/api/workspaces/{name}", h.handleDelete)
+
+	r.Get("/api/projects/stacks", h.handleStacks)
+	r.Post("/api/projects", h.handleCreateProject)
+	r.Get("/api/settings/github", h.handleGetGitHub)
+	r.Put("/api/settings/github", h.handlePutGitHub)
+	r.Delete("/api/settings/github", h.handleDeleteGitHub)
+}
+
+func (h *Handler) handleStacks(w http.ResponseWriter, r *http.Request) {
+	whttp.JSON(w, http.StatusOK, agent.ProjectStacks)
+}
+
+func (h *Handler) handleCreateProject(w http.ResponseWriter, r *http.Request) {
+	var in ProjectInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	u, _ := auth.FromContext(r.Context())
+	ws, err := h.svc.CreateProject(r.Context(), u.Login, in)
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusCreated, ws)
+}
+
+func (h *Handler) handleGetGitHub(w http.ResponseWriter, r *http.Request) {
+	st, err := h.svc.GitHub(r.Context())
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusOK, st)
+}
+
+func (h *Handler) handlePutGitHub(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	st, err := h.svc.SetGitHub(r.Context(), in.Token)
+	if err != nil {
+		errorJSON(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusOK, st)
+}
+
+func (h *Handler) handleDeleteGitHub(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.DeleteGitHub(r.Context()); err != nil {
+		errorJSON(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -152,15 +211,17 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrRepoURL), errors.Is(err, ErrStack):
+	case errors.Is(err, ErrInvalid), errors.Is(err, ErrRepoURL), errors.Is(err, ErrStack), errors.Is(err, ErrStackVersion),
+		errors.Is(err, github.ErrToken), errors.Is(err, github.ErrScope):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrRepo):
 		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, ErrNotFound), errors.Is(err, fleet.ErrNodeNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrAgentBusy):
+	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrAgentBusy),
+		errors.Is(err, ErrNoGitHub), errors.Is(err, github.ErrRepoExists):
 		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress):
+	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress), errors.Is(err, github.ErrUnavailable):
 		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())
 	default:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())

@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react';
-import { api, type Detection, type Node, type Workspace } from './api';
+import { useCallback, useEffect, useState } from 'react';
+import { api, type Detection, type GitHub, type Node, type ProjectStack, type Workspace } from './api';
 import { stackLabel } from './stack';
-import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
   const toast = useToast();
@@ -73,7 +73,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                     <span className={`lead${w.state === 'running' ? '' : ' off'}`} aria-hidden="true"><Icon n="workspace" /></span>
                     <div className="cell-stack">
                       <span className="cell-title mono od-nowrap">{w.name}</span>
-                      <span className="cell-sub mono od-truncate" title={w.repo_url}>{repoLabel(w.repo_url)}{w.branch ? ` · ${w.branch}` : ''}</span>
+                      <span className="cell-sub mono od-truncate" title={w.repo_url}>{w.repo_url ? repoLabel(w.repo_url) : 'local git repo'}{w.branch ? ` · ${w.branch}` : ''}</span>
                     </div>
                   </div></td>
                   <td className="hide-sm mono">{w.node_name}</td>
@@ -167,7 +167,25 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
   const [found, setFound] = useState<Detection | null>(null);
   const [off, setOff] = useState<string[]>([]); // postCreate tools turned off
   const [dcText, setDcText] = useState('');     // the devcontainer.json that will be sent, editable
+  const [fresh, setFresh] = useState(false);     // New project: no repo yet
+  const [stacks, setStacks] = useState<ProjectStack[]>([]);
+  const [gh, setGh] = useState<GitHub | null>(null);
+  const [stack, setStack] = useState('');
+  const [version, setVersion] = useState('');
+  const [onGitHub, setOnGitHub] = useState(false);
+  const [priv, setPriv] = useState(true);
   const dev = nodes.filter(n => n.roles.includes('dev') && n.status === 'online');
+
+  useEffect(() => {
+    if (!fresh || stacks.length) return;
+    api.projectStacks().then(list => {
+      setStacks(list);
+      if (list[0]) { setStack(list[0].id); setVersion(list[0].versions[0]); }
+    }, e => setError({ title: "Couldn't load the stacks", msg: e.message }));
+    api.github().then(g => { setGh(g); setOnGitHub(g.configured); }, () => setGh({ configured: false }));
+  }, [fresh, stacks.length]);
+  const chosen = stacks.find(s => s.id === stack);
+  const pickStack = (id: string) => { setStack(id); setVersion(stacks.find(s => s.id === id)?.versions[0] ?? ''); };
 
   const generated = !!found?.devcontainer;
   let dcError = '';
@@ -192,6 +210,12 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
 
   const submit = () => {
     setBusy(true);
+    if (fresh) {
+      api.createProject({ name, stack, version, github: onGitHub, private: priv, node })
+        .then(w => { toast(onGitHub ? `${w.name}: repo created, workspace on its way` : `${w.name} is being created`); onCreated(); },
+          e => { setError({ title: "Couldn't create it", msg: e.message }); setBusy(false); });
+      return;
+    }
     api.createWorkspace({ name, repo_url: repo, branch, devcontainer_path: generated ? '' : dcPath, node, devcontainer: dc, stack: found?.stack })
       .then(w => { toast(`${w.name} is being created`); onCreated(); },
         e => { setError({ title: "Couldn't create it", msg: e.message }); setBusy(false); });
@@ -199,13 +223,70 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
 
   return (
     <Modal title="New workspace" wide onClose={onClose}
-      sub="Cloned from a Git repo and run on a node with the dev role. A devcontainer.json is used when present, else the walroos base image."
+      sub={fresh
+        ? 'A project with no repo yet: it starts with a devcontainer.json for the stack and a README, on a node with the dev role.'
+        : 'Cloned from a Git repo and run on a node with the dev role. A devcontainer.json is used when present, else the walroos base image.'}
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !name || !repo || !!dcError} onClick={submit}>{busy ? 'Creating…' : 'Create workspace'}</button>
+        <button className="btn btn-primary" disabled={busy || !name || (fresh ? !stack || !version : !repo || !!dcError)} onClick={submit}>
+          {busy ? 'Creating…' : fresh ? 'Create project' : 'Create workspace'}
+        </button>
       </>}>
-      {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>{error.title}</strong><span className="muted">{error.msg}</span></div></div>}
+      {error && <ErrorAlert title={error.title} msg={error.msg} />}
       <div className="form">
+        <div className="seg" role="group" aria-label="Source">
+          <button type="button" aria-pressed={!fresh} onClick={() => { setFresh(false); setError(null); }}>{!fresh && <Icon n="check" />}From repo</button>
+          <button type="button" aria-pressed={fresh} onClick={() => { setFresh(true); setError(null); }}>{fresh && <Icon n="check" />}New project</button>
+        </div>
+        {fresh ? <>
+          <Field label="Name" hint={<>DNS label: the repo's name and the SSH user, <span className="mono">{name || 'myproject'}.walroos</span>.</>}>
+            <input key="pname" className="input mono" value={name} onChange={e => setName(e.target.value)} placeholder="myproject" autoFocus />
+          </Field>
+          <div className="field-row">
+            <Field label="Stack">
+              <select className="input" value={stack} onChange={e => pickStack(e.target.value)} disabled={!stacks.length}>
+                {stacks.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </Field>
+            <Field label={chosen?.version_of ? `${chosen.version_of} version` : 'Version'}>
+              <select className="input mono" value={version} onChange={e => setVersion(e.target.value)} disabled={!chosen}>
+                {chosen?.versions.map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </Field>
+          </div>
+          <div className="field">
+            <span className="label" id="where-h">Repository</span>
+            <div className="radio-cards radio-cards-2" role="radiogroup" aria-labelledby="where-h">
+              <label className={`radio-card${gh?.configured ? '' : ' is-off'}`}>
+                <span className="rc-h"><input type="radio" name="where" value="github" aria-label="On GitHub" checked={onGitHub} disabled={!gh?.configured} onChange={() => setOnGitHub(true)} />On GitHub</span>
+                <span className="help">{gh?.configured
+                  ? <>Created as <span className="mono">{gh.login}</span>, with the first commit pushed.</>
+                  : <>Needs a token: add one in <a href="#/settings">Settings</a>.</>}</span>
+              </label>
+              <label className="radio-card">
+                <span className="rc-h"><input type="radio" name="where" value="local" aria-label="Local git repo" checked={!onGitHub} onChange={() => setOnGitHub(false)} />Local git repo</span>
+                <span className="help"><span className="mono">git init</span> on the node with the files staged. Commit, add <span className="mono">origin</span> and push when you're ready.</span>
+              </label>
+            </div>
+          </div>
+          <div className="field-row">
+            {onGitHub && (
+              <Field label="Visibility">
+                <div className="seg" role="group" aria-label="Visibility">
+                  <button type="button" aria-pressed={priv} onClick={() => setPriv(true)}>{priv && <Icon n="check" />}Private</button>
+                  <button type="button" aria-pressed={!priv} onClick={() => setPriv(false)}>{!priv && <Icon n="check" />}Public</button>
+                </div>
+              </Field>
+            )}
+            <Field label="Node" hint={dev.length === 0 ? <span style={{ color: 'var(--bad)' }}>No online node with the dev role.</span> : undefined}>
+              <select className="input" value={node} onChange={e => setNode(e.target.value)}>
+                <option value="">Auto (least loaded)</option>
+                {dev.map(n => <option key={n.id} value={n.name}>{n.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          {onGitHub && priv && <p className="help">The node clones with its own SSH key: for a private repo it needs one with access to your account.</p>}
+        </> : <>
         <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read. Detect proposes a devcontainer for the stack.">
           <div className="input-btn">
             <input className="input mono" value={repo} onChange={e => { setRepo(e.target.value); setFound(null); }} placeholder="git@github.com:me/app.git" autoFocus />
@@ -234,6 +315,7 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
             <input className="input mono" value={dcPath} onChange={e => setDcPath(e.target.value)} placeholder=".devcontainer/devcontainer.json" />
           </Field>
         )}
+        </>}
       </div>
     </Modal>
   );
@@ -323,7 +405,7 @@ function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
         <div className="field">
           <span className="label">On the node</span>
           <span className="help mono od-truncate">{w.node_name} · {w.image || 'image pending'}</span>
-          <span className="help mono od-truncate" title={w.repo_url}>{w.repo_url}{w.branch ? ` (${w.branch})` : ''}</span>
+          <span className="help mono od-truncate" title={w.repo_url}>{w.repo_url || 'Local git repo: add origin and push from inside'}{w.branch ? ` (${w.branch})` : ''}</span>
         </div>
       </div>
     </Modal>

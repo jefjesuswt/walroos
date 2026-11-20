@@ -23,6 +23,8 @@ type Service struct {
 	agents *agent.Client
 	box    *secretbox.Box // encrypts env values at rest
 	now    func() time.Time
+
+	GitHubAPI string // "" = GitHub's; tests point it at a fake
 }
 
 func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
@@ -40,6 +42,12 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	if !RemoteRepo(in.RepoURL) {
 		return Workspace{}, ErrRepoURL
 	}
+	return s.create(ctx, owner, in, nil)
+}
+
+// create is Create once the input is checked; init != nil starts a new project with those files
+// (git init on the node) instead of cloning in.RepoURL.
+func (s *Service) create(ctx context.Context, owner string, in CreateInput, init map[string]string) (Workspace, error) {
 	stack, err := normalizeStack(in.Stack)
 	if err != nil {
 		return Workspace{}, err
@@ -60,7 +68,7 @@ func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Wor
 	}
 
 	ws, err := s.agents.CreateWorkspace(ctx, address, tokenHash, agent.WorkspaceSpec{
-		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath, Devcontainer: in.Devcontainer,
+		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath, Devcontainer: in.Devcontainer, Init: init,
 	}, nil)
 	if err != nil {
 		return Workspace{}, agentErr(err, "create")

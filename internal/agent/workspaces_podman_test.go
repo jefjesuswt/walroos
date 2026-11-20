@@ -809,3 +809,75 @@ func TestWorkspaceHomeRepoLink(t *testing.T) {
 		t.Errorf("the user's file at ~/<repo> after a rebuild: %q, %v", out, err)
 	}
 }
+
+// TestWorkspaceNewProject: with init instead of repo_url the node runs git init, stages the files
+// (not committed: the first commit is the user's), runs the devcontainer among them, and a rebuild
+// keeps the repo without a remote to fall back on.
+func TestWorkspaceNewProject(t *testing.T) {
+	needPodman(t)
+	ctx := context.Background()
+	w := NewWorkspaces()
+
+	for _, bad := range []WorkspaceSpec{
+		{Name: "x", Init: map[string]string{"../escape": "x"}},
+		{Name: "x", Init: map[string]string{"/etc/passwd": "x"}},
+		{Name: "x", RepoURL: "https://github.com/a/b", Init: map[string]string{"README.md": "x"}},
+		{Name: "x"},
+	} {
+		if _, err := w.Create(ctx, bad, nil); !errors.Is(err, ErrInvalidWorkspace) {
+			t.Errorf("create %+v: %v, want ErrInvalidWorkspace", bad, err)
+		}
+	}
+
+	name := testName()
+	t.Cleanup(func() { w.Delete(context.Background(), name) })
+	files := map[string]string{
+		".devcontainer/devcontainer.json": `{"image": "docker.io/library/alpine:3.22"}`,
+		"README.md":                       "# " + name + "\n",
+	}
+	if _, err := w.Create(ctx, WorkspaceSpec{Name: name, Init: files}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ws := waitState(t, w, name, "running")
+	if ws.Folder != "/workspaces/"+name || !strings.HasPrefix(ws.Image, "docker.io/library/alpine") {
+		t.Fatalf("workspace = %+v", ws)
+	}
+	if out, err := podman(ctx, "exec", "-w", ws.Folder, "ws-"+name, "cat", "README.md"); err != nil || out != "# "+name {
+		t.Fatalf("README.md in the container: %q, %v", out, err)
+	}
+
+	repo, err := podman(ctx, "volume", "inspect", "--format", "{{.Mountpoint}}", "ws-"+name+"-src")
+	if err != nil {
+		t.Fatal(err)
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if got := git("status", "--porcelain"); got != "A  .devcontainer/devcontainer.json\nA  README.md" {
+		t.Errorf("git status = %q, want both files staged", got)
+	}
+	if got := git("symbolic-ref", "--short", "HEAD"); got != "main" {
+		t.Errorf("branch = %q, want main", got)
+	}
+	if got := git("remote"); got != "" {
+		t.Errorf("remotes = %q, want none (the user adds origin)", got)
+	}
+
+	// Rebuild: no remote to fall back on, the saved spec is enough; the staged files stay.
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\n")
+	if _, err := w.Rebuild(ctx, name, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitState(t, w, name, "running")
+	if out, err := podman(ctx, "exec", "-w", ws.Folder, "ws-"+name, "ls"); err != nil || !strings.Contains(out, "main.go") {
+		t.Errorf("after rebuild ls = %q, %v", out, err)
+	}
+	if got := git("status", "--porcelain"); !strings.Contains(got, "A  README.md") {
+		t.Errorf("after rebuild git status = %q", got)
+	}
+}

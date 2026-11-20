@@ -104,6 +104,18 @@ Plan y estado en [docs/devcontainer-detection.md](docs/devcontainer-detection.md
 
 **Probado en real** (2026-11-18, Arch con internet, hub y nodo `build` por la tailnet): `POST /api/workspaces/detect` de droid en 1,2 s (android, `java:17`, `vscode`, SDK 37 / build-tools 36), workspace `droid-e2e` con ese devcontainer `running` en 40 s (imagen en caché), y `./gradlew assemblePublicDebug` → `BUILD SUCCESSFUL` en 5 min 24 s con el APK generado.
 
+## Proyecto nuevo desde cero (2026-11-20)
+
+"New workspace" tiene dos modos: **From repo** (lo de siempre) y **New project**: nombre, stack y versión (`GET /api/projects/stacks`, sale de `agent.ProjectStacks`: Go, Node.js, Bun sobre Node, Python, .NET, Java, Rust). La tabla stack → imagen (`stackImages` en `internal/agent/detect.go`) es la misma que usa la detección.
+
+- `POST /api/projects` (y la herramienta MCP `create_project`). Genera `.devcontainer/devcontainer.json` (imagen de devcontainers con la versión elegida; Bun la instala en `postCreateCommand`) y un README mínimo.
+- **Con GitHub** (`github: true`, privado o público): el hub crea el repo en la cuenta del token (`POST /user/repos`) y hace **un solo commit raíz** con los dos archivos (un repo vacío no tiene base de datos git: el primer archivo va por la API de contenidos y luego un árbol con todo reemplaza ese commit). Después el workspace se crea como siempre desde `ssh_url`.
+- **Sin token** (`github: false`): el agente hace `git init -b main` en el volumen y deja los archivos en *stage*, sin commit (el primer commit es del usuario, con su nombre). `origin` lo añade el usuario. El rebuild funciona sin remoto (lee el spec guardado) y la carpeta es `/workspaces/<nombre>`.
+- Token: Settings → GitHub (`GET/PUT/DELETE /api/settings/github`), en la tabla `settings` cifrado como el de Cloudflare, sin migración nueva. Al guardarlo se valida con `GET /user`; un token clásico sin `repo`/`public_repo` se rechaza; uno fine-grained se prueba al crear.
+- Errores: nombre inválido, stack o versión desconocidos, token rechazado o sin permisos → 400; sin token, repo ya existente en GitHub, workspace ya existente, sin nodo → 409; GitHub caído o con rate limit → 502. Nombre, stack y nodo se comprueban **antes** de crear el repo, para no dejarlo huérfano.
+- Probado: tests de integración con un GitHub falso (caminos felices y tristes) y `TestWorkspaceNewProject` con podman real. **Sin probar contra GitHub real.**
+- Límites (`ponytail:`): si el primer commit o el workspace fallan después de crear el repo, el repo se queda (borrarlo pide otro scope); el error lo dice y se recupera con From repo. Un repo privado se clona con la clave SSH del nodo, como cualquier repo privado.
+
 ## M2 — MCP ✅ (2026-11-18)
 
 `/mcp` en el hub (`internal/mcp`, `modelcontextprotocol/go-sdk` v1.8), streamable HTTP **stateless** con respuestas JSON: cada petición arma un servidor ligado al usuario de la petición (el owner al crear), sin sesiones que guardar. Va detrás del mismo middleware que la API (WhoIs + allowlist); sin API tokens: los clientes MCP ya están en la tailnet, los tokens llegan con M4 para CI. `GET`/`DELETE /mcp` responden 405 (sin eso caían en el `index.html` de la SPA).
