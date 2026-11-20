@@ -301,3 +301,48 @@ func TestAppBuildPullPodman(t *testing.T) {
 		t.Errorf("images left: %q", out) // no 127.0.0.1:<port>/... tags
 	}
 }
+
+// TestAppSourcePodman deploys a published image (pulled, not built), redeploys it (same image,
+// new release) and rolls back to it by its own tag. Needs internet on the host for the pull.
+func TestAppSourcePodman(t *testing.T) {
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1")
+	}
+	ctx := context.Background()
+	t.Setenv("WALROOS_TEST_RELAY", "1")
+	healthTimeout = 30 * time.Second
+	a := NewApps()
+	a.relay = []string{os.Args[0]}
+	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
+	t.Cleanup(func() { a.Delete(context.Background(), name) })
+	live := func(container string) {
+		t.Helper()
+		mine, err := a.List(ctx)
+		mine = appsNamed(mine, name)
+		if code, gerr := a.get(ctx, container, "127.0.0.1:80", "/"); err != nil || len(mine) != 1 || mine[0].Container != container || code != 200 {
+			t.Fatalf("releases %+v %v; %s answers %d %v", mine, err, container, code, gerr)
+		}
+	}
+
+	var log strings.Builder
+	spec := AppSpec{Name: name, ID: "s1", Source: "docker.io/library/nginx:alpine", Port: 80}
+	v1, err := a.Deploy(ctx, spec, &log)
+	if err != nil {
+		t.Fatalf("deploy: %v\n%s", err, log.String())
+	}
+	if len(v1.Sha) != 12 || v1.Image != "localhost/walroos-app-"+name+":"+v1.Sha || strings.Contains(log.String(), "building") {
+		t.Fatalf("v1 = %+v\n%s", v1, log.String())
+	}
+	live(v1.Container)
+
+	spec.ID = "s2"
+	v2, err := a.Deploy(ctx, spec, io.Discard)
+	if err != nil || v2.Image != v1.Image {
+		t.Fatalf("redeploy: %+v %v", v2, err) // the tag didn't move: same image
+	}
+	back, err := a.Deploy(ctx, AppSpec{Name: name, ID: "s3", Image: v1.Image, Source: spec.Source, Port: 80}, &log)
+	if err != nil || back.Sha != v1.Sha {
+		t.Fatalf("rollback: %+v %v\n%s", back, err, log.String())
+	}
+	live(back.Container)
+}

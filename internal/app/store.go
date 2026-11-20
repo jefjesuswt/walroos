@@ -25,21 +25,21 @@ func NewStore(db *config.Database) *Store {
 
 func (s *Store) Insert(ctx context.Context, a App) error {
 	_, err := s.db.Write.ExecContext(ctx,
-		`INSERT INTO apps (id, name, node_id, repo_url, branch, dockerfile, port, health_path, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.NodeID, a.RepoURL, a.Branch, a.Dockerfile, a.Port, a.HealthPath, a.CreatedAt)
+		`INSERT INTO apps (id, name, node_id, repo_url, image, branch, dockerfile, port, health_path, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.NodeID, a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath, a.CreatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: apps.name") {
 		return ErrExists
 	}
 	return err
 }
 
-const appCols = `a.id, a.name, a.node_id, n.name, a.repo_url, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
+const appCols = `a.id, a.name, a.node_id, n.name, a.repo_url, a.image, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
 	FROM apps a JOIN nodes n ON n.id = a.node_id`
 
 func scanApp(row interface{ Scan(...any) error }) (App, error) {
 	var a App
-	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.RepoURL, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.RepoURL, &a.Image, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
 	return a, err
 }
 

@@ -35,10 +35,12 @@ const (
 var healthTimeout = 90 * time.Second // tests shorten it
 
 // AppSpec is one deploy. Image set means rollback: run that image, skip clone and build.
+// Source set means a published image: pull it instead of cloning and building.
 type AppSpec struct {
 	Name       string   `json:"name"`
 	ID         string   `json:"id"` // deployment id from the hub; the container is <name>-<id>
 	RepoURL    string   `json:"repo_url"`
+	Source     string   `json:"source,omitempty"` // a published image (registry/repo:tag), instead of RepoURL
 	Branch     string   `json:"branch"`
 	Sha        string   `json:"sha"`        // "" deploys the branch head
 	Dockerfile string   `json:"dockerfile"` // relative to the repo; default Dockerfile
@@ -90,6 +92,9 @@ var (
 	refRe        = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]{0,199}$`)    // branch, dockerfile: no leading "-" (git/podman options)
 	healthPathRe = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,511}$`) // goes into the raw HTTP request line
 	tokenRe      = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// A fully qualified image: a registry host with a dot (no short-name lookup, no localhost),
+	// then a lowercase repo path, an optional tag and an optional digest.
+	imageRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+)+(:[0-9]{1,5})?/[a-z0-9]+((\.|_|__|-+|/)[a-z0-9]+)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[0-9a-f]{64})?$`)
 )
 
 // Valid reports whether spec is safe to hand to git, podman and the health check. The hub
@@ -99,7 +104,8 @@ func (spec AppSpec) Valid() bool {
 	ownImage := "localhost/walroos-app-" + spec.Name + ":"
 	tag, isOwn := strings.CutPrefix(spec.Image, ownImage)
 	return workspaceNameRe.MatchString(spec.Name) && deployIDRe.MatchString(spec.ID) && spec.Port >= 1 && spec.Port <= 65535 &&
-		(spec.RepoURL != "" || spec.Image != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
+		(spec.RepoURL != "" || spec.Image != "" || spec.Source != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
+		(spec.Source == "" || len(spec.Source) <= 255 && imageRe.MatchString(spec.Source) && spec.RepoURL == "" && spec.Pull == "") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
 		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) && // rollback runs only this app's own builds
 		(spec.Pull == "" || validHostPort(spec.Pull) && tokenRe.MatchString(spec.PullToken) && len(spec.Sha) >= 12 && spec.Image == "")
@@ -131,6 +137,10 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 	rel := Release{Image: spec.Image, Container: spec.Name + "-" + spec.ID}
 	if spec.Pull != "" {
 		if rel.Sha, rel.Image, err = a.pull(ctx, spec, log); err != nil {
+			return Release{}, err
+		}
+	} else if spec.Image == "" && spec.Source != "" {
+		if rel.Sha, rel.Image, err = pullSource(ctx, spec, log); err != nil {
 			return Release{}, err
 		}
 	} else if spec.Image == "" {
@@ -209,6 +219,26 @@ func build(ctx context.Context, spec AppSpec, log io.Writer) (sha, image string,
 		return "", "", fmt.Errorf("podman build: %w", err)
 	}
 	return sha, image, nil
+}
+
+// pullSource pulls the published image and tags it as this app's own, by image id: rollback
+// then runs that exact image even after the source tag moves.
+func pullSource(ctx context.Context, spec AppSpec, log io.Writer) (sha, image string, err error) {
+	fmt.Fprintf(log, "pulling %s\n", spec.Source)
+	id, err := podman(ctx, "pull", "--quiet", "docker://"+spec.Source)
+	if err != nil {
+		return "", "", err
+	}
+	if !tokenRe.MatchString(id) { // 64 hex: an image id
+		return "", "", fmt.Errorf("podman pull: unexpected output %q", id)
+	}
+	image = "localhost/walroos-app-" + spec.Name + ":" + id[:12]
+	if _, err := podman(ctx, "tag", id, image); err != nil {
+		return "", "", err
+	}
+	// ponytail: the source tag stays (the owner may use it too), so deleting the app leaves its
+	// current image; older ones only have our tag and pruneImages frees them.
+	return id[:12], image, nil
 }
 
 // start writes the Quadlet for rel (and its env file) and starts the unit systemd generates.
