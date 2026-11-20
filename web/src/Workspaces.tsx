@@ -316,6 +316,8 @@ function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
           </> : (
             <span className="help">Connect to <span className="mono">{alias}</span> and open <span className="mono">/workspaces/&lt;repo&gt;</span> (the node didn't answer, so the exact folder isn't known).</span>
           )}
+          <span className="help">Zed's <em>Open Remote</em> lists every workspace with its repo after this (run it again when you add one):</span>
+          <Cmd text={`walroos ssh-config --hub ${window.location.host} --zed --write`} />
           <span className="help">Claude Code: Remote-SSH to <span className="mono">{alias}</span>. Ports: <span className="mono">ssh -L 3000:localhost:3000 {alias}</span>.</span>
         </div>
         <div className="field">
