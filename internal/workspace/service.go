@@ -168,7 +168,14 @@ func (s *Service) List(ctx context.Context) ([]Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A node that stopped sending heartbeats isn't called at all: its rows show as last known.
+	// One that's "online" but doesn't answer is skipped after its first failure.
 	down := map[string]bool{}
+	if online, err := s.nodes.Online(ctx); err == nil {
+		for _, w := range list {
+			down[w.NodeID] = !online[w.NodeID]
+		}
+	}
 	for i := range list {
 		if down[list[i].NodeID] {
 			continue
@@ -189,6 +196,9 @@ func (s *Service) Get(ctx context.Context, name string) (Workspace, error) {
 	w, err := s.store.Get(ctx, name)
 	if err != nil {
 		return w, err
+	}
+	if online, err := s.nodes.Online(ctx); err == nil && !online[w.NodeID] {
+		return w, nil // node down: last known row, no agent timeout
 	}
 	if fresh, err := s.refresh(ctx, w); err == nil {
 		return fresh, nil
