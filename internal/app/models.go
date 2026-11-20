@@ -14,7 +14,7 @@ var (
 	ErrNotFound       = errors.New("app not found")
 	ErrDeployNotFound = errors.New("deployment not found")
 	ErrExists         = errors.New("an app with that name already exists")
-	ErrInvalid        = errors.New("name must be a DNS label, repo_url a remote git URL, port 1-65535, sha hex, branch and dockerfile without spaces or a leading '-', health_path a URL path")
+	ErrInvalid        = errors.New("name must be a DNS label, repo_url a remote git URL or image a fully qualified image (registry.example.com/repo:tag) but not both, port 1-65535, sha hex, branch and dockerfile without spaces or a leading '-', health_path a URL path")
 	ErrNoNode         = errors.New("no online node with the prod role; join one with `walroos node join --roles prod`")
 	ErrNodeRole       = errors.New("the chosen node doesn't have the prod role")
 	ErrNoImage        = errors.New("only a succeeded deployment can be rolled back to")
@@ -28,6 +28,7 @@ type App struct {
 	NodeID     string      `json:"node_id"`
 	NodeName   string      `json:"node_name"`
 	RepoURL    string      `json:"repo_url"`
+	Image      string      `json:"image"` // a published image, instead of RepoURL: pulled on each deploy
 	Branch     string      `json:"branch"`
 	Dockerfile string      `json:"dockerfile"`
 	Port       int         `json:"port"`
@@ -43,6 +44,7 @@ type App struct {
 type CreateInput struct {
 	Name       string `json:"name"`
 	RepoURL    string `json:"repo_url"`
+	Image      string `json:"image"` // or a published image; then no branch, dockerfile or build
 	Branch     string `json:"branch"`
 	Dockerfile string `json:"dockerfile"`
 	Port       int    `json:"port"`

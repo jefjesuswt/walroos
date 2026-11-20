@@ -25,6 +25,7 @@ function duration(d: Deployment): string {
 
 // github.com/me/app(.git) → me/app
 const repoLabel = (url: string) => url.replace(/\.git$/, '').match(/(?:[:/])([^/]+\/[^/]+)$/)?.[1] ?? url;
+const source = (a: App) => a.image || `${repoLabel(a.repo_url)}${a.branch ? ` · ${a.branch}` : ''}`;
 
 /* ---------- list ---------- */
 export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
@@ -52,7 +53,7 @@ export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen
         </div>
       ) : list.length === 0 ? (
         <EmptyState icon="apps" title="No apps yet"
-          text="An app is a Git repo with a Dockerfile, built and run on a node with the prod role. New releases replace the old one only once they answer."
+          text="An app is a Git repo with a Dockerfile, or a published image, run on a node with the prod role. New releases replace the old one only once they answer."
           action={<button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="plus" />New app</button>} />
       ) : (
         <div className="grid-cards">
@@ -61,7 +62,7 @@ export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen
             return (
               <article key={a.id} className="card app-card" onClick={() => { location.hash = `#/apps/${a.name}`; }}>
                 <div className="ac-head"><a className="cell-title mono" href={`#/apps/${a.name}`}>{a.name}</a><Badge s={s} label={label} /></div>
-                <span className="cell-sub mono od-truncate" title={a.repo_url}>{repoLabel(a.repo_url)}{a.branch ? ` · ${a.branch}` : ''}</span>
+                <span className="cell-sub mono od-truncate" title={a.image || a.repo_url}>{source(a)}</span>
                 <div className="od-cluster"><span className="chip"><Icon n="nodes" /><span className="mono">{a.node_name}</span></span><span className="chip mono">:{a.port}</span></div>
                 {d && (
                   <div className="ac-last">
@@ -116,7 +117,7 @@ export function AppDetail({ name }: { name: string }) {
           <div className="title-row"><h1 className="mono">{a.name}</h1><Badge s={s} label={label} /></div>
           <div className="ph-meta">
             <span><Icon n="nodes" /><span className="mono">{a.node_name}</span></span>
-            <span className="mono od-truncate" title={a.repo_url}>{repoLabel(a.repo_url)}{a.branch ? ` · ${a.branch}` : ''}</span>
+            <span className="mono od-truncate" title={a.image || a.repo_url}>{source(a)}</span>
             {a.running && <span>live <span className="sha">{short(a.running.sha)}</span></span>}
           </div>
         </div>
@@ -136,18 +137,18 @@ export function AppDetail({ name }: { name: string }) {
       <section className="section" aria-labelledby="deps-h">
         <div className="section-head"><h2 id="deps-h">Deployments</h2></div>
         {deps.length === 0 ? (
-          <div className="card card-pad muted">Nothing deployed yet. <strong>Deploy</strong> builds the branch head on {a.node_name}.</div>
+          <div className="card card-pad muted">Nothing deployed yet. <strong>Deploy</strong> {a.image ? 'pulls the image' : 'builds the branch head'} on {a.node_name}.</div>
         ) : (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>State</th><th>Commit</th><th className="hide-sm">Duration</th><th className="hide-xs">When</th></tr></thead>
+              <thead><tr><th>State</th><th>{a.image ? 'Image' : 'Commit'}</th><th className="hide-sm">Duration</th><th className="hide-xs">When</th></tr></thead>
               <tbody>
                 {deps.map(d => (
                   <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => setOpen(d.id)}>
                     <td><Badge s={d.state} /></td>
                     <td><div className="cell-stack">
                       <span className="od-row">
-                        <button className="sha link-btn" aria-label={`Log of deployment ${d.id}`}>{short(d.sha) || 'branch head'}</button>
+                        <button className="sha link-btn" aria-label={`Log of deployment ${d.id}`}>{short(d.sha) || (a.image ? 'pull' : 'branch head')}</button>
                         {isCurrent(a, d) && <span className="tag-current">current</span>}
                       </span>
                       {d.state === 'failed' && d.error && <span className="cell-sub od-truncate err-line" style={{ maxWidth: 'min(360px, 40vw)' }} title={d.error}>{d.error}</span>}
@@ -179,12 +180,14 @@ export function AppDetail({ name }: { name: string }) {
       <RuntimeLogs app={a} />
 
       <section className="card" aria-labelledby="build-h">
-        <div className="card-head"><div><h2 id="build-h">Build</h2><p className="muted">Recreate the app to change these.</p></div></div>
+        <div className="card-head"><div><h2 id="build-h">{a.image ? 'Source' : 'Build'}</h2><p className="muted">Recreate the app to change these.</p></div></div>
         <div className="card-body">
           <dl className="kv">
-            <dt>Repository</dt><dd className="mono">{a.repo_url}</dd>
-            <dt>Branch</dt><dd className="mono">{a.branch || 'default branch'}</dd>
-            <dt>Dockerfile</dt><dd className="mono">{a.dockerfile || 'Dockerfile'}</dd>
+            {a.image ? <><dt>Published image</dt><dd className="mono">{a.image}</dd></> : <>
+              <dt>Repository</dt><dd className="mono">{a.repo_url}</dd>
+              <dt>Branch</dt><dd className="mono">{a.branch || 'default branch'}</dd>
+              <dt>Dockerfile</dt><dd className="mono">{a.dockerfile || 'Dockerfile'}</dd>
+            </>}
             <dt>Port</dt><dd className="mono">{a.port}</dd>
             <dt>Health check</dt><dd className="mono">GET {a.health_path || '/'} → 2xx/3xx within 90 s</dd>
             <dt>Container</dt><dd className="mono">{a.running?.container ?? '—'}</dd>
@@ -369,15 +372,15 @@ function DeployModal({ app, onClose, onQueued }: { app: App; onClose: () => void
   };
   return (
     <Modal title={`Deploy ${app.name}`} onClose={onClose}
-      sub={`Builds on ${app.node_name} and starts next to the running release; the old one stops only once the new one answers.`}
+      sub={`${app.image ? `Pulls ${app.image}` : 'Builds'} on ${app.node_name} and starts next to the running release; the old one stops only once the new one answers.`}
       foot={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy} onClick={submit}><Icon n="deploy" />{busy ? 'Queuing…' : 'Deploy'}</button></>}>
       {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't queue it</strong><span className="muted">{error}</span></div></div>}
-      <div className="form">
+      {!app.image && <div className="form">
         <Field label={<>Commit <span className="muted">(optional)</span></>} hint={<>Empty deploys the head of <span className="mono">{app.branch || 'the default branch'}</span>. A SHA (7 to 40 hex) pins a commit.</>}>
           <input className="input mono" value={sha} onChange={e => setSha(e.target.value)} placeholder="branch head" autoFocus
             onKeyDown={e => e.key === 'Enter' && !busy && submit()} />
         </Field>
-      </div>
+      </div>}
     </Modal>
   );
 }
@@ -385,17 +388,19 @@ function DeployModal({ app, onClose, onQueued }: { app: App; onClose: () => void
 function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (a: App) => void }) {
   const toast = useToast();
   const [nodes, setNodes] = useState<Node[]>([]);
-  const [f, setF] = useState({ name: '', repo_url: '', branch: '', dockerfile: '', port: '', health_path: '', node: '' });
+  const [f, setF] = useState({ name: '', repo_url: '', image: '', branch: '', dockerfile: '', port: '', health_path: '', node: '' });
+  const [fromImage, setFromImage] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { api.nodes().then(setNodes, () => undefined); }, []);
   const prod = nodes.filter(n => n.roles.includes('prod'));
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
   const port = Number(f.port);
+  const src = fromImage ? f.image : f.repo_url;
 
   const submit = (deploy: boolean) => {
     setBusy(true);
-    api.createApp({ ...f, port })
+    api.createApp(fromImage ? { name: f.name, image: f.image.trim(), port, health_path: f.health_path, node: f.node } : { ...f, image: '', port })
       .then(async a => {
         if (deploy) await api.deployApp(a.name).catch(e => toast(e.message, 'bad'));
         toast(deploy ? `${a.name} created, deploying` : `${a.name} created`);
@@ -405,32 +410,42 @@ function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   return (
     <Modal title="New app" wide onClose={onClose}
-      sub="Cloned on a node with the prod role and built from its Dockerfile. It joins the walroos network and publishes no host ports."
+      sub={`${fromImage ? 'Pulled on a node with the prod role, again on each deploy' : 'Cloned on a node with the prod role and built from its Dockerfile'}. It joins the walroos network and publishes no host ports.`}
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn" disabled={busy || !f.name || !f.repo_url || !port} onClick={() => submit(false)}>Create</button>
-        <button className="btn btn-primary" disabled={busy || !f.name || !f.repo_url || !port || prod.every(n => n.status !== 'online')} onClick={() => submit(true)}>
+        <button className="btn" disabled={busy || !f.name || !src || !port} onClick={() => submit(false)}>Create</button>
+        <button className="btn btn-primary" disabled={busy || !f.name || !src || !port || prod.every(n => n.status !== 'online')} onClick={() => submit(true)}>
           <Icon n="deploy" />{busy ? 'Creating…' : 'Create and deploy'}
         </button>
       </>}>
       {error && <div className="alert alert-bad" role="alert"><Icon n="alert" /><div className="alert-text"><strong>Couldn't create it</strong><span className="muted">{error}</span></div></div>}
       <div className="form">
-        <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read.">
-          <input className="input mono" value={f.repo_url} onChange={set('repo_url')} placeholder="https://github.com/me/app.git" autoFocus />
-        </Field>
+        <div className="seg" role="group" aria-label="Source">
+          <button aria-pressed={!fromImage} onClick={() => setFromImage(false)}>{!fromImage && <Icon n="check" />}Repository</button>
+          <button aria-pressed={fromImage} onClick={() => setFromImage(true)}>{fromImage && <Icon n="check" />}Published image</button>
+        </div>
+        {fromImage ? (
+          <Field label="Image" hint="Fully qualified, with its registry. The node pulls it on each deploy; a rollback runs the exact image it got then.">
+            <input key="image" className="input mono" value={f.image} onChange={set('image')} placeholder="ghcr.io/owner/app:latest" autoFocus />
+          </Field>
+        ) : (
+          <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read.">
+            <input key="repo" className="input mono" value={f.repo_url} onChange={set('repo_url')} placeholder="https://github.com/me/app.git" autoFocus />
+          </Field>
+        )}
         <div className="field-row">
           <Field label="Name" hint="DNS label; containers are named after it.">
             <input className="input mono" value={f.name} onChange={set('name')} placeholder="my-app"
-              onFocus={() => !f.name && f.repo_url && setF(x => ({ ...x, name: suggestName(x.repo_url) }))} />
+              onFocus={() => !f.name && src && setF(x => ({ ...x, name: suggestName(fromImage ? x.image.replace(/[:@][^/]*$/, '') : x.repo_url) }))} />
           </Field>
           <Field label="Port" hint="What the container listens on.">
             <input className="input mono" value={f.port} onChange={set('port')} placeholder="3000" inputMode="numeric" />
           </Field>
         </div>
         <div className="field-row">
-          <Field label={<>Branch <span className="muted">(optional)</span></>}>
+          {!fromImage && <Field label={<>Branch <span className="muted">(optional)</span></>}>
             <input className="input mono" value={f.branch} onChange={set('branch')} placeholder="default branch" />
-          </Field>
+          </Field>}
           <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role. Join one with <span className="mono">--roles prod</span>.</span> : undefined}>
             <select className="input" value={f.node} onChange={set('node')}>
               <option value="">Auto (first online)</option>
@@ -439,9 +454,9 @@ function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           </Field>
         </div>
         <div className="field-row">
-          <Field label={<>Dockerfile <span className="muted">(optional)</span></>}>
+          {!fromImage && <Field label={<>Dockerfile <span className="muted">(optional)</span></>}>
             <input className="input mono" value={f.dockerfile} onChange={set('dockerfile')} placeholder="Dockerfile" />
-          </Field>
+          </Field>}
           <Field label={<>Health check path <span className="muted">(optional)</span></>} hint="Must answer 2xx or 3xx within 90 s.">
             <input className="input mono" value={f.health_path} onChange={set('health_path')} placeholder="/" />
           </Field>

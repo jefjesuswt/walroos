@@ -37,8 +37,10 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
-	spec := agent.AppSpec{Name: in.Name, ID: "x", RepoURL: in.RepoURL, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
-	if !nameRe.MatchString(in.Name) || !workspace.RemoteRepo(in.RepoURL) || !spec.Valid() {
+	spec := agent.AppSpec{Name: in.Name, ID: "x", RepoURL: in.RepoURL, Source: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
+	fromRepo := in.Image == "" && workspace.RemoteRepo(in.RepoURL)
+	fromImage := in.Image != "" && in.RepoURL == "" && in.Branch == "" && in.Dockerfile == ""
+	if !nameRe.MatchString(in.Name) || !(fromRepo || fromImage) || !spec.Valid() {
 		return App{}, ErrInvalid
 	}
 	node, err := s.pickNode(ctx, in.Node)
@@ -46,7 +48,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 		return App{}, err
 	}
 	a := App{
-		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, RepoURL: in.RepoURL, Branch: in.Branch,
+		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
 		Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
@@ -198,13 +200,14 @@ func (s *Service) Logs(ctx context.Context, name string, lines int) (string, err
 	return logs, err
 }
 
-// Deploy queues a deployment of sha ("" = the branch head).
+// Deploy queues a deployment of sha ("" = the branch head; always "" for an image app,
+// which pulls its tag again).
 func (s *Service) Deploy(ctx context.Context, name, sha string) (Deployment, error) {
 	a, err := s.store.Get(ctx, name)
 	if err != nil {
 		return Deployment{}, err
 	}
-	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Port: a.Port, Sha: sha}).Valid() {
+	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Source: a.Image, Port: a.Port, Sha: sha}).Valid() || a.Image != "" && sha != "" {
 		return Deployment{}, ErrInvalid
 	}
 	return s.enqueue(ctx, Deployment{AppID: a.ID, Sha: sha})
@@ -310,10 +313,10 @@ func (s *Service) run(ctx context.Context, d Deployment) {
 	defer cancel()
 	log := func(line string) { s.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
-		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
+		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
 		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image,
 	}
-	if b, ok := s.builder(ctx, a.NodeID); ok && d.Image == "" {
+	if b, ok := s.builder(ctx, a.NodeID); ok && d.Image == "" && a.Image == "" {
 		baddr, bhash, err := s.nodes.AgentTarget(ctx, b.ID)
 		if err != nil {
 			fail(err)

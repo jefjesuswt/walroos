@@ -135,7 +135,8 @@ export interface App {
   name: string;
   node_id: string;
   node_name: string;
-  repo_url: string;
+  repo_url: string; // '' when image is set
+  image: string; // a published image, pulled on each deploy, instead of a repo
   branch: string;
   dockerfile: string;
   port: number;
@@ -149,7 +150,8 @@ export interface App {
 
 export interface NewApp {
   name: string;
-  repo_url: string;
+  repo_url?: string;
+  image?: string; // instead of repo_url
   branch?: string;
   dockerfile?: string;
   port: number;
