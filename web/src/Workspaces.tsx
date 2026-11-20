@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { api, type Detection, type Node, type Workspace } from './api';
+import { stackLabel } from './stack';
 import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, Field, Icon, Modal, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
@@ -62,7 +63,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
           <table className="tbl">
             <thead><tr>
               <th>Workspace</th><th className="hide-sm">Node</th><th>State</th>
-              <th className="hide-lg">Image</th><th className="hide-sm">Created</th>
+              <th className="hide-lg">Stack</th><th className="hide-sm">Created</th>
               <th className="hide-xs"><span className="sr-only">Actions</span></th><th className="show-xs"><span className="sr-only">More</span></th>
             </tr></thead>
             <tbody>
@@ -81,7 +82,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                       <div className="cell-sub od-truncate err-line" title={w.error}>{w.error}</div>
                     )}
                   </td>
-                  <td className="hide-lg mono od-truncate" style={{ maxWidth: 220 }} title={w.image}>{w.image || <span className="muted">—</span>}</td>
+                  <td className="hide-lg od-nowrap" title={w.image}>{stackLabel(w.stack, w.image) || <span className="muted">—</span>}</td>
                   <td className="hide-sm muted od-nowrap">{ago(w.created_at)}</td>
                   <td className="ta-r od-nowrap hide-xs">
                     <button className="btn-icon" title="Connect" aria-label={`Connect to ${w.name}`} onClick={() => setConnecting(w)}><Icon n="plug" /></button>
@@ -191,7 +192,7 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
 
   const submit = () => {
     setBusy(true);
-    api.createWorkspace({ name, repo_url: repo, branch, devcontainer_path: generated ? '' : dcPath, node, devcontainer: dc })
+    api.createWorkspace({ name, repo_url: repo, branch, devcontainer_path: generated ? '' : dcPath, node, devcontainer: dc, stack: found?.stack })
       .then(w => { toast(`${w.name} is being created`); onCreated(); },
         e => { setError({ title: "Couldn't create it", msg: e.message }); setBusy(false); });
   };
@@ -297,7 +298,8 @@ function ConnectModal({ w, onClose }: { w: Workspace; onClose: () => void }) {
       <div className="form">
         <div className="field">
           <span className="label">1 · SSH config, once per machine</span>
-          <Cmd text="walroos ssh-config >> ~/.ssh/config" />
+          {/* The CLI defaults to walroos-hub; the hub you opened this page on may have another name. */}
+          <Cmd text={`walroos ssh-config --hub ${window.location.host} >> ~/.ssh/config`} />
           <span className="help">With <span className="mono">tailscaled</span> in userspace mode, add <span className="mono">--proxy localhost:1055</span>.</span>
         </div>
         <div className="field">

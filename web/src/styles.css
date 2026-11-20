@@ -190,11 +190,11 @@ body.sb-collapsed .sb-foot { padding-inline: 0; align-items: center; }
   height: var(--top); display: flex; align-items: center; gap: var(--sp3);
   padding: 0 var(--sp6);
   background: var(--bg);
-  transition: top var(--dur) var(--ease), background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
-/* `top`, not a transform: a transform would become the containing block of the mobile FAB */
-body.scrolled .topbar { background: var(--s1); box-shadow: 0 1px 0 var(--bd); }
-body.tb-hidden .topbar { top: calc(-1 * var(--top) - 1px); }
+/* App.tsx moves it with `top` while scrolling (no transition: it tracks the finger) and only
+   animates the final settle. `top`, not a transform: a transform would become the containing
+   block of the mobile FAB. */
+.topbar.tb-settling { transition: top var(--dur) var(--ease); }
 .crumbs { display: flex; align-items: center; gap: var(--sp2); min-width: 0; flex: 1 1 0; font-size: var(--fs-sm); color: var(--tx2); }
 .crumbs ol { display: flex; align-items: center; gap: var(--sp2); list-style: none; margin: 0; padding: 0; min-width: 0; }
 .crumbs li { display: flex; align-items: center; gap: var(--sp2); min-width: 0; white-space: nowrap; }

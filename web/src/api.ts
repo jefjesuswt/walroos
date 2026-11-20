@@ -45,6 +45,7 @@ export interface Workspace {
   branch: string;
   devcontainer_path: string;
   image?: string;
+  stack?: string; // what detect found at create time (android, go…); absent = unknown
   state: WorkspaceState;
   error?: string;
   created_at: string;
@@ -57,6 +58,7 @@ export interface NewWorkspace {
   devcontainer_path?: string;
   node?: string;
   devcontainer?: Record<string, unknown>; // inline devcontainer.json; wins over the repo's
+  stack?: string; // Detection.stack, stored for display
 }
 
 // What POST /api/workspaces/detect proposes for a repo.

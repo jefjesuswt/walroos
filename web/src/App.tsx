@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type User } from './api';
 import { AppDetail, AppsPage, DeploymentsPage } from './Apps';
 import { NodesPage } from './Nodes';
@@ -56,18 +56,41 @@ export function App() {
 
   useEffect(() => { document.body.classList.toggle('drawer-open', drawer); }, [drawer]);
 
-  // The top bar gets a surface once content scrolls under it, hides while scrolling down and
-  // comes back on the way up.
+  // Material 3 "enter always" top app bar, like Compose's enterAlwaysScrollBehavior: the bar
+  // follows the scroll pixel for pixel (scroll down 20px, it slides up 20px; scroll back up, it
+  // comes back the same way), and when scrolling stops it settles fully shown or fully hidden,
+  // whichever is closer. Same color as the page throughout: no surface change on scroll.
+  const topbar = useRef<HTMLElement>(null);
   useEffect(() => {
-    let last = window.scrollY;
-    const on = () => {
-      const y = window.scrollY, b = document.body.classList;
-      b.toggle('scrolled', y > 0);
-      if (Math.abs(y - last) > 4) b.toggle('tb-hidden', y > last && y > 64);
-      last = y;
+    const bar = topbar.current;
+    if (!bar) return;
+    let last = Math.max(0, window.scrollY), offset = 0, settle = 0;
+    const move = (v: number, animate: boolean) => {
+      offset = v;
+      bar.classList.toggle('tb-settling', animate); // the transition only runs for the settle
+      bar.style.top = `${-v}px`;
     };
+    const on = () => {
+      const y = Math.max(0, window.scrollY); // ignore rubber-band overscroll above the top
+      const h = bar.offsetHeight + 1;
+      move(y === 0 ? 0 : Math.min(h, Math.max(0, offset + y - last)), false);
+      last = y;
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        const show = offset < h / 2 || window.scrollY < h; // near the top it always shows
+        if (offset !== 0 && offset !== h) move(show ? 0 : h, true);
+      }, 120);
+    };
+    // A new page may be too short to scroll, and then no scroll event would ever bring the bar
+    // (and on phones the menu button) back: show it on every route change.
+    const reset = () => { last = Math.max(0, window.scrollY); window.clearTimeout(settle); move(0, true); };
     window.addEventListener('scroll', on, { passive: true });
-    return () => window.removeEventListener('scroll', on);
+    window.addEventListener('hashchange', reset);
+    return () => {
+      window.removeEventListener('scroll', on);
+      window.removeEventListener('hashchange', reset);
+      window.clearTimeout(settle);
+    };
   }, []);
 
   const nav = NAV.find(n => n[0] === route);
@@ -113,7 +136,7 @@ export function App() {
       </aside>
       <div className="scrim" onClick={() => setDrawer(false)} />
       <div className="main">
-        <header className="topbar">
+        <header className="topbar" ref={topbar}>
           <button className="btn-icon menu-btn" aria-label="Open navigation" onClick={() => setDrawer(true)}><Icon n="menu" /></button>
           <nav className="crumbs" aria-label="Breadcrumb"><ol>
             {sub && nav ? <><li><a href={`#/${route}`}>{nav[1]}</a></li><li><span aria-current="page" className="mono">{sub}</span></li></>

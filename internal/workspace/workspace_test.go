@@ -553,3 +553,48 @@ func TestRepoURLMustBeRemote(t *testing.T) {
 		t.Errorf("create with file://: %d %s", code, msg)
 	}
 }
+
+// The stack detect found is stored for display; detect's catch-alls and unknown values aren't.
+func TestWorkspaceStack(t *testing.T) {
+	h := newHub(t, true)
+	create := func(name, stack string) int {
+		return h.call(t, "POST", "/api/workspaces", map[string]any{"name": name, "repo_url": "https://github.com/me/" + name, "stack": stack}, nil)
+	}
+	stackOf := func(name string) string {
+		var w workspace.Workspace
+		if code := h.call(t, "GET", "/api/workspaces/"+name, nil, &w); code != 200 {
+			t.Fatalf("get %s: %d", name, code)
+		}
+		return w.Stack
+	}
+
+	for name, c := range map[string]struct{ in, want string }{
+		"droid":   {"android", "android"},
+		"api":     {"go", "go"},
+		"own-dc":  {"devcontainer", ""}, // the repo's own devcontainer: the image says more
+		"base":    {"none", ""},         // the walroos base image
+		"no-hint": {"", ""},             // created without detect (old UI, API, MCP)
+	} {
+		if code := create(name, c.in); code != 201 {
+			t.Fatalf("create %s with stack %q: %d", name, c.in, code)
+		}
+		if got := stackOf(name); got != c.want {
+			t.Errorf("%s: stack %q stored as %q, want %q", name, c.in, got, c.want)
+		}
+	}
+
+	// Unknown values are refused before the node starts creating anything.
+	h.agent.mu.Lock()
+	h.agent.last = agent.WorkspaceSpec{}
+	h.agent.mu.Unlock()
+	for _, bad := range []string{"Android", "cobol", "go ", "<script>", strings.Repeat("a", 300)} {
+		if code, msg := h.callErr(t, "POST", "/api/workspaces", map[string]any{"name": "bad", "repo_url": "https://github.com/me/bad", "stack": bad}); code != 400 || !strings.Contains(msg, "stack must be") {
+			t.Errorf("stack %q: %d %q, want 400", bad, code, msg)
+		}
+	}
+	h.agent.mu.Lock()
+	defer h.agent.mu.Unlock()
+	if h.agent.last.Name != "" {
+		t.Errorf("an invalid stack still reached the node: %+v", h.agent.last)
+	}
+}
