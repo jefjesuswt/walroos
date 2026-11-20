@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -74,7 +75,7 @@ func init() {
 }
 
 func runZed(cmd *cobra.Command) error {
-	list, err := fetch(cmd.Context(), hub, proxy)
+	list, _, err := fetch(cmd.Context(), hub, proxy)
 	if err != nil {
 		return err
 	}
@@ -114,21 +115,61 @@ type workspace struct {
 
 // Generate fetches the workspaces and formats the config. proxy is host:port or a URL.
 func Generate(ctx context.Context, hub, proxy string, port int, suffix string) (string, error) {
-	list, err := fetch(ctx, hub, proxy)
+	list, used, err := fetch(ctx, hub, proxy)
 	if err != nil {
 		return "", err
 	}
-	return Format(list, proxy, port, suffix), nil
+	return Format(list, used, port, suffix), nil
 }
 
-// fetch asks the hub for the caller's workspaces.
-func fetch(ctx context.Context, hub, proxy string) ([]workspace, error) {
+// defaultProxy is where tailscaled in userspace mode serves its HTTP/SOCKS5 proxy (the port its
+// docs and walroos use). Tests point it elsewhere.
+var defaultProxy = "localhost:1055"
+
+// fetch asks the hub for the caller's workspaces and returns the proxy it went through ("" for
+// none). Without --proxy it tries the tailnet directly, briefly; a machine on userspace
+// tailscaled has no route to it, so if that fails and tailscaled's proxy answers on
+// localhost:1055, it goes through it, and the SSH blocks get the matching ProxyCommand.
+func fetch(ctx context.Context, hub, proxy string) ([]workspace, string, error) {
 	if !strings.Contains(hub, "://") {
 		hub = "http://" + hub
 	}
 	hub = strings.TrimSuffix(hub, "/")
 
-	client, err := newClient(proxy, 15*time.Second)
+	if proxy != "" {
+		list, err := get(ctx, hub, proxy, 15*time.Second)
+		if err != nil && !isHubAnswer(err) {
+			return nil, "", fmt.Errorf("reach %s through %s: %w", hub, proxy, err)
+		}
+		return list, proxy, err
+	}
+	list, err := get(ctx, hub, "", 4*time.Second)
+	if err == nil || isHubAnswer(err) {
+		return list, "", err
+	}
+	if c, derr := net.DialTimeout("tcp", defaultProxy, time.Second); derr == nil {
+		c.Close()
+		if list, perr := get(ctx, hub, defaultProxy, 15*time.Second); perr == nil || isHubAnswer(perr) {
+			fmt.Fprintf(os.Stderr, "# %s isn't reachable directly; went through tailscaled's proxy at %s\n", hub, defaultProxy)
+			return list, defaultProxy, perr
+		}
+	}
+	return nil, "", fmt.Errorf("reach %s: %w (is this machine on the tailnet? with userspace tailscaled, its proxy must be up: --proxy localhost:1055)", hub, err)
+}
+
+// hubError is an answer from the hub (it was reached), as opposed to not reaching it.
+type hubError struct{ msg string }
+
+func (e *hubError) Error() string { return e.msg }
+
+func isHubAnswer(err error) bool {
+	var he *hubError
+	return errors.As(err, &he)
+}
+
+// get is one GET /api/workspaces, directly or through proxy.
+func get(ctx context.Context, hub, proxy string, timeout time.Duration) ([]workspace, error) {
+	client, err := newClient(proxy, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -138,10 +179,7 @@ func fetch(ctx context.Context, hub, proxy string) ([]workspace, error) {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		if proxy == "" {
-			return nil, fmt.Errorf("reach %s: %w (is this machine on the tailnet? for userspace tailscaled, pass --proxy localhost:1055)", hub, err)
-		}
-		return nil, fmt.Errorf("reach %s through %s: %w", hub, proxy, err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -150,10 +188,13 @@ func fetch(ctx context.Context, hub, proxy string) ([]workspace, error) {
 			Error string `json:"error"`
 		}
 		json.NewDecoder(resp.Body).Decode(&e)
-		return nil, fmt.Errorf("the hub doesn't know you: %s", e.Error)
+		return nil, &hubError{fmt.Sprintf("the hub doesn't know you: %s", e.Error)}
+	}
+	if resp.StatusCode == http.StatusBadGateway { // tailscaled's proxy found nothing at that name
+		return nil, fmt.Errorf("nothing answered at %s on the tailnet (502 from the proxy)", hub)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("hub answered %d", resp.StatusCode)
+		return nil, &hubError{fmt.Sprintf("hub answered %d", resp.StatusCode)}
 	}
 	var list []workspace
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
