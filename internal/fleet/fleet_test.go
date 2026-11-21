@@ -12,6 +12,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/server"
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -199,7 +200,7 @@ func TestUserAuth(t *testing.T) {
 // TestHubCallsAgent runs the real hub router against a real agent server: the agent pins the
 // hub from the heartbeat response, then /api/nodes/{id}/agent goes through.
 func TestHubCallsAgent(t *testing.T) {
-	var api *agent.Server
+	var api *server.Server
 	agentSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api.Handler().ServeHTTP(w, r)
 	}))
@@ -222,7 +223,7 @@ func TestHubCallsAgent(t *testing.T) {
 	}
 	info := "/api/nodes/" + joined.Node.ID + "/agent"
 
-	api = agent.NewServer(func(context.Context, string) (string, error) { return hubID, nil }, joined.Token)
+	api = server.New(func(context.Context, string) (string, error) { return hubID, nil }, joined.Token)
 	if code := call(t, hub, "GET", info, "", nil, nil); code != 409 {
 		t.Fatalf("agent info before any heartbeat: %d, want 409 (no address yet)", code)
 	}

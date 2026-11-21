@@ -1,6 +1,6 @@
 //go:build linux
 
-package agent
+package sshgw
 
 import (
 	"bytes"
@@ -18,6 +18,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/agenttest"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
+	"github.com/jefjesuswt/walroos/internal/agent/workspaces"
+
 	"golang.org/x/crypto/ssh"
 	sshagent "golang.org/x/crypto/ssh/agent"
 )
@@ -27,13 +32,13 @@ import (
 //
 //	WALROOS_PODMAN_TEST=1 go test ./internal/agent -run SSHGatewayPodman -v
 func TestSSHGatewayPodman(t *testing.T) {
-	needPodman(t)
+	agenttest.NeedPodman(t)
 	ctx := context.Background()
-	w := NewWorkspaces()
+	w := workspaces.New()
 	create := func(files map[string]string) (name, repo string) {
-		repo, name = gitRepo(t, files), testName()
+		repo, name = agenttest.GitRepo(t, files), agenttest.Name()
 		t.Cleanup(func() { w.Delete(context.Background(), name) })
-		if _, err := w.Create(ctx, WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
+		if _, err := w.Create(ctx, agent.WorkspaceSpec{Name: name, RepoURL: repo}, nil); err != nil {
 			t.Fatal(err)
 		}
 		return name, repo
@@ -43,15 +48,14 @@ func TestSSHGatewayPodman(t *testing.T) {
 		".devcontainer/Dockerfile":        "FROM docker.io/library/alpine:3.22\nRUN adduser -D -u 1001 dev\n",
 		".devcontainer/devcontainer.json": `{"build": {"dockerfile": "Dockerfile"}, "remoteUser": "dev"}`,
 	})
-	waitState(t, w, name, "running", 10*time.Minute)
-	waitState(t, w, bare, "running", 10*time.Minute)
+	running(t, w, name)
+	running(t, w, bare)
 
-	srv := NewServer(func(context.Context, string) (string, error) { return "nLaptop", nil }, "tok")
-	srv.ws = w
+	identify := func(context.Context, string) (string, error) { return "nLaptop", nil }
 	exe := self(t)
 	t.Setenv("WALROOS_TEST_RELAY", "1") // the relay command is this binary
 	gateway := func() *SSHGateway {
-		return srv.SSHGateway(func(context.Context, string, string) (string, error) { return "owner@github", nil }, newSigner(t), []string{exe})
+		return New(identify, func(context.Context, string, string) (string, error) { return "owner@github", nil }, newSigner(t), []string{exe}, w)
 	}
 	connect := serveGateway(t, gateway())
 
@@ -135,7 +139,7 @@ func TestSSHGatewayPodman(t *testing.T) {
 		// Workspaces created before the gateway have no walroos.agentdir label.
 		g := gateway()
 		lookup := g.lookup
-		g.lookup = func(ctx context.Context, name string) (Workspace, error) {
+		g.lookup = func(ctx context.Context, name string) (agent.Workspace, error) {
 			ws, err := lookup(ctx, name)
 			ws.AgentDir = ""
 			return ws, err
@@ -153,7 +157,7 @@ func TestSSHGatewayPodman(t *testing.T) {
 
 	t.Run("port forward", func(t *testing.T) {
 		c := connect(t, name)
-		pid, err := podman(ctx, "inspect", "--format", "{{.State.Pid}}", "ws-"+name)
+		pid, err := host.Podman(ctx, "inspect", "--format", "{{.State.Pid}}", "ws-"+name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -182,7 +186,7 @@ func TestSSHGatewayPodman(t *testing.T) {
 		conn.Close()
 
 		// Names resolve like inside the workspace: its hostname is only in its /etc/hosts.
-		hostname, _ := podman(ctx, "inspect", "--format", "{{.Config.Hostname}}", "ws-"+name)
+		hostname, _ := host.Podman(ctx, "inspect", "--format", "{{.Config.Hostname}}", "ws-"+name)
 		if conn, err := c.Dial("tcp", hostname+":18080"); err != nil {
 			t.Errorf("forward to the workspace's hostname %q: %v", hostname, err)
 		} else {
@@ -219,7 +223,7 @@ func TestSSHGatewayPodman(t *testing.T) {
 	// Processes a session started must not outlive it: a dev server or `claude` left running
 	// after the laptop closed would pile up in the workspace.
 	running := func(marker string) bool {
-		_, err := podman(ctx, "exec", "ws-"+name, "pgrep", "-f", marker)
+		_, err := host.Podman(ctx, "exec", "ws-"+name, "pgrep", "-f", marker)
 		return err == nil
 	}
 	gone := func(t *testing.T, marker string) {

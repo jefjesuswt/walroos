@@ -1,4 +1,4 @@
-package agent
+package workspaces
 
 import (
 	"os"
@@ -6,17 +6,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
-)
 
-func writeFile(t *testing.T, path, body string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
+	"github.com/jefjesuswt/walroos/internal/agent/agenttest"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
+)
 
 func TestReadDevcontainer(t *testing.T) {
 	repo := t.TempDir()
@@ -24,7 +17,7 @@ func TestReadDevcontainer(t *testing.T) {
 		t.Fatalf("no devcontainer: got %+v, %v; want nil, nil (base image)", dc, err)
 	}
 
-	writeFile(t, filepath.Join(repo, ".devcontainer/devcontainer.json"), `{
+	agenttest.WriteFile(t, filepath.Join(repo, ".devcontainer/devcontainer.json"), `{
 		// JSONC: comments and trailing commas are allowed
 		"build": { "dockerfile": "Dockerfile", },
 		"remoteUser": "dev",
@@ -54,7 +47,7 @@ func TestReadDevcontainer(t *testing.T) {
 		t.Fatalf("dir = %q", dc.dir)
 	}
 
-	writeFile(t, filepath.Join(repo, "custom.json"), `{"image": "alpine", "postCreateCommand": ["make", "deps"]}`)
+	agenttest.WriteFile(t, filepath.Join(repo, "custom.json"), `{"image": "alpine", "postCreateCommand": ["make", "deps"]}`)
 	dc, err = readDevcontainer(repo, "custom.json", nil)
 	if err != nil || dc.Image != "alpine" || !slices.Equal(dc.PostCreateCommand, command{"make", "deps"}) {
 		t.Fatalf("explicit path: %+v, %v", dc, err)
@@ -63,7 +56,7 @@ func TestReadDevcontainer(t *testing.T) {
 	if _, err := readDevcontainer(repo, "missing.json", nil); err == nil {
 		t.Error("an explicit path that doesn't exist must fail, not fall back to the base image")
 	}
-	writeFile(t, filepath.Join(repo, "compose.json"), `{"dockerComposeFile": "compose.yml"}`)
+	agenttest.WriteFile(t, filepath.Join(repo, "compose.json"), `{"dockerComposeFile": "compose.yml"}`)
 	if _, err := readDevcontainer(repo, "compose.json", nil); err == nil {
 		t.Error("a config with neither image nor dockerfile must fail")
 	}
@@ -94,12 +87,12 @@ func TestDevcontainerRejectsHostMounts(t *testing.T) {
 		`"type=volume,\"source=x,volume-opt=device=/\",target=/h"`, // CSV quoting
 		`"type=volume,type=volume,source=x,target=/h"`,
 	} {
-		writeFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": [`+m+`]}`)
+		agenttest.WriteFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": [`+m+`]}`)
 		if _, err := readDevcontainer(repo, "dc.json", nil); err == nil {
 			t.Errorf("mount %s was accepted", m)
 		}
 	}
-	writeFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": ["type=tmpfs,target=/tmp/x", {"source": "cache", "target": "/c"}]}`)
+	agenttest.WriteFile(t, filepath.Join(repo, "dc.json"), `{"image": "alpine", "mounts": ["type=tmpfs,target=/tmp/x", {"source": "cache", "target": "/c"}]}`)
 	if _, err := readDevcontainer(repo, "dc.json", nil); err != nil {
 		t.Errorf("volume and tmpfs mounts rejected: %v", err)
 	}
@@ -151,8 +144,8 @@ func TestInsideRepo(t *testing.T) {
 		t.Logf("no symlinks here (%v): only lexical cases", err)
 	}
 	for p, ok := range cases {
-		if _, err := inside(repo, p); (err == nil) != ok {
-			t.Errorf("inside(%q) ok=%v (%v), want %v", p, err == nil, err, ok)
+		if _, err := host.Inside(repo, p); (err == nil) != ok {
+			t.Errorf("host.Inside(%q) ok=%v (%v), want %v", p, err == nil, err, ok)
 		}
 	}
 

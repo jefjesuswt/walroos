@@ -1,4 +1,4 @@
-package agent
+package workspaces
 
 import (
 	"cmp"
@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jefjesuswt/walroos/internal/agent/host"
 
 	"github.com/tailscale/hujson"
 )
@@ -150,7 +152,7 @@ func readDevcontainer(repo, path string, inline json.RawMessage) (*devcontainer,
 		candidates = []string{path}
 	}
 	for _, p := range candidates {
-		full, err := inside(repo, filepath.Join(repo, filepath.Clean("/"+p))) // a symlink may point anywhere
+		full, err := host.Inside(repo, filepath.Join(repo, filepath.Clean("/"+p))) // a symlink may point anywhere
 		if errors.Is(err, os.ErrNotExist) {
 			if path == "" {
 				continue
