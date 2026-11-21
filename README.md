@@ -123,13 +123,13 @@ Tools: `list_nodes`, `list_workspaces`, `detect_stack`, `create_workspace`, `get
 go run ./cmd/walroos hub --dev    # 127.0.0.1:8080, no Tailscale, no auth (user dev@localhost)
 cd web && bun run dev             # Vite on :5173, proxies /api to the hub
 go test ./...
-WALROOS_PODMAN_TEST=1 go test ./internal/agent -v   # + workspace lifecycle on real rootless podman
+WALROOS_PODMAN_TEST=1 go test ./internal/agent/... # + workspaces, apps, databases, SSH on real rootless podman
 ```
 
 ```
 cmd/walroos/      CLI: hub (control plane), node (agent: join, run, telemetry)
 config/           SQLite (WAL) + embedded migrations
-internal/agent/   node agent API, workspaces on podman, devcontainer.json
+internal/agent/   hub ↔ node contract; server/, workspaces/, apps/, databases/, sshgw/ run on the node
 internal/auth/    Tailscale WhoIs + users allowlist
 internal/fleet/   nodes: join, heartbeat, telemetry
 internal/web/     serves the embedded UI
