@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type User } from './api';
-import { AppDetail, DeploymentsPage } from './Apps';
-import { DatabaseDetail } from './Databases';
-import { ProjectDetail, ProjectsPage } from './Projects';
-import { NodesPage } from './Nodes';
-import { SettingsPage } from './Settings';
-import { WorkspacesPage } from './Workspaces';
+import { AppPage } from './apps/AppPage';
+import { DeploymentsPage } from './apps/DeploymentsPage';
+import { DatabasePage } from './databases/DatabasePage';
+import { ProjectPage } from './projects/ProjectPage';
+import { ProjectsPage } from './projects/ProjectsPage';
+import { NodesPage } from './nodes/NodesPage';
+import { SettingsPage } from './settings/SettingsPage';
+import { WorkspacesPage } from './workspaces/WorkspacesPage';
 import { allowed, EmptyState, Icon, Logo, MeCtx, TrailCtx, type Crumb, type Perm } from './ui';
 
 // [route, label, icon, milestone that brings it]. Apps and databases live in projects (their
@@ -111,7 +113,7 @@ export function App() {
 
   if (authError) {
     return (
-      <div className="content" style={{ paddingTop: '20vh' }}>
+      <div className="content content-denied">
         <EmptyState icon="alert" title="You can't use this hub" text={`${authError}. Ask the owner to add your Tailscale login.`} />
       </div>
     );
@@ -135,7 +137,7 @@ export function App() {
           <div className="sb-user" title={me.login}>
             <span className="avatar" aria-hidden="true">{me.login[0].toUpperCase()}</span>
             <span className="sb-user-t lbl">
-              <span className="od-truncate" style={{ fontWeight: 500 }}>{me.login.split('@')[0]}</span>
+              <span className="od-truncate sb-user-name">{me.login.split('@')[0]}</span>
               <span className="conn"><span className="dot ok" aria-hidden="true" /><span className="od-truncate mono">{me.login}</span></span>
               <span className="conn">{me.role}</span>
             </span>
@@ -170,10 +172,10 @@ export function App() {
           <div className="content">
             {route === 'nodes' ? <NodesPage addOpen={addNode} setAddOpen={setAddNode} />
               : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
-              : route === 'apps' && sub ? <AppDetail key={sub} name={sub} />
-              : route === 'projects' ? (sub ? <ProjectDetail key={sub} name={sub} /> : <ProjectsPage newOpen={newProject} setNewOpen={setNewProject} />)
+              : route === 'apps' && sub ? <AppPage key={sub} name={sub} />
+              : route === 'projects' ? (sub ? <ProjectPage key={sub} name={sub} /> : <ProjectsPage newOpen={newProject} setNewOpen={setNewProject} />)
               : route === 'deployments' ? <DeploymentsPage />
-              : route === 'databases' && sub ? <DatabaseDetail key={sub} name={sub} />
+              : route === 'databases' && sub ? <DatabasePage key={sub} name={sub} />
               : route === 'settings' ? <SettingsPage />
               : nav ? <EmptyState icon={nav[2]} title={`${nav[1]} land in ${nav[3]}`} text="See ARCHITECTURE.md for the roadmap." />
               : <EmptyState icon="alert" title="Nothing here" text="That page doesn't exist." action={<a className="btn" href="#/nodes">Back to nodes</a>} />}

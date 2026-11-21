@@ -1,4 +1,4 @@
-import { Icon } from './ui';
+import { Icon } from './icons';
 
 // Brand logos from Simple Icons 13.21.0 (CC0-1.0, simpleicons.org), single-color: they take
 // currentColor, so themes color them like any icon. The marks are their owners' trademarks.
@@ -30,9 +30,6 @@ export const BrandLogo = ({ name, size = 20 }: { name: string; size?: number }) 
     <path d={PATHS[name] ?? ''} />
   </svg>
 );
-
-// The logo of an engine id; Valkey has no Simple Icons mark.
-export const engineLogo = (engine: string) => ({ postgres: 'postgresql', mongo: 'mongodb' } as Record<string, string>)[engine] ?? engine;
 
 // Mark draws a brand logo when there is one, else a plain icon.
 export const Mark = ({ logo, icon = 'apps', size = 20 }: { logo?: string; icon?: string; size?: number }) =>
