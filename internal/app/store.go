@@ -27,22 +27,22 @@ func NewStore(db *config.Database) *Store {
 
 func (s *Store) Insert(ctx context.Context, a App) error {
 	_, err := s.db.Write.ExecContext(ctx,
-		`INSERT INTO apps (id, name, node_id, project_id, repo_url, image, branch, dockerfile, port, health_path, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.NodeID, cmpOr(a.ProjectID, "default"), a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath, a.CreatedAt)
+		`INSERT INTO apps (id, name, node_id, project_id, description, repo_url, image, branch, dockerfile, port, health_path, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.NodeID, cmpOr(a.ProjectID, "default"), a.Description, a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath, a.CreatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: apps.name") {
 		return ErrExists
 	}
 	return err
 }
 
-const appCols = `a.id, a.name, a.node_id, n.name, a.project_id, p.name, a.repo_url, a.image, a.volumes, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
+const appCols = `a.id, a.name, a.node_id, n.name, a.project_id, p.name, a.description, a.repo_url, a.image, a.volumes, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
 	FROM apps a JOIN nodes n ON n.id = a.node_id JOIN projects p ON p.id = a.project_id`
 
 func scanApp(row interface{ Scan(...any) error }) (App, error) {
 	var a App
 	var vols string
-	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.ProjectID, &a.Project, &a.RepoURL, &a.Image, &vols, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.ProjectID, &a.Project, &a.Description, &a.RepoURL, &a.Image, &vols, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
 	if err == nil {
 		err = json.Unmarshal([]byte(vols), &a.Volumes)
 	}
@@ -97,6 +97,12 @@ func cmpOr(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+func (s *Store) setSource(ctx context.Context, id string, a App) error {
+	_, err := s.db.Write.ExecContext(ctx, `UPDATE apps SET repo_url = ?, image = ?, branch = ?, dockerfile = ?, port = ?, health_path = ? WHERE id = ?`,
+		a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath, id)
+	return err
 }
 
 func (s *Store) setVolumes(ctx context.Context, id string, vols []agent.Volume) error {

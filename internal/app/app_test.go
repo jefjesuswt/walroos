@@ -432,3 +432,47 @@ func TestAppProjectNetwork(t *testing.T) {
 		t.Errorf("network = %q, want walroos-p-shop", got)
 	}
 }
+
+// Like Dokploy, an app can be created with just a name (a draft), get its source later, then deploy.
+func TestAppDraftThenSource(t *testing.T) {
+	h := newHub(t, "prod")
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps", map[string]string{"name": "api", "description": "the backend"}, &a); code != 201 || a.RepoURL != "" || a.Description != "the backend" {
+		t.Fatalf("draft: %d %+v", code, a)
+	}
+	if code := h.call(t, "POST", "/api/apps/api/deploy", map[string]string{}, nil); code != 400 {
+		t.Errorf("deploy a draft: %d, want 400", code)
+	}
+	// Volumes can be set before the source.
+	if code := h.call(t, "PUT", "/api/apps/api/volumes", []map[string]string{{"name": "data", "target": "/data"}}, nil); code != 200 {
+		t.Errorf("volumes on a draft: %d", code)
+	}
+	for _, bad := range []map[string]any{
+		{"port": 3000},
+		{"repo_url": "/etc", "port": 3000},
+		{"repo_url": "https://github.com/me/api", "port": 0},
+		{"repo_url": "https://github.com/me/api", "image": "ghcr.io/me/api:1", "port": 3000},
+		{"image": "api:latest", "port": 3000},
+	} {
+		if code := h.call(t, "PUT", "/api/apps/api/source", bad, nil); code != 400 {
+			t.Errorf("source %v: %d, want 400", bad, code)
+		}
+	}
+	if code := h.call(t, "PUT", "/api/apps/api/source", map[string]any{"repo_url": "https://github.com/me/api", "branch": "main", "port": 3000}, &a); code != 200 || a.RepoURL != "https://github.com/me/api" || a.Port != 3000 {
+		t.Fatalf("set source: %d %+v", code, a)
+	}
+	var d app.Deployment
+	if code := h.call(t, "POST", "/api/apps/api/deploy", map[string]string{}, &d); code != 202 {
+		t.Fatalf("deploy after source: %d", code)
+	}
+	if got := h.wait(t, "api", d.ID); got.State != "succeeded" || h.agent.specs[0].RepoURL != "https://github.com/me/api" || len(h.agent.specs[0].Volumes) != 1 {
+		t.Errorf("deployment %+v, spec %+v", got, h.agent.specs[0])
+	}
+	// Switch it to a published image.
+	if code := h.call(t, "PUT", "/api/apps/api/source", map[string]any{"image": "ghcr.io/me/api:2", "port": 8080}, &a); code != 200 || a.RepoURL != "" || a.Image != "ghcr.io/me/api:2" {
+		t.Errorf("switch to image: %d %+v", code, a)
+	}
+	if code := h.call(t, "POST", "/api/apps", map[string]string{"name": "x", "description": strings.Repeat("a", 501)}, nil); code != 400 {
+		t.Errorf("long description: %d", code)
+	}
+}

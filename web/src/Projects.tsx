@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { api, type App, type Database, type Project } from './api';
 import { NewAppModal } from './Apps';
 import { NewDatabaseModal } from './Databases';
-import { Badge, Confirm, EmptyState, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast } from './ui';
+import { BrandLogo, engineLogo } from './logos';
+import { ago, Confirm, EmptyState, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast, useTrail } from './ui';
 
 const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis' };
 
@@ -101,16 +102,21 @@ function NewProjectModal({ onClose, onCreated }: { onClose: () => void; onCreate
 }
 
 /* ---------- one project ---------- */
+type Kind = 'all' | 'app' | 'database';
+
 export function ProjectDetail({ name }: { name: string }) {
   const toast = useToast();
   const { can } = useCan();
   const [p, setP] = useState<Project | null>(null);
   const [error, setError] = useState('');
-  const [picking, setPicking] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [creating, setCreating] = useState<'app' | 'database' | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [q, setQ] = useState('');
+  const [kind, setKind] = useState<Kind>('all');
   const load = useCallback(() => { api.project(name).then(x => { setP(x); setError(''); }, e => setError(e.message)); }, [name]);
   usePoll(load, 8000);
+  useTrail([{ label: 'Projects', href: '#/projects' }]);
 
   if (error && !p) {
     return <EmptyState icon="alert" title={error === 'project not found' ? 'No such project' : "Couldn't load the project"} text={error}
@@ -121,79 +127,81 @@ export function ProjectDetail({ name }: { name: string }) {
   const project = p.name === 'default' ? '' : p.name;
   const remove = () => api.deleteProject(p.name).then(() => { toast(`${p.name} deleted`); location.hash = '#/projects'; },
     e => { setRemoving(false); toast(e.message, 'bad'); });
+  const match = (n: string, d: string) => !q || n.includes(q.toLowerCase()) || d.toLowerCase().includes(q.toLowerCase());
+  const apps = kind === 'database' ? [] : p.apps.filter(a => match(a.name, a.description));
+  const dbs = kind === 'app' ? [] : p.databases.filter(d => match(d.name, d.description));
 
   return (
     <>
       <div className="page-head">
         <div className="ph-text">
-          <div className="title-row"><h1 className="mono">{p.name}</h1></div>
-          <div className="ph-meta"><span>{p.description || `${total(p)} services`}</span></div>
+          <div className="title-row"><span className="svc-logo" aria-hidden="true"><Icon n="apps" /></span><h1>{p.name}</h1></div>
+          <div className="ph-meta"><span>{p.description || (p.name === 'default' ? 'Services created without a project.' : `${total(p)} services`)}</span></div>
         </div>
         {can('apps') && (
           <div className="ph-actions">
-            <button className="btn btn-primary" onClick={() => setPicking(true)}><Icon n="plus" />Create service</button>
-            {p.name !== 'default' && (
-              <button className="btn-icon" aria-label={`Delete project ${p.name}`} title={total(p) ? 'Delete its services first' : 'Delete project'}
-                disabled={total(p) > 0} onClick={() => setRemoving(true)}><Icon n="trash" /></button>
+            {p.name !== 'default' && total(p) === 0 && (
+              <button className="btn-icon" aria-label={`Delete project ${p.name}`} title="Delete project" onClick={() => setRemoving(true)}><Icon n="trash" /></button>
             )}
+            <div className="popmenu-wrap">
+              <button className="btn btn-primary" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><Icon n="plus" />Create service</button>
+              {menu && <>
+                <div className="popmenu-scrim" onClick={() => setMenu(false)} />
+                <div className="popmenu" role="menu">
+                  <button role="menuitem" onClick={() => { setMenu(false); setCreating('app'); }}><Icon n="apps" /><span><strong>Application</strong><span className="help">From a Git repository or a Docker image.</span></span></button>
+                  <button role="menuitem" onClick={() => { setMenu(false); setCreating('database'); }}><Icon n="database" /><span><strong>Database</strong><span className="help">PostgreSQL, MySQL, MariaDB or Redis.</span></span></button>
+                  <button role="menuitem" disabled><Icon n="deploy" /><span><strong>Compose</strong><span className="help">Coming later.</span></span></button>
+                  <button role="menuitem" disabled><Icon n="overview" /><span><strong>Template</strong><span className="help">Coming later.</span></span></button>
+                </div>
+              </>}
+            </div>
           </div>
         )}
       </div>
 
       {total(p) === 0 ? (
         <EmptyState icon="apps" title="Nothing here yet"
-          text="Add the pieces of this project: an app from a repo or an image, and the databases it needs. They reach each other by name."
-          action={can('apps') ? <button className="btn btn-primary" onClick={() => setPicking(true)}><Icon n="plus" />Create service</button> : undefined} />
-      ) : (
-        <div className="grid-cards">
-          {p.apps.map(a => {
-            const [s, l] = appState(a);
+          text="Add the pieces of this project: an application from a repo or an image, and the databases it needs. They reach each other by name."
+          action={can('apps') ? <button className="btn btn-primary" onClick={() => setMenu(true)}><Icon n="plus" />Create service</button> : undefined} />
+      ) : <>
+        <div className="toolbar">
+          <input className="input" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Filter services…" aria-label="Filter services" />
+          <select className="input" value={kind} onChange={e => setKind(e.target.value as Kind)} aria-label="Type">
+            <option value="all">All types</option>
+            <option value="app">Applications</option>
+            <option value="database">Databases</option>
+          </select>
+        </div>
+        <div className="svc-grid">
+          {apps.map(a => {
+            const [s] = appState(a);
             return (
-              <article key={a.id} className="card app-card" onClick={() => { location.hash = `#/apps/${a.name}`; }}>
-                <div className="ac-head">
-                  <span className="od-row" style={{ gap: 'var(--sp2)', minWidth: 0 }}><Icon n="apps" /><a className="cell-title mono od-truncate" href={`#/apps/${a.name}`}>{a.name}</a></span>
-                  <Badge s={s} label={l} />
-                </div>
-                <span className="cell-sub mono od-truncate" title={a.image || a.repo_url}>{a.image || a.repo_url.replace(/^https?:\/\//, '').replace(/\.git$/, '')}</span>
-                <div className="od-cluster">
-                  <span className="chip mono" title="Its name on the project's network">{a.name}:{a.port}</span>
-                  <span className="chip"><Icon n="nodes" /><span className="mono">{a.node_name}</span></span>
-                  {a.domains.slice(0, 1).map(d => <span key={d} className="chip"><Icon n="globe" /><span className="mono od-truncate">{d}</span></span>)}
-                </div>
-              </article>
+              <a key={a.id} className="card svc-card" href={`#/apps/${a.name}`}>
+                <span className="svc-card-h"><span className="svc-name"><span className={`svc-dot ${s}`} title={appState(a)[1]} /><strong className="mono od-truncate">{a.name}</strong></span>
+                  <span className="svc-mark" aria-hidden="true">{a.repo_url || a.image ? <BrandLogo name={a.image ? 'docker' : 'git'} size={18} /> : <Icon n="apps" />}</span></span>
+                <span className="cell-sub od-truncate">{a.description || (a.repo_url || a.image ? `${a.name}:${a.port}` : 'No source yet')}</span>
+                <span className="cell-sub muted">Created {ago(a.created_at)}</span>
+              </a>
             );
           })}
-          {p.databases.map(d => {
-            const [s, l] = dbState(d);
+          {dbs.map(d => {
+            const [s] = dbState(d);
             return (
-              <article key={d.id} className="card app-card" onClick={() => { location.hash = `#/databases/${d.name}`; }}>
-                <div className="ac-head">
-                  <span className="od-row" style={{ gap: 'var(--sp2)', minWidth: 0 }}><Icon n="database" /><a className="cell-title mono od-truncate" href={`#/databases/${d.name}`}>{d.name}</a></span>
-                  <Badge s={s} label={l} />
-                </div>
-                <span className="cell-sub">{engineLabel[d.engine] ?? d.engine} {d.version}</span>
-                <div className="od-cluster">
-                  <span className="chip mono" title="Its name on the project's network">{d.name}:{d.port}</span>
-                  <span className="chip"><Icon n="nodes" /><span className="mono">{d.node_name}</span></span>
-                </div>
-              </article>
+              <a key={d.id} className="card svc-card" href={`#/databases/${d.name}`}>
+                <span className="svc-card-h"><span className="svc-name"><span className={`svc-dot ${s}`} title={dbState(d)[1]} /><strong className="mono od-truncate">{d.name}</strong></span>
+                  <span className="svc-mark" aria-hidden="true"><BrandLogo name={engineLogo(d.engine)} size={18} /></span></span>
+                <span className="cell-sub od-truncate">{d.description || `${engineLabel[d.engine] ?? d.engine} ${d.version}`}</span>
+                <span className="cell-sub muted">Created {ago(d.created_at)}</span>
+              </a>
             );
           })}
         </div>
-      )}
-      {total(p) > 0 && <p className="help">Services here reach each other by name: <span className="mono">http://{p.apps[0]?.name ?? 'api'}:{p.apps[0]?.port ?? 3000}</span>, a database at <span className="mono">{p.databases[0]?.name ?? 'db'}:{p.databases[0]?.port ?? 5432}</span>. Other projects can't reach them.</p>}
+        {apps.length + dbs.length === 0 && <p className="muted">No service matches.</p>}
+        <p className="help">Services here reach each other by name, like <span className="mono">{p.databases[0]?.name ?? 'db'}:{p.databases[0]?.port ?? 5432}</span>. Other projects can't reach them.</p>
+      </>}
 
-      {picking && (
-        <Modal title="Create service" sub={`In ${p.name}`} onClose={() => setPicking(false)}>
-          <div className="sheet-list rich">
-            <button onClick={() => { setPicking(false); setCreating('app'); }}><Icon n="apps" /><span><strong>Application</strong><span className="help">From a Git repo with a Dockerfile, or a published image.</span></span></button>
-            <button onClick={() => { setPicking(false); setCreating('database'); }}><Icon n="database" /><span><strong>Database</strong><span className="help">PostgreSQL, MySQL, MariaDB or Redis, with backups.</span></span></button>
-            <button disabled><Icon n="deploy" /><span><strong>Compose</strong><span className="help">Coming later.</span></span></button>
-          </div>
-        </Modal>
-      )}
-      {creating === 'app' && <NewAppModal project={project} onClose={() => setCreating(null)} onCreated={() => { setCreating(null); load(); }} />}
-      {creating === 'database' && <NewDatabaseModal project={project} onClose={() => setCreating(null)} onCreated={() => { setCreating(null); load(); }} />}
+      {creating === 'app' && <NewAppModal project={project} onClose={() => setCreating(null)} onCreated={a => { setCreating(null); location.hash = `#/apps/${a.name}`; }} />}
+      {creating === 'database' && <NewDatabaseModal project={project} onClose={() => setCreating(null)} onCreated={d => { setCreating(null); location.hash = `#/databases/${d.name}`; }} />}
       {removing && (
         <Confirm title={`Delete ${p.name}?`} confirmLabel="Delete project" danger onClose={() => setRemoving(false)} onConfirm={remove}>
           <p className="muted">The project is empty; this only removes it from the list.</p>

@@ -244,7 +244,6 @@ export function EnvModal({ title, sub, savedMsg, load, save, onClose, onSaved }:
 
   useEffect(() => { load().then(setVars, e => setError(e.message)); }, []); // once: a poll would overwrite what you're typing
 
-  const set = (i: number, patch: Partial<EnvVar>) => setVars(vs => (vs ?? []).map((v, j) => j === i ? { ...v, ...patch } : v));
   const submit = () => {
     setBusy(true);
     save(vars ?? []).then(
@@ -260,29 +259,74 @@ export function EnvModal({ title, sub, savedMsg, load, save, onClose, onSaved }:
         <button className="btn btn-primary" disabled={busy || !vars} onClick={submit}>{busy ? 'Saving…' : 'Save'}</button>
       </>}>
       {error && <ErrorAlert title="Couldn't load or save" msg={error} />}
-      {!vars ? <div className="skel-row"><i className="skel w50" /></div> : (
-        <div className="form">
-          {vars.length === 0 && <p className="muted">No variables yet.</p>}
-          {vars.map((v, i) => (
-            <div key={i} className="env-row">
-              <input className="input mono" value={v.key} placeholder="KEY" aria-label="Name"
-                onChange={e => set(i, { key: e.target.value.toUpperCase() })} />
-              <input className="input mono" value={v.value} placeholder="value" aria-label="Value"
-                type={v.secret ? 'password' : 'text'} onChange={e => set(i, { value: e.target.value })} />
-              <label className="check" title="Mask this value in the UI">
-                <input type="checkbox" checked={v.secret} onChange={e => set(i, { secret: e.target.checked })} />secret
-              </label>
-              <button className="btn-icon" aria-label="Remove" title="Remove" onClick={() => setVars(vs => (vs ?? []).filter((_, j) => j !== i))}><Icon n="trash" /></button>
-            </div>
-          ))}
-          <div>
-            <button className="btn" onClick={() => setVars(vs => [...(vs ?? []), { key: '', value: '', secret: false }])}><Icon n="plus" />Add variable</button>
-          </div>
-          <p className="help">Names: A–Z, 0–9 and _, starting with a letter or _. The last save replaces the whole set.</p>
-        </div>
-      )}
+      {!vars ? <div className="skel-row"><i className="skel w50" /></div> : <EnvRows vars={vars} setVars={setVars} />}
     </Modal>
   );
+}
+
+function EnvRows({ vars, setVars }: { vars: EnvVar[]; setVars: (f: (vs: EnvVar[] | null) => EnvVar[]) => void }) {
+  const set = (i: number, patch: Partial<EnvVar>) => setVars(vs => (vs ?? []).map((v, j) => j === i ? { ...v, ...patch } : v));
+  return (
+    <div className="form">
+      {vars.length === 0 && <p className="muted">No variables yet.</p>}
+      {vars.map((v, i) => (
+        <div key={i} className="env-row">
+          <input className="input mono" value={v.key} placeholder="KEY" aria-label="Name"
+            onChange={e => set(i, { key: e.target.value.toUpperCase() })} />
+          <input className="input mono" value={v.value} placeholder="value" aria-label="Value"
+            type={v.secret ? 'password' : 'text'} onChange={e => set(i, { value: e.target.value })} />
+          <label className="check" title="Mask this value in the UI">
+            <input type="checkbox" checked={v.secret} onChange={e => set(i, { secret: e.target.checked })} />secret
+          </label>
+          <button className="btn-icon" aria-label="Remove" title="Remove" onClick={() => setVars(vs => (vs ?? []).filter((_, j) => j !== i))}><Icon n="trash" /></button>
+        </div>
+      ))}
+      <div>
+        <button className="btn" onClick={() => setVars(vs => [...(vs ?? []), { key: '', value: '', secret: false }])}><Icon n="plus" />Add variable</button>
+      </div>
+      <p className="help">Names: A–Z, 0–9 and _, starting with a letter or _. The last save replaces the whole set.</p>
+    </div>
+  );
+}
+
+// EnvEditor is EnvModal's editor in a page (a service's Environment tab).
+export function EnvEditor({ load, save, savedMsg }: { load: () => Promise<EnvVar[]>; save: (vars: EnvVar[]) => Promise<unknown>; savedMsg: string }) {
+  const toast = useToast();
+  const [vars, setVars] = useState<EnvVar[] | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { load().then(setVars, e => setError(e.message)); }, []); // once: a poll would overwrite what you're typing
+  const submit = () => {
+    setBusy(true);
+    save(vars ?? []).then(() => { toast(savedMsg); setBusy(false); setError(''); }, e => { setError(e.message); setBusy(false); });
+  };
+  return (
+    <>
+      {error && <ErrorAlert title="Couldn't load or save" msg={error} />}
+      {!vars ? <div className="skel-row"><i className="skel w50" /></div> : <EnvRows vars={vars} setVars={setVars} />}
+      <div><button className="btn btn-primary" disabled={busy || !vars} onClick={submit}><Icon n="check" />{busy ? 'Saving…' : 'Save'}</button></div>
+    </>
+  );
+}
+
+// Tabs switches the sections of a page (a service: General, Environment, Domains…).
+export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: [T, string][]; value: T; onChange: (t: T) => void }) {
+  return (
+    <nav className="tabs" role="tablist">
+      {tabs.map(([id, label]) => (
+        <button key={id} role="tab" aria-selected={id === value} aria-current={id === value ? 'page' : undefined} onClick={() => onChange(id)}>{label}</button>
+      ))}
+    </nav>
+  );
+}
+
+// A page that sits inside another (an app in its project) tells the top bar its parents.
+export type Crumb = { label: string; href: string };
+export const TrailCtx = createContext<(t: Crumb[]) => void>(() => {});
+export function useTrail(t: Crumb[] | null) {
+  const set = useContext(TrailCtx);
+  const key = JSON.stringify(t);
+  useEffect(() => { if (t) set(t); return () => set([]); }, [key]);
 }
 
 // ProjectField picks the project a new service goes in. Locked when the dialog was opened from a
@@ -290,11 +334,11 @@ export function EnvModal({ title, sub, savedMsg, load, save, onClose, onSaved }:
 export function ProjectField({ value, onChange, locked }: { value: string; onChange: (v: string) => void; locked?: boolean }) {
   const [list, setList] = useState<Project[]>([]);
   useEffect(() => { if (!locked) api.projects().then(setList, () => undefined); }, [locked]);
+  if (locked) return null; // opened from the project's page: it's already chosen
   return (
     <Field label="Project" hint="Services of a project reach each other by name, on their own network. Nothing else can reach them.">
-      <select className="input" value={value} disabled={locked} onChange={e => onChange(e.target.value)}>
-        {locked ? <option value={value}>{value}</option>
-          : list.map(p => <option key={p.id} value={p.name === 'default' ? '' : p.name}>{p.name}</option>)}
+      <select className="input" value={value} onChange={e => onChange(e.target.value)}>
+        {list.map(p => <option key={p.id} value={p.name === 'default' ? '' : p.name}>{p.name}</option>)}
       </select>
     </Field>
   );

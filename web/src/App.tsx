@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type User } from './api';
-import { AppDetail, AppsPage, DeploymentsPage } from './Apps';
-import { DatabaseDetail, DatabasesPage } from './Databases';
+import { AppDetail, DeploymentsPage } from './Apps';
+import { DatabaseDetail } from './Databases';
 import { ProjectDetail, ProjectsPage } from './Projects';
 import { NodesPage } from './Nodes';
 import { SettingsPage } from './Settings';
 import { WorkspacesPage } from './Workspaces';
-import { allowed, EmptyState, Icon, Logo, MeCtx, type Perm } from './ui';
+import { allowed, EmptyState, Icon, Logo, MeCtx, TrailCtx, type Crumb, type Perm } from './ui';
 
 // [route, label, icon, milestone that brings it]. Apps and databases live in projects (their
 // pages keep their routes); PARENT says which nav entry their detail pages belong to.
@@ -47,13 +47,17 @@ export function App() {
   const [drawer, setDrawer] = useState(false);
   const [addNode, setAddNode] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState(false);
-  const [newApp, setNewApp] = useState(false);
-  const [newDatabase, setNewDatabase] = useState(false);
   const [newProject, setNewProject] = useState(false);
   const [sub, setSub] = useState(() => decodeURIComponent(routeParts()[1] ?? ''));
+  const [trail, setTrail] = useState<Crumb[]>([]); // a detail page's parents (Projects / shop)
 
   useEffect(() => {
-    const on = () => { setRoute(currentRoute()); setSub(decodeURIComponent(routeParts()[1] ?? '')); setDrawer(false); };
+    const on = () => {
+      // Apps and databases are listed in their projects now; old links land there.
+      if (/^#\/(apps|databases)\/?$/.test(location.hash)) { location.replace('#/projects'); return; }
+      setRoute(currentRoute()); setSub(decodeURIComponent(routeParts()[1] ?? '')); setDrawer(false);
+    };
+    on();
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
   }, []);
@@ -116,7 +120,7 @@ export function App() {
   const can = (p: Perm) => allowed(me, p);
 
   return (
-    <MeCtx.Provider value={me}>
+    <MeCtx.Provider value={me}><TrailCtx.Provider value={setTrail}>
     <div className="app">
       <aside className="sidebar" aria-label="Sidebar">
         <div className="sb-top"><a className="brand" href="#/nodes" aria-label="walroos"><Logo /><span className="lbl">walroos</span></a></div>
@@ -152,14 +156,13 @@ export function App() {
         <header className="topbar" ref={topbar}>
           <button className="btn-icon menu-btn" aria-label="Open navigation" onClick={() => setDrawer(true)}><Icon n="menu" /></button>
           <nav className="crumbs" aria-label="Breadcrumb"><ol>
-            {sub && nav ? <><li><a href={`#/${route}`}>{nav[1]}</a></li><li><span aria-current="page" className="mono">{sub}</span></li></>
+            {sub && trail.length ? <>{trail.map(c => <li key={c.href}><a href={c.href}>{c.label}</a></li>)}<li><span aria-current="page" className="mono">{sub}</span></li></>
+              : sub && nav ? <><li><a href={`#/${route}`}>{nav[1]}</a></li><li><span aria-current="page" className="mono">{sub}</span></li></>
               : <li><span aria-current="page">{nav?.[1] ?? 'Not found'}</span></li>}
           </ol></nav>
           <div className="tb-primary">
             {route === 'nodes' && can('nodes') && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
-            {route === 'apps' && !sub && can('apps') && <button className="btn btn-primary" onClick={() => setNewApp(true)}><Icon n="plus" /><span className="tb-label">New app</span></button>}
             {route === 'projects' && !sub && can('apps') && <button className="btn btn-primary" onClick={() => setNewProject(true)}><Icon n="plus" /><span className="tb-label">New project</span></button>}
-            {route === 'databases' && !sub && can('databases') && <button className="btn btn-primary" onClick={() => setNewDatabase(true)}><Icon n="plus" /><span className="tb-label">New database</span></button>}
             {route === 'workspaces' && <button className="btn btn-primary" onClick={() => setNewWorkspace(true)}><Icon n="plus" /><span className="tb-label">New workspace</span></button>}
           </div>
         </header>
@@ -167,10 +170,10 @@ export function App() {
           <div className="content">
             {route === 'nodes' ? <NodesPage addOpen={addNode} setAddOpen={setAddNode} />
               : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
-              : route === 'apps' ? (sub ? <AppDetail key={sub} name={sub} /> : <AppsPage newOpen={newApp} setNewOpen={setNewApp} />)
+              : route === 'apps' && sub ? <AppDetail key={sub} name={sub} />
               : route === 'projects' ? (sub ? <ProjectDetail key={sub} name={sub} /> : <ProjectsPage newOpen={newProject} setNewOpen={setNewProject} />)
               : route === 'deployments' ? <DeploymentsPage />
-              : route === 'databases' ? (sub ? <DatabaseDetail key={sub} name={sub} /> : <DatabasesPage newOpen={newDatabase} setNewOpen={setNewDatabase} />)
+              : route === 'databases' && sub ? <DatabaseDetail key={sub} name={sub} />
               : route === 'settings' ? <SettingsPage />
               : nav ? <EmptyState icon={nav[2]} title={`${nav[1]} land in ${nav[3]}`} text="See ARCHITECTURE.md for the roadmap." />
               : <EmptyState icon="alert" title="Nothing here" text="That page doesn't exist." action={<a className="btn" href="#/nodes">Back to nodes</a>} />}
@@ -178,6 +181,6 @@ export function App() {
         </main>
       </div>
     </div>
-    </MeCtx.Provider>
+    </TrailCtx.Provider></MeCtx.Provider>
   );
 }

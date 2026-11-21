@@ -167,6 +167,24 @@ func TestProjects(t *testing.T) {
 		t.Fatalf("database in shop: %d %s", code, msg)
 	}
 	call(t, h, "POST", "/api/databases", map[string]string{"name": "loose", "engine": "redis", "version": "8"}, nil)
+	// Dokploy's optional fields: database, user, password and a description.
+	var custom database.Database
+	if code, msg := call(t, h, "POST", "/api/databases", map[string]string{"name": "custom", "engine": "postgres", "version": "17",
+		"db": "orders", "user": "orders_rw", "password": "ThisIsALongPassword123", "description": "orders"}, &custom); code != 201 {
+		t.Fatalf("custom credentials: %d %s", code, msg)
+	}
+	if last := fa.dbs[len(fa.dbs)-1]; last.DB != "orders" || last.User != "orders_rw" || last.Password != "ThisIsALongPassword123" || custom.Description != "orders" {
+		t.Errorf("custom: agent got %+v, desc %q", last, custom.Description)
+	}
+	for _, bad := range []map[string]string{{"db": "1orders"}, {"user": "Orders"}, {"password": "short"}, {"password": "has spaces in it ok"}} {
+		body := map[string]string{"name": "bad", "engine": "redis", "version": "8"}
+		for k, v := range bad {
+			body[k] = v
+		}
+		if code, _ := call(t, h, "POST", "/api/databases", body, nil); code != 400 {
+			t.Errorf("database %v: %d, want 400", bad, code)
+		}
+	}
 	if d.Project != "shop" || fa.dbs[0].Network != "walroos-p-shop" || fa.dbs[1].Network != agent.AppNetwork {
 		t.Errorf("project %q, networks %q / %q", d.Project, fa.dbs[0].Network, fa.dbs[1].Network)
 	}

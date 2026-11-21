@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type App, type Backup, type Database, type Engine, type Node } from './api';
-import { ago, Badge, Confirm, CopyBtn, EmptyState, ErrorAlert, Field, Icon, Modal, ProjectField, usePoll, useToast } from './ui';
+import { BrandLogo, engineLogo } from './logos';
+import { ago, Badge, Confirm, CopyBtn, EmptyState, ErrorAlert, Field, Icon, Modal, ProjectField, Tabs, usePoll, useToast, useTrail } from './ui';
 
 const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis' };
 const label = (d: Database) => `${engineLabel[d.engine] ?? d.engine} ${d.version}`;
@@ -24,80 +25,11 @@ const schedule = (d: Database) => d.backup_every_hours === 0 ? 'off'
   : d.backup_every_hours % 24 === 0 ? `every ${d.backup_every_hours / 24 === 1 ? 'day' : `${d.backup_every_hours / 24} days`}`
   : `every ${d.backup_every_hours} h`;
 
-function LastBackup({ d }: { d: Database }) {
-  if (!d.last_backup_at) return <span className="muted">never</span>;
-  if (d.last_backup_error) return <span className="err-line od-truncate" title={d.last_backup_error}>failed {ago(d.last_backup_at)}</span>;
-  return <span className="muted">{ago(d.last_backup_at)}</span>;
-}
-
-/* ---------- list ---------- */
-export function DatabasesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
-  const [list, setList] = useState<Database[] | null>(null);
-  const [error, setError] = useState('');
-  const load = useCallback(() => { api.databases().then(l => { setList(l); setError(''); }, e => setError(e.message)); }, []);
-  usePoll(load, list?.some(d => d.state === 'activating') ? 2000 : 10000);
-
-  return (
-    <>
-      <h1 className="sr-only">Databases</h1>
-      {list && list.length > 0 && (
-        <div className="page-head page-bar">
-          <p className="muted page-sub">{list.filter(d => d.state === 'active').length} of {list.length} running</p><span />
-        </div>
-      )}
-      {error && !list ? (
-        <div className="state state-err" role="alert">
-          <Icon n="alert" cls="ic-lg" /><h3>Couldn't load databases</h3><p className="muted">{error}</p>
-          <button className="btn" onClick={load}><Icon n="refresh" />Retry</button>
-        </div>
-      ) : !list ? (
-        <div className="skel-list" aria-busy="true" aria-label="Loading">
-          {[0, 1].map(i => <div key={i} className="skel-row"><i className="skel w30" /><i className="skel w50" /><i className="skel w15" /></div>)}
-        </div>
-      ) : list.length === 0 ? (
-        <EmptyState icon="database" title="No databases yet"
-          text="PostgreSQL, MySQL, MariaDB or Redis on a node with the prod role, with a generated password and daily backups. Apps on the same node reach it by name."
-          action={<button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="plus" />New database</button>} />
-      ) : (
-        <div className="table-wrap">
-          <table className="tbl">
-            <thead><tr>
-              <th className="col-grow">Database</th><th className="hide-sm">Node</th><th>State</th>
-              <th className="hide-md">Backups</th><th className="hide-xs">Last backup</th>
-            </tr></thead>
-            <tbody>
-              {list.map(d => {
-                const [s, l] = dbState(d);
-                return (
-                  <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => { location.hash = `#/databases/${d.name}`; }}>
-                    <td className="col-grow"><div className="cell-lead">
-                      <span className={`lead${s === 'running' ? '' : ' off'}`} aria-hidden="true"><Icon n="database" /></span>
-                      <div className="cell-stack">
-                        <a className="cell-title mono" href={`#/databases/${d.name}`} title={d.name}>{d.name}</a>
-                        <span className="cell-sub">{label(d)}</span>
-                      </div>
-                    </div></td>
-                    <td className="hide-sm mono"><span className="clip" title={d.node_name}>{d.node_name}</span></td>
-                    <td><Badge s={s} label={l} /></td>
-                    <td className="hide-md muted od-nowrap">{schedule(d)}</td>
-                    <td className="hide-xs od-nowrap"><LastBackup d={d} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {newOpen && <NewDatabaseModal onClose={() => setNewOpen(false)} onCreated={d => { setNewOpen(false); location.hash = `#/databases/${d.name}`; }} />}
-    </>
-  );
-}
-
 export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose: () => void; onCreated: (d: Database) => void; project?: string }) {
   const toast = useToast();
   const [engines, setEngines] = useState<Engine[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
-  const [f, setF] = useState({ name: '', engine: 'postgres', version: '', node: '', project });
+  const [f, setF] = useState({ name: '', description: '', engine: 'postgres', version: '', db: '', user: '', password: '', node: '', project });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -107,7 +39,9 @@ export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose
   }, []);
   const prod = nodes.filter(n => n.roles.includes('prod'));
   const engine = engines.find(e => e.id === f.engine);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
   const pick = (id: string) => setF(x => ({ ...x, engine: id, version: engines.find(e => e.id === id)?.versions[0] ?? '' }));
+  const ident = (f.name || 'name').replace(/-/g, '_').replace(/^(\d)/, 'db_$1'); // what the hub derives
 
   const submit = () => {
     setBusy(true);
@@ -115,44 +49,61 @@ export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose
   };
 
   return (
-    <Modal title="New database" wide onClose={onClose}
-      sub="Runs on a node with the prod role, on its project's network: the project's apps reach it by name. No ports open on the node."
+    <Modal title="Create database" wide onClose={onClose}
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !f.name || !f.version} onClick={submit}>{busy ? 'Creating…' : 'Create database'}</button>
+        <button className="btn btn-primary" disabled={busy || !f.name || !f.version} onClick={submit}>{busy ? 'Creating…' : 'Create'}</button>
       </>}>
       {error && <ErrorAlert title="Couldn't create it" msg={error} />}
       <div className="form">
         <div className="field">
-          <span className="label" id="engine-h">Engine</span>
-          <div className="radio-cards radio-cards-2" role="radiogroup" aria-labelledby="engine-h">
+          <span className="label muted" id="engine-h">Select a database</span>
+          <div className="tile-pick" role="radiogroup" aria-labelledby="engine-h">
             {engines.map(e => (
-              <label key={e.id} className="radio-card">
-                <span className="rc-h"><input type="radio" name="engine" value={e.id} aria-label={e.label} checked={f.engine === e.id} onChange={() => pick(e.id)} />
-                  <Icon n="database" />{e.label}</span>
-                <span className="help">{e.id === 'redis' ? 'Cache and queues. RDB snapshots.' : `SQL on port ${e.port}.`}</span>
+              <label key={e.id}>
+                <input type="radio" name="engine" value={e.id} aria-label={e.label} checked={f.engine === e.id} onChange={() => pick(e.id)} />
+                <BrandLogo name={engineLogo(e.id)} size={32} />
+                <span>{e.label}</span>
               </label>
             ))}
           </div>
         </div>
+        <div className="form-section">Fill the next fields</div>
         <div className="field-row">
-          <Field label="Name" hint={<>DNS label. Apps reach it at <span className="mono">walroos-db-{f.name || 'name'}</span>.</>}>
-            <input className="input mono" value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} placeholder="shop-db" autoFocus />
+          <Field label="Name" hint={<>Other services of the project reach it as <span className="mono">{f.name || 'name'}:{engine?.port ?? 5432}</span>.</>}>
+            <input className="input mono" value={f.name} onChange={set('name')} placeholder="shop-db" autoFocus />
           </Field>
           <Field label="Version">
-            <select className="input mono" value={f.version} onChange={e => setF(x => ({ ...x, version: e.target.value }))} disabled={!engine}>
-              {engine?.versions.map(v => <option key={v} value={v}>{v}</option>)}
+            <select className="input mono" value={f.version} onChange={set('version')} disabled={!engine}>
+              {engine?.versions.map(v => <option key={v} value={v}>{engine.label} {v}</option>)}
             </select>
           </Field>
         </div>
-        <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
-        <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role. Join one with <span className="mono">--roles prod</span>.</span>
-          : 'Put it on the node of the apps that use it: they only reach databases on their own node.'}>
-          <select className="input" value={f.node} onChange={e => setF(x => ({ ...x, node: e.target.value }))}>
-            <option value="">Auto (first online)</option>
-            {prod.map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}{n.status !== 'online' ? ` (${n.status})` : ''}</option>)}
-          </select>
+        <Field label={<>Description <span className="muted">(optional)</span></>}>
+          <input className="input" value={f.description} onChange={set('description')} placeholder="Orders and customers" />
         </Field>
+        {f.engine !== 'redis' && (
+          <div className="field-row">
+            <Field label={<>Database name <span className="muted">(optional)</span></>}>
+              <input className="input mono" value={f.db} onChange={set('db')} placeholder={ident} />
+            </Field>
+            <Field label={<>Database user <span className="muted">(optional)</span></>}>
+              <input className="input mono" value={f.user} onChange={set('user')} placeholder={ident} />
+            </Field>
+          </div>
+        )}
+        <Field label={<>Password <span className="muted">(optional)</span></>} hint="Empty generates 32 letters and digits. Yours: 16 or more letters and digits.">
+          <input className="input mono" type="password" autoComplete="new-password" value={f.password} onChange={set('password')} placeholder="generated" />
+        </Field>
+        <div className="field-row">
+          <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
+          <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role.</span> : undefined}>
+            <select className="input" value={f.node} onChange={set('node')}>
+              <option value="">Auto (first online)</option>
+              {prod.map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}{n.status !== 'online' ? ` (${n.status})` : ''}</option>)}
+            </select>
+          </Field>
+        </div>
       </div>
     </Modal>
   );
@@ -171,16 +122,18 @@ export function DatabaseDetail({ name }: { name: string }) {
   const [removing, setRemoving] = useState(false);
   const [purge, setPurge] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
+  const [tab, setTab] = useState<'general' | 'backups' | 'advanced'>('general');
 
   const load = useCallback(() => {
     api.database(name).then(x => { setD(x); setError(''); }, e => setError(e.message));
     api.backups(name).then(setBackups, () => setBackups([]));
   }, [name]);
   usePoll(load, d?.state === 'activating' ? 2000 : 15000);
+  useTrail(d ? [{ label: 'Projects', href: '#/projects' }, { label: d.project, href: `#/projects/${d.project}` }] : null);
 
   if (error && !d) {
     return <EmptyState icon="alert" title={error === 'database not found' ? 'No such database' : "Couldn't load the database"} text={error}
-      action={<a className="btn" href="#/databases">Back to databases</a>} />;
+      action={<a className="btn" href="#/projects">Back to projects</a>} />;
   }
   if (!d) return <div className="skel-list" aria-busy="true" aria-label="Loading"><div className="skel-row"><i className="skel w30" /><i className="skel w50" /></div></div>;
 
@@ -193,7 +146,7 @@ export function DatabaseDetail({ name }: { name: string }) {
       .finally(() => setBackingUp(false));
   };
   const remove = () => api.deleteDatabase(d.name, purge).then(
-    () => { toast(`${d.name} deleted`); location.hash = '#/databases'; },
+    () => { toast(`${d.name} deleted`); location.hash = `#/projects/${d.project}`; },
     e => { setRemoving(false); toast(e.message, 'bad'); },
   );
 
@@ -201,17 +154,16 @@ export function DatabaseDetail({ name }: { name: string }) {
     <>
       <div className="page-head">
         <div className="ph-text">
-          <div className="title-row"><h1 className="mono">{d.name}</h1><Badge s={s} label={l} /></div>
+          <div className="title-row"><span className="svc-logo" aria-hidden="true"><BrandLogo name={engineLogo(d.engine)} /></span><h1 className="mono">{d.name}</h1><Badge s={s} label={l} /></div>
           <div className="ph-meta">
-            <a href={`#/projects/${d.project}`}><Icon n="apps" /><span className="mono">{d.project}</span></a>
-            <span><Icon n="database" />{label(d)}</span>
+            {d.description && <span>{d.description}</span>}
+            <span>{label(d)}</span>
             <span><Icon n="nodes" /><span className="mono">{d.node_name}</span></span>
           </div>
         </div>
         <div className="ph-actions">
           <button className="btn btn-primary" disabled={d.node_down || backingUp} onClick={backupNow}><Icon n="upload" />{backingUp ? 'Backing up…' : 'Back up now'}</button>
           <button className="btn" onClick={() => setLinking(true)}><Icon n="plug" />Link to app</button>
-          <button className="btn-icon" aria-label={`Delete ${d.name}`} title="Delete" onClick={() => setRemoving(true)}><Icon n="trash" /></button>
         </div>
       </div>
 
@@ -226,12 +178,15 @@ export function DatabaseDetail({ name }: { name: string }) {
         </div>
       )}
 
+      <Tabs tabs={[['general', 'General'], ['backups', 'Backups'], ['advanced', 'Advanced']]} value={tab} onChange={setTab} />
+
+      {tab === 'general' && <>
       <section className="card" aria-labelledby="conn-h">
         <div className="card-head"><div><h2 id="conn-h">Connection</h2>
-          <p className="muted">From apps on {d.node_name}, over the walroos network. Nothing outside the node can reach it.</p></div></div>
+          <p className="muted">From the services of <a href={`#/projects/${d.project}`}>{d.project}</a>, by name. Nothing outside the project can reach it.</p></div></div>
         <div className="card-body">
           <dl className="kv">
-            <dt>Host</dt><dd className="mono">{d.host}</dd>
+            <dt>Host</dt><dd className="mono">{d.name} <span className="muted">(or {d.host})</span></dd>
             <dt>Port</dt><dd className="mono">{d.port}</dd>
             {d.engine !== 'redis' && <><dt>User</dt><dd className="mono">{d.user}</dd><dt>Database</dt><dd className="mono">{d.db}</dd></>}
           </dl>
@@ -246,6 +201,9 @@ export function DatabaseDetail({ name }: { name: string }) {
         </div>
       </section>
 
+      </>}
+
+      {tab === 'backups' && <>
       <section className="card" aria-labelledby="bk-h">
         <div className="card-head">
           <div><h2 id="bk-h">Backups</h2>
@@ -278,6 +236,28 @@ export function DatabaseDetail({ name }: { name: string }) {
           <p className="help" style={{ marginTop: 'var(--sp2)' }}>They live on the same disk as the database: download one now and then to keep a copy elsewhere.</p>
         </div>
       </section>
+
+      </>}
+
+      {tab === 'advanced' && <>
+        <section className="card" aria-labelledby="dbrun-h">
+          <div className="card-head"><div><h2 id="dbrun-h">Runtime</h2><p className="muted">What runs on {d.node_name}.</p></div></div>
+          <div className="card-body">
+            <dl className="kv">
+              <dt>Container</dt><dd className="mono">{d.host}</dd>
+              <dt>Data</dt><dd className="mono">podman volume {d.host}</dd>
+              <dt>Engine</dt><dd>{label(d)}</dd>
+              <dt>Limits</dt><dd>2 GB of memory, 2048 processes</dd>
+            </dl>
+          </div>
+        </section>
+        <section className="card danger-zone" aria-labelledby="dbdel-h">
+          <div className="card-head">
+            <div><h2 id="dbdel-h">Delete database</h2><p className="muted">Stops it on {d.node_name}. Apps using it lose their connection.</p></div>
+            <button className="btn btn-danger" onClick={() => setRemoving(true)}><Icon n="trash" />Delete</button>
+          </div>
+        </section>
+      </>}
 
       {linking && <LinkModal d={d} onClose={() => setLinking(false)} />}
       {scheduling && <ScheduleModal d={d} onClose={() => setScheduling(false)} onSaved={x => { setScheduling(false); setD(x); }} />}

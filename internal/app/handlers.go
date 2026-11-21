@@ -42,6 +42,7 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
 	d.Put("/api/apps/{name}/domains", h.handlePutDomains)
 	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
+	d.Put("/api/apps/{name}/source", h.handlePutSource)
 	d.Get("/api/settings/cloudflare", h.handleGetCloudflare) // zones, for the domains dialog
 
 	r.With(auth.Require(auth.PermSettings)).Put("/api/settings/cloudflare", h.handlePutCloudflare)
@@ -51,6 +52,14 @@ func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []string
 	if decode(w, r, &domains) {
 		a, err := h.svc.SetDomains(r.Context(), r.PathValue("name"), domains)
+		reply(w, http.StatusOK, a, err)
+	}
+}
+
+func (h *Handler) handlePutSource(w http.ResponseWriter, r *http.Request) {
+	var in SourceInput
+	if decode(w, r, &in) {
+		a, err := h.svc.SetSource(r.Context(), r.PathValue("name"), in)
 		reply(w, http.StatusOK, a, err)
 	}
 }
@@ -182,7 +191,7 @@ func (h *Handler) handleRollback(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes):
+	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes), errors.Is(err, ErrNoSource):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound), errors.Is(err, ErrNoProject):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())

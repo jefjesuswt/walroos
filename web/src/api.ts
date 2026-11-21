@@ -166,7 +166,8 @@ export interface App {
   node_name: string;
   project_id: string;
   project: string; // its project's name
-  repo_url: string; // '' when image is set
+  description: string;
+  repo_url: string; // '' when image is set; both '' = a draft with no source yet
   image: string; // a published image, pulled on each deploy, instead of a repo
   branch: string;
   dockerfile: string;
@@ -198,6 +199,7 @@ export interface NewApp {
   health_path?: string;
   node?: string;
   project?: string; // name; '' = default
+  description?: string;
 }
 
 // A database engine (GET /api/databases/engines). Versions are image tags, newest first.
@@ -216,6 +218,7 @@ export interface Database {
   node_name: string;
   project_id: string;
   project: string;
+  description: string;
   engine: string;
   version: string;
   user: string;
@@ -300,6 +303,8 @@ export const api = {
   appEnv: (name: string) => req<EnvVar[]>('GET', `/api/apps/${name}/env`),
   setAppEnv: (name: string, vars: EnvVar[]) => req<EnvVar[]>('PUT', `/api/apps/${name}/env`, vars),
   setDomains: (name: string, domains: string[]) => req<App>('PUT', `/api/apps/${name}/domains`, domains),
+  setAppSource: (name: string, src: { repo_url?: string; image?: string; branch?: string; dockerfile?: string; port: number; health_path?: string }) =>
+    req<App>('PUT', `/api/apps/${name}/source`, src),
   setVolumes: (name: string, volumes: Volume[]) => req<App>('PUT', `/api/apps/${name}/volumes`, volumes),
   cloudflare: () => req<Cloudflare>('GET', '/api/settings/cloudflare'),
   setCloudflare: (token: string) => req<Cloudflare>('PUT', '/api/settings/cloudflare', { token }),
@@ -314,7 +319,7 @@ export const api = {
   engines: () => req<Engine[]>('GET', '/api/databases/engines'),
   databases: () => req<Database[]>('GET', '/api/databases'),
   database: (name: string) => req<Database>('GET', `/api/databases/${name}`),
-  createDatabase: (d: { name: string; engine: string; version: string; node?: string; project?: string }) => req<Database>('POST', '/api/databases', d),
+  createDatabase: (d: { name: string; engine: string; version: string; node?: string; project?: string; description?: string; db?: string; user?: string; password?: string }) => req<Database>('POST', '/api/databases', d),
   deleteDatabase: (name: string, purge = false) => req<void>('DELETE', `/api/databases/${name}${purge ? '?purge=1' : ''}`),
   setSchedule: (name: string, backup_every_hours: number, backup_keep: number) =>
     req<Database>('PUT', `/api/databases/${name}/schedule`, { backup_every_hours, backup_keep }),

@@ -38,7 +38,10 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 var (
 	nameRe   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
-	fileRe   = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb)\.gz$`)
+	// What the agent accepts (agent.DatabaseSpec.Valid), checked here to answer 400 instead of 502.
+	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`)
+	fileRe     = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb)\.gz$`)
 )
 
 // Engines lists what can be created, from the agent's table.
@@ -71,6 +74,20 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 		ident = "db_" + ident // SQL identifiers can't start with a digit
 	}
 	password := rand.Text() + rand.Text()[:6] // 32 base32 characters: letters and digits only
+	user, dbName := ident, ident
+	if in.User != "" {
+		user = in.User
+	}
+	if in.DB != "" {
+		dbName = in.DB
+	}
+	if in.Password != "" {
+		password = in.Password
+	}
+	in.Description = strings.TrimSpace(in.Description)
+	if !identRe.MatchString(user) || !identRe.MatchString(dbName) || !passwordRe.MatchString(password) || len(in.Description) > 500 {
+		return Database{}, ErrInvalid
+	}
 	sealed, err := s.box.Seal(password)
 	if err != nil {
 		return Database{}, err
@@ -80,7 +97,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 		project = "default"
 	}
 	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: project, Engine: e.ID, Version: in.Version,
-		User: ident, DB: ident, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
+		User: user, DB: dbName, Description: in.Description, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
 	// Row first: if the node fails, the row goes; the other way round a failed insert would
 	// leave a database running that the hub doesn't know.
 	if err := s.store.Insert(ctx, d); err != nil {
