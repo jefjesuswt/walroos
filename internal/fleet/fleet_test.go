@@ -134,6 +134,27 @@ func TestJoinHeartbeatListRemove(t *testing.T) {
 		t.Fatalf("listed node = %+v", n)
 	}
 
+	// Roles can change after joining; they're normalized like at join.
+	var changed fleet.Node
+	if code := call(t, hub, "PUT", "/api/nodes/"+n.ID+"/roles", "", map[string]any{"roles": []string{"prod", "dev", "prod"}}, &changed); code != 200 {
+		t.Fatalf("set roles: %d", code)
+	}
+	if got := changed.Roles; len(got) != 2 || got[0] != "dev" || got[1] != "prod" || changed.Status != "online" {
+		t.Fatalf("after set roles: %+v", changed)
+	}
+	for _, bad := range [][]string{{}, nil, {"gpu"}, {"dev", "gpu"}} {
+		if code := call(t, hub, "PUT", "/api/nodes/"+n.ID+"/roles", "", map[string]any{"roles": bad}, nil); code != 400 {
+			t.Errorf("roles %v: %d, want 400", bad, code)
+		}
+	}
+	if code := call(t, hub, "PUT", "/api/nodes/nope/roles", "", map[string]any{"roles": []string{"dev"}}, nil); code != 404 {
+		t.Errorf("roles of an unknown node: %d, want 404", code)
+	}
+	call(t, hub, "GET", "/api/nodes", "", nil, &nodes)
+	if got := nodes[0].Roles; len(got) != 2 || got[1] != "prod" {
+		t.Errorf("listed roles = %v", got)
+	}
+
 	if code := call(t, hub, "DELETE", "/api/nodes/"+n.ID, "", nil, nil); code != 204 {
 		t.Fatalf("remove: %d", code)
 	}

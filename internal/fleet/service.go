@@ -93,6 +93,25 @@ func (s *Service) List(ctx context.Context) ([]Node, error) {
 	return nodes, nil
 }
 
+// SetRoles changes what a node is used for. Roles only decide where new workspaces, builds,
+// apps and databases go: removing one leaves what already runs there alone.
+func (s *Service) SetRoles(ctx context.Context, id string, roles []string) (Node, error) {
+	roles, err := normalizeRoles(roles)
+	if err != nil {
+		return Node{}, err
+	}
+	if err := s.store.SetRoles(ctx, id, roles); err != nil {
+		return Node{}, err
+	}
+	nodes, err := s.List(ctx)
+	for _, n := range nodes {
+		if n.ID == id {
+			return n, err
+		}
+	}
+	return Node{}, ErrNodeNotFound
+}
+
 func (s *Service) Remove(ctx context.Context, id string) error {
 	return s.store.Delete(ctx, id)
 }
