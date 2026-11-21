@@ -35,7 +35,7 @@ func TestKeysAndAgentAuthorization(t *testing.T) {
 	}
 	users := auth.NewStore(db)
 	users.EnsureOwner(ctx, owner)
-	if _, err := db.Write.Exec(`INSERT INTO users (login, role, created_at) VALUES (?, 'member', ?)`, member, time.Now()); err != nil {
+	if _, err := db.Write.Exec(`INSERT INTO users (login, role, created_at) VALUES (?, 'developer', ?)`, member, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 

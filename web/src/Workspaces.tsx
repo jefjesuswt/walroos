@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Detection, type GitHub, type Node, type ProjectStack, type Workspace } from './api';
 import { stackLabel } from './stack';
-import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Cmd, Confirm, CopyBtn, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast } from './ui';
 
 export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
   const toast = useToast();
+  const { me, canUse } = useCan();
   const [list, setList] = useState<Workspace[] | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [error, setError] = useState('');
@@ -33,7 +34,8 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
       e => toast(e.message, 'bad'),
     );
 
-  const busy = (w: Workspace) => w.state === 'creating' || w.state === 'deleting';
+  // Someone else's workspace (and not the hub's owner): connect info only, no actions.
+  const busy = (w: Workspace) => w.state === 'creating' || w.state === 'deleting' || !canUse(w.owner);
 
   return (
     <>
@@ -73,7 +75,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                     <span className={`lead${w.state === 'running' ? '' : ' off'}`} aria-hidden="true"><Icon n="workspace" /></span>
                     <div className="cell-stack">
                       <span className="cell-title mono" title={w.name}>{w.name}</span>
-                      <span className="cell-sub mono od-truncate" title={w.repo_url}>{w.repo_url ? repoLabel(w.repo_url) : 'local git repo'}{w.branch ? ` · ${w.branch}` : ''}</span>
+                      <span className="cell-sub mono od-truncate" title={w.repo_url}>{w.repo_url ? repoLabel(w.repo_url) : 'local git repo'}{w.branch ? ` · ${w.branch}` : ''}{w.owner !== me?.login ? ` · ${w.owner}` : ''}</span>
                     </div>
                   </div></td>
                   <td className="hide-sm mono"><span className="clip" title={w.node_name}>{w.node_name}</span></td>
@@ -89,7 +91,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
                     {w.state === 'stopped'
                       ? <button className="btn-icon" title="Start" aria-label={`Start ${w.name}`} disabled={busy(w)} onClick={() => op(w, api.startWorkspace)}><Icon n="deploy" /></button>
                       : <button className="btn-icon" title="Stop" aria-label={`Stop ${w.name}`} disabled={busy(w) || w.state !== 'running'} onClick={() => op(w, api.stopWorkspace)}><Icon n="x" /></button>}
-                    <button className="btn-icon" title="Environment variables" aria-label={`Environment of ${w.name}`} onClick={() => setEditingEnv(w)}><Icon n="settings" /></button>
+                    <button className="btn-icon" title="Environment variables" aria-label={`Environment of ${w.name}`} disabled={!canUse(w.owner)} onClick={() => setEditingEnv(w)}><Icon n="settings" /></button>
                     <button className="btn-icon" title="Rebuild (keeps the clone and $HOME)" aria-label={`Rebuild ${w.name}`} disabled={busy(w)} onClick={() => setRebuilding(w)}><Icon n="refresh" /></button>
                     <button className="btn-icon" title="Delete" aria-label={`Delete ${w.name}`} disabled={busy(w)} onClick={() => setRemoving(w)}><Icon n="trash" /></button>
                   </td>
@@ -105,14 +107,14 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
 
       {newOpen && <NewWorkspaceModal nodes={nodes} onClose={() => setNewOpen(false)} onCreated={() => { setNewOpen(false); load(); }} />}
       {acting && (
-        <Modal title={acting.name} sub={`${acting.node_name} · ${acting.state}`} onClose={() => setActing(null)}>
+        <Modal title={acting.name} sub={`${acting.node_name} · ${acting.state}${canUse(acting.owner) ? '' : ` · ${acting.owner}'s`}`} onClose={() => setActing(null)}>
           <div className="sheet-list">
             {([
               ['plug', 'Connect', () => setConnecting(acting), false],
               acting.state === 'stopped'
                 ? ['deploy', 'Start', () => op(acting, api.startWorkspace), busy(acting)]
                 : ['x', 'Stop', () => op(acting, api.stopWorkspace), busy(acting) || acting.state !== 'running'],
-              ['settings', 'Environment variables', () => setEditingEnv(acting), false],
+              ['settings', 'Environment variables', () => setEditingEnv(acting), !canUse(acting.owner)],
               ['refresh', 'Rebuild', () => setRebuilding(acting), busy(acting)],
               ['trash', 'Delete', () => setRemoving(acting), busy(acting)],
             ] as [string, string, () => void, boolean][]).map(([icon, label, run, off]) => (
@@ -173,6 +175,8 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
   const [stack, setStack] = useState('');
   const [version, setVersion] = useState('');
   const [onGitHub, setOnGitHub] = useState(false);
+  const { can } = useCan();
+  const ghOK = !!gh?.configured && can('settings'); // repos go on the owner's account
   const [priv, setPriv] = useState(true);
   const dev = nodes.filter(n => n.roles.includes('dev') && n.status === 'online');
 
@@ -182,7 +186,7 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
       setStacks(list);
       if (list[0]) { setStack(list[0].id); setVersion(list[0].versions[0]); }
     }, e => setError({ title: "Couldn't load the stacks", msg: e.message }));
-    api.github().then(g => { setGh(g); setOnGitHub(g.configured); }, () => setGh({ configured: false }));
+    api.github().then(g => { setGh(g); setOnGitHub(g.configured && can('settings')); }, () => setGh({ configured: false }));
   }, [fresh, stacks.length]);
   const chosen = stacks.find(s => s.id === stack);
   const pickStack = (id: string) => { setStack(id); setVersion(stacks.find(s => s.id === id)?.versions[0] ?? ''); };
@@ -257,9 +261,11 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
           <div className="field">
             <span className="label" id="where-h">Repository</span>
             <div className="radio-cards radio-cards-2" role="radiogroup" aria-labelledby="where-h">
-              <label className={`radio-card${gh?.configured ? '' : ' is-off'}`}>
-                <span className="rc-h"><input type="radio" name="where" value="github" aria-label="On GitHub" checked={onGitHub} disabled={!gh?.configured} onChange={() => setOnGitHub(true)} />On GitHub</span>
-                <span className="help">{gh?.configured
+              <label className={`radio-card${ghOK ? '' : ' is-off'}`}>
+                <span className="rc-h"><input type="radio" name="where" value="github" aria-label="On GitHub" checked={onGitHub} disabled={!ghOK} onChange={() => setOnGitHub(true)} />On GitHub</span>
+                <span className="help">{!can('settings')
+                  ? <>Only the hub's owner can create repos on {gh?.login ? <span className="mono">{gh.login}</span> : 'their account'}.</>
+                  : gh?.configured
                   ? <>Created as <span className="mono">{gh.login}</span>, with the first commit pushed.</>
                   : <>Needs a token: add one in <a href="#/settings">Settings</a>.</>}</span>
               </label>

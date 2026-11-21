@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type App, type Cloudflare, type Deployment, type Node, type Volume } from './api';
-import { ago, Badge, Confirm, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Confirm, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast } from './ui';
 
 // What the app is doing, from the node's live release first: a deployment's state is only
 // what the hub saw (it can say failed for a deploy the node finished after a hub restart).
@@ -29,6 +29,7 @@ const source = (a: App) => a.image || `${repoLabel(a.repo_url)}${a.branch ? ` ·
 
 /* ---------- list ---------- */
 export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
+  const { can } = useCan();
   const [list, setList] = useState<App[] | null>(null);
   const [error, setError] = useState('');
   const load = useCallback(() => { api.apps().then(a => { setList(a); setError(''); }, e => setError(e.message)); }, []);
@@ -54,7 +55,7 @@ export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen
       ) : list.length === 0 ? (
         <EmptyState icon="apps" title="No apps yet"
           text="An app is a Git repo with a Dockerfile, or a published image, run on a node with the prod role. New releases replace the old one only once they answer."
-          action={<button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="plus" />New app</button>} />
+          action={can('apps') ? <button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="plus" />New app</button> : undefined} />
       ) : (
         <div className="grid-cards">
           {list.map(a => {
@@ -82,6 +83,7 @@ export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen
 
 /* ---------- one app ---------- */
 export function AppDetail({ name }: { name: string }) {
+  const { can } = useCan();
   const toast = useToast();
   const [a, setA] = useState<App | null>(null);
   const [deps, setDeps] = useState<Deployment[]>([]);
@@ -107,6 +109,7 @@ export function AppDetail({ name }: { name: string }) {
   if (!a) return <div className="skel-list" aria-busy="true" aria-label="Loading"><div className="skel-row"><i className="skel w30" /><i className="skel w50" /></div></div>;
 
   const [s, label] = appState(a);
+  const canEdit = can('apps');
   const remove = () => api.deleteApp(a.name, purge).then(
     () => { toast(`${a.name} deleted`); location.hash = '#/apps'; },
     e => { setRemoving(false); toast(e.message, 'bad'); },
@@ -123,11 +126,11 @@ export function AppDetail({ name }: { name: string }) {
             {a.running && <span>live <span className="sha">{short(a.running.sha)}</span></span>}
           </div>
         </div>
-        <div className="ph-actions">
+        {canEdit && <div className="ph-actions">
           <button className="btn btn-primary" disabled={a.node_down} onClick={() => setDeploying(true)}><Icon n="deploy" />Deploy</button>
           <button className="btn" onClick={() => setEditingEnv(true)}><Icon n="settings" />Environment</button>
           <button className="btn-icon" aria-label={`Delete ${a.name}`} title="Delete" onClick={() => setRemoving(true)}><Icon n="trash" /></button>
-        </div>
+        </div>}
       </div>
 
       {a.node_down && (
@@ -168,7 +171,7 @@ export function AppDetail({ name }: { name: string }) {
       <section className="card" aria-labelledby="domains-h">
         <div className="card-head">
           <div><h2 id="domains-h">Domains</h2><p className="muted">Public, with TLS, through {a.node_name}'s Cloudflare Tunnel. No ports open on the node.</p></div>
-          <button className="btn" onClick={() => setEditingDomains(true)}><Icon n="globe" />Edit</button>
+          {canEdit && <button className="btn" onClick={() => setEditingDomains(true)}><Icon n="globe" />Edit</button>}
         </div>
         <div className="card-body">
           {a.domains.length === 0 ? <p className="muted">None yet: the app is only reachable inside the node.</p> : (
@@ -182,7 +185,7 @@ export function AppDetail({ name }: { name: string }) {
       <section className="card" aria-labelledby="volumes-h">
         <div className="card-head">
           <div><h2 id="volumes-h">Volumes</h2><p className="muted">Data that outlives releases. With any, a deploy stops the running release before starting the new one.</p></div>
-          <button className="btn" onClick={() => setEditingVolumes(true)}><Icon n="settings" />Edit</button>
+          {canEdit && <button className="btn" onClick={() => setEditingVolumes(true)}><Icon n="settings" />Edit</button>}
         </div>
         <div className="card-body">
           {a.volumes.length === 0 ? <p className="muted">None: every deploy starts from the image's files.</p> : (
@@ -320,7 +323,8 @@ function DeploymentModal({ app, id, onClose, onRollback }: {
   usePoll(load, settling(d ?? undefined) || !d ? 1500 : 60000);
   useEffect(() => { box.current?.scrollTo(0, box.current.scrollHeight); }, [d?.log]);
 
-  const canRollback = d?.state === 'succeeded' && !!d.image && !isCurrent(app, d) && !app.node_down;
+  const { can } = useCan();
+  const canRollback = can('apps') && d?.state === 'succeeded' && !!d.image && !isCurrent(app, d) && !app.node_down;
   const rollback = () => d && api.rollback(app.name, d.id).then(
     next => { toast(`Rolling back ${app.name} to ${short(d.sha)}`); onRollback(next); },
     e => toast(e.message, 'bad'),

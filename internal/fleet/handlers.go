@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -30,11 +31,12 @@ func (h *Handler) NodeRoutes(r *whttp.Router) {
 
 // UserRoutes must be mounted behind user auth.
 func (h *Handler) UserRoutes(r *whttp.Router) {
-	r.Get("/api/nodes", h.handleList)
-	r.Delete("/api/nodes/{id}", h.handleRemove)
-	r.Put("/api/nodes/{id}/roles", h.handleSetRoles)
-	r.Get("/api/nodes/{id}/agent", h.handleAgentInfo)
-	r.Post("/api/nodes/join-tokens", h.handleNewJoinToken)
+	r.Get("/api/nodes", h.handleList) // everyone: creating a workspace picks a node
+	o := r.With(auth.Require(auth.PermNodes))
+	o.Delete("/api/nodes/{id}", h.handleRemove)
+	o.Put("/api/nodes/{id}/roles", h.handleSetRoles)
+	o.Get("/api/nodes/{id}/agent", h.handleAgentInfo)
+	o.Post("/api/nodes/join-tokens", h.handleNewJoinToken)
 }
 
 func (h *Handler) handleNewJoinToken(w http.ResponseWriter, req *http.Request) {

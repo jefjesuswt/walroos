@@ -78,7 +78,7 @@ func (s *Store) Delete(ctx context.Context, login, id string) error {
 }
 
 // Authorize returns the login that owns the key with this fingerprint if it may open the
-// workspace on the node: the hub's owner opens any workspace, a member only the ones they own.
+// workspace on the node: the hub's owner opens any workspace, anyone else only the ones they own.
 func (s *Store) Authorize(ctx context.Context, nodeID, workspace, fingerprint string) (string, error) {
 	var login, role, wsOwner string
 	err := s.db.Read.QueryRowContext(ctx, `

@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/cloudflare"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/workspace"
@@ -24,22 +25,26 @@ func NewHandler(svc *Service) *Handler {
 
 // Routes must be mounted behind user auth.
 func (h *Handler) Routes(r *whttp.Router) {
+	// Everyone reads apps, deployments and logs; env holds secrets.
 	r.Get("/api/apps", h.handleList)
 	r.Get("/api/deployments", h.handleAllDeployments)
-	r.Post("/api/apps", h.handleCreate)
 	r.Get("/api/apps/{name}", h.handleGet)
-	r.Delete("/api/apps/{name}", h.handleDelete)
-	r.Get("/api/apps/{name}/env", h.handleGetEnv)
-	r.Put("/api/apps/{name}/env", h.handlePutEnv)
 	r.Get("/api/apps/{name}/logs", h.handleLogs)
-	r.Post("/api/apps/{name}/deploy", h.handleDeploy)
 	r.Get("/api/apps/{name}/deployments", h.handleDeployments)
 	r.Get("/api/apps/{name}/deployments/{id}", h.handleDeployment)
-	r.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
-	r.Put("/api/apps/{name}/domains", h.handlePutDomains)
-	r.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
-	r.Get("/api/settings/cloudflare", h.handleGetCloudflare)
-	r.Put("/api/settings/cloudflare", h.handlePutCloudflare)
+
+	d := r.With(auth.Require(auth.PermApps))
+	d.Post("/api/apps", h.handleCreate)
+	d.Delete("/api/apps/{name}", h.handleDelete)
+	d.Get("/api/apps/{name}/env", h.handleGetEnv)
+	d.Put("/api/apps/{name}/env", h.handlePutEnv)
+	d.Post("/api/apps/{name}/deploy", h.handleDeploy)
+	d.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
+	d.Put("/api/apps/{name}/domains", h.handlePutDomains)
+	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
+	d.Get("/api/settings/cloudflare", h.handleGetCloudflare) // zones, for the domains dialog
+
+	r.With(auth.Require(auth.PermSettings)).Put("/api/settings/cloudflare", h.handlePutCloudflare)
 }
 
 func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {

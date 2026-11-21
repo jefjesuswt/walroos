@@ -5,9 +5,10 @@ import { DatabaseDetail, DatabasesPage } from './Databases';
 import { NodesPage } from './Nodes';
 import { SettingsPage } from './Settings';
 import { WorkspacesPage } from './Workspaces';
-import { EmptyState, Icon, Logo } from './ui';
+import { allowed, EmptyState, Icon, Logo, MeCtx, type Perm } from './ui';
 
-// [route, label, icon, milestone that brings it]
+// [route, label, icon, milestone that brings it]; NEEDS hides a page from roles without the perm
+const NEEDS: Record<string, Perm> = { databases: 'databases' };
 const NAV = [
   ['overview', 'Overview', 'overview', 'M1'],
   ['workspaces', 'Workspaces', 'workspace', ''],
@@ -108,12 +109,15 @@ export function App() {
     );
   }
 
+  const can = (p: Perm) => allowed(me, p);
+
   return (
+    <MeCtx.Provider value={me}>
     <div className="app">
       <aside className="sidebar" aria-label="Sidebar">
         <div className="sb-top"><a className="brand" href="#/nodes" aria-label="walroos"><Logo /><span className="lbl">walroos</span></a></div>
         <nav className="nav" aria-label="Main">
-          {NAV.map(([r, label, icon, soon]) => (
+          {NAV.filter(([r]) => !NEEDS[r] || can(NEEDS[r])).map(([r, label, icon, soon]) => (
             <a key={r} href={`#/${r}`} aria-current={r === route ? 'page' : undefined} title={soon ? `${label} · coming in ${soon}` : label}>
               <Icon n={icon} /><span className="lbl">{label}</span>
             </a>
@@ -125,6 +129,7 @@ export function App() {
             <span className="sb-user-t lbl">
               <span className="od-truncate" style={{ fontWeight: 500 }}>{me.login.split('@')[0]}</span>
               <span className="conn"><span className="dot ok" aria-hidden="true" /><span className="od-truncate mono">{me.login}</span></span>
+              <span className="conn">{me.role}</span>
             </span>
           </div>
         )}
@@ -147,9 +152,9 @@ export function App() {
               : <li><span aria-current="page">{nav?.[1] ?? 'Not found'}</span></li>}
           </ol></nav>
           <div className="tb-primary">
-            {route === 'nodes' && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
-            {route === 'apps' && !sub && <button className="btn btn-primary" onClick={() => setNewApp(true)}><Icon n="plus" /><span className="tb-label">New app</span></button>}
-            {route === 'databases' && !sub && <button className="btn btn-primary" onClick={() => setNewDatabase(true)}><Icon n="plus" /><span className="tb-label">New database</span></button>}
+            {route === 'nodes' && can('nodes') && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
+            {route === 'apps' && !sub && can('apps') && <button className="btn btn-primary" onClick={() => setNewApp(true)}><Icon n="plus" /><span className="tb-label">New app</span></button>}
+            {route === 'databases' && !sub && can('databases') && <button className="btn btn-primary" onClick={() => setNewDatabase(true)}><Icon n="plus" /><span className="tb-label">New database</span></button>}
             {route === 'workspaces' && <button className="btn btn-primary" onClick={() => setNewWorkspace(true)}><Icon n="plus" /><span className="tb-label">New workspace</span></button>}
           </div>
         </header>
@@ -167,5 +172,6 @@ export function App() {
         </main>
       </div>
     </div>
+    </MeCtx.Provider>
   );
 }

@@ -168,6 +168,7 @@ and --owner with your tailnet login so you can use the UI.
 			r.Get("/api/me", auth.HandleMe)
 			fleetHandler.UserRoutes(r)
 			keysHandler.UserRoutes(r)
+			users.UserRoutes(r)
 			wsHandler.Routes(r)
 			app.NewHandler(appSvc).Routes(r)
 			database.NewHandler(dbSvc).Routes(r)

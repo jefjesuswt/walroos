@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 )
@@ -233,6 +234,15 @@ func (s *Service) refresh(ctx context.Context, w Workspace) (Workspace, error) {
 	}
 	w.State, w.Image, w.Error = ws.State, ws.Image, ws.Error
 	return w, nil
+}
+
+// Authorize returns auth.ErrForbidden unless u may act on the workspace (or ErrNotFound).
+func (s *Service) Authorize(ctx context.Context, u auth.User, name string) error {
+	w, err := s.store.Get(ctx, name)
+	if err != nil {
+		return err
+	}
+	return u.CanUseWorkspace(w.Owner)
 }
 
 func (s *Service) Start(ctx context.Context, name string) (Workspace, error) {
