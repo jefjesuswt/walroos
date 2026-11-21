@@ -20,6 +20,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -58,7 +59,8 @@ func newHub(t *testing.T) (http.Handler, *config.Database) {
 	agents := &agent.Client{HTTP: &http.Client{Transport: &http.Transport{DialContext: refuse}, Timeout: time.Second}}
 	box, _ := secretbox.LoadOrCreate(filepath.Join(t.TempDir(), "secret.key"))
 	nodes := fleet.NewService(fleet.NewStore(db))
-	apps := app.NewService(app.NewStore(db), nodes, agents, box)
+	set := settings.NewService(db, box)
+	apps := app.NewService(app.NewStore(db), nodes, agents, box, set)
 	users := auth.NewStore(db)
 
 	r := whttp.NewRouter()
@@ -68,8 +70,9 @@ func newHub(t *testing.T) (http.Handler, *config.Database) {
 		fleet.NewHandler(nodes, "http://hub", "hub", agents).UserRoutes(r)
 		sshkeys.NewHandler(sshkeys.NewStore(db), nodes.Authenticate).UserRoutes(r)
 		users.UserRoutes(r)
-		workspace.NewHandler(workspace.NewService(workspace.NewStore(db), nodes, agents, box)).Routes(r)
+		workspace.NewHandler(workspace.NewService(workspace.NewStore(db), nodes, agents, box, set)).Routes(r)
 		app.NewHandler(apps).Routes(r)
+		settings.NewHandler(set).Routes(r)
 		database.NewHandler(database.NewService(database.NewStore(db), nodes, agents, box, apps)).Routes(r)
 	})
 	return r, db

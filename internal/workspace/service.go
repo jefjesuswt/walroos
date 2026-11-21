@@ -13,6 +13,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/shared/names"
 )
 
@@ -23,8 +24,8 @@ type Service struct {
 	agents *agent.Client
 	box    *secretbox.Box // encrypts env values at rest
 	now    func() time.Time
-
-	GitHubAPI string // "" = GitHub's; tests point it at a fake
+	// settings has the GitHub token new projects' repos need.
+	settings *settings.Service
 }
 
 // placement: workspaces run on dev nodes, a new one on the least busy.
@@ -42,8 +43,8 @@ func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error)
 	return s.nodes.Pick(ctx, placement, want, usage)
 }
 
-func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
-	return &Service{store: store, nodes: nodes, agents: agents, box: box, now: time.Now}
+func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box, st *settings.Service) *Service {
+	return &Service{store: store, nodes: nodes, agents: agents, box: box, settings: st, now: time.Now}
 }
 
 // validName: a DNS label that isn't a route under /api/workspaces.

@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -98,6 +99,7 @@ type hub struct {
 	agent *fakeAgent
 	db    *config.Database
 	svc   *app.Service
+	set   *settings.Service
 }
 
 func newHub(t *testing.T, roles string) *hub {
@@ -128,15 +130,17 @@ func newHub(t *testing.T, roles string) *hub {
 	}
 	agents := &agent.Client{HTTP: &http.Client{Transport: &http.Transport{DialContext: dial}, Timeout: 5 * time.Second}}
 	box, _ := secretbox.LoadOrCreate(filepath.Join(t.TempDir(), "secret.key"))
-	svc := app.NewService(app.NewStore(db), fleet.NewService(fleet.NewStore(db)), agents, box)
+	set := settings.NewService(db, box)
+	svc := app.NewService(app.NewStore(db), fleet.NewService(fleet.NewStore(db)), agents, box, set)
 	go svc.Run(ctx)
 
 	r := whttp.NewRouter()
 	r.Group(func(r *whttp.Router) {
 		r.Use(auth.Middleware(auth.Static("owner@github"), users))
 		app.NewHandler(svc).Routes(r)
+		settings.NewHandler(set).Routes(r)
 	})
-	return &hub{http: r, agent: fa, db: db, svc: svc}
+	return &hub{http: r, agent: fa, db: db, svc: svc, set: set}
 }
 
 func (h *hub) call(t *testing.T, method, path string, body, out any) int {

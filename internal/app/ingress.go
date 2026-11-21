@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -14,83 +13,12 @@ import (
 )
 
 var (
-	ErrNoCloudflare = whttp.Conflict("Cloudflare isn't set up: add an API token in Settings")
-	ErrDomain       = whttp.Invalid("domains must be hostnames like app.example.com")
-	ErrDomainTaken  = whttp.Conflict("that domain already routes to another app")
-	ErrNoZone       = whttp.Invalid("not in a zone this Cloudflare token can edit")
+	ErrDomain      = whttp.Invalid("domains must be hostnames like app.example.com")
+	ErrDomainTaken = whttp.Conflict("that domain already routes to another app")
+	ErrNoZone      = whttp.Invalid("not in a zone this Cloudflare token can edit")
 )
 
-// CloudflareStatus is what the UI shows; the token itself never leaves the hub.
-type CloudflareStatus struct {
-	Configured bool     `json:"configured"`
-	Zones      []string `json:"zones"`
-}
-
-const cloudflareKey = "cloudflare_token"
-
 var hostRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
-// SetCloudflare stores the API token (sealed) once it has proven to see at least one zone.
-// It needs Zone:Read and DNS:Edit on the zones, and Cloudflare Tunnel:Edit on the account.
-func (s *Service) SetCloudflare(ctx context.Context, token string) (CloudflareStatus, error) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return CloudflareStatus{}, fmt.Errorf("%w: empty token", ErrInvalid)
-	}
-	zones, err := cloudflare.New(token, s.CloudflareAPI).Zones(ctx)
-	if err != nil {
-		return CloudflareStatus{}, err
-	}
-	if len(zones) == 0 {
-		return CloudflareStatus{}, fmt.Errorf("%w: the token sees no zone; give it Zone:Read and DNS:Edit on your domain", ErrInvalid)
-	}
-	sealed, err := s.box.Seal(token)
-	if err != nil {
-		return CloudflareStatus{}, err
-	}
-	if err := s.store.setSetting(ctx, cloudflareKey, sealed); err != nil {
-		return CloudflareStatus{}, err
-	}
-	return status(zones), nil
-}
-
-func (s *Service) Cloudflare(ctx context.Context) (CloudflareStatus, error) {
-	cf, err := s.cloudflare(ctx)
-	if errors.Is(err, ErrNoCloudflare) {
-		return CloudflareStatus{Zones: []string{}}, nil
-	}
-	if err != nil {
-		return CloudflareStatus{}, err
-	}
-	zones, err := cf.Zones(ctx)
-	if err != nil {
-		return CloudflareStatus{Configured: true, Zones: []string{}}, err
-	}
-	return status(zones), nil
-}
-
-func status(zones []cloudflare.Zone) CloudflareStatus {
-	st := CloudflareStatus{Configured: true, Zones: []string{}}
-	for _, z := range zones {
-		st.Zones = append(st.Zones, z.Name)
-	}
-	return st
-}
-
-func (s *Service) cloudflare(ctx context.Context) (*cloudflare.Client, error) {
-	sealed, err := s.store.setting(ctx, cloudflareKey)
-	if err != nil {
-		return nil, err
-	}
-	if sealed == "" {
-		return nil, ErrNoCloudflare
-	}
-	token, err := s.box.Open(sealed)
-	if err != nil {
-		return nil, fmt.Errorf("cloudflare token: %w", err)
-	}
-	return cloudflare.New(token, s.CloudflareAPI), nil
-}
 
 // SetDomains routes exactly these hostnames to the app: ingress rules on its node's tunnel
 // (created, and cloudflared started, the first time) and proxied CNAMEs to it.
@@ -109,7 +37,7 @@ func (s *Service) SetDomains(ctx context.Context, name string, domains []string)
 			want = append(want, d)
 		}
 	}
-	cf, err := s.cloudflare(ctx)
+	cf, err := s.settings.CloudflareClient(ctx)
 	if err != nil {
 		return App{}, err
 	}
@@ -214,7 +142,7 @@ func (s *Service) unroute(ctx context.Context, nodeID string, domains []string) 
 	if len(domains) == 0 {
 		return
 	}
-	cf, err := s.cloudflare(ctx)
+	cf, err := s.settings.CloudflareClient(ctx)
 	var zones []cloudflare.Zone
 	if err == nil {
 		zones, err = cf.Zones(ctx)

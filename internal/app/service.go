@@ -15,6 +15,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/project/lookup"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/names"
 )
@@ -29,15 +30,15 @@ type Service struct {
 	box    *secretbox.Box
 	kick   chan struct{}
 	now    func() time.Time
-
-	CloudflareAPI string // "" = Cloudflare's; tests point it at a fake
+	// settings has the Cloudflare token domains need.
+	settings *settings.Service
 }
 
 // placement: apps run on prod nodes.
 var placement = fleet.Placement{Role: "prod", NoNode: ErrNoNode, WrongRole: ErrNodeRole}
 
-func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
-	return &Service{store: store, nodes: nodes, agents: agents, box: box, kick: make(chan struct{}, 1), now: time.Now}
+func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box, st *settings.Service) *Service {
+	return &Service{store: store, nodes: nodes, agents: agents, box: box, settings: st, kick: make(chan struct{}, 1), now: time.Now}
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {

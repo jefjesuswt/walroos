@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -165,6 +166,7 @@ type hub struct {
 	login   string
 	agentsC *agent.Client
 	svc     *workspace.Service
+	set     *settings.Service
 }
 
 // newHub wires the same routes as `walroos hub`, on a temp SQLite, with the caller as owner.
@@ -203,7 +205,8 @@ func newHub(t *testing.T, withDevNode bool) *hub {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.svc = workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box)
+	h.set = settings.NewService(db, box)
+	h.svc = workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box, h.set)
 	wsHandler := workspace.NewHandler(h.svc)
 
 	r := whttp.NewRouter()
@@ -213,6 +216,7 @@ func newHub(t *testing.T, withDevNode bool) *hub {
 		r.Get("/api/me", auth.HandleMe)
 		fleetHandler.UserRoutes(r)
 		wsHandler.Routes(r)
+		settings.NewHandler(h.set).Routes(r)
 	})
 	h.http = r
 	return h

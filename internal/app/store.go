@@ -249,21 +249,6 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 
-func (s *Store) setting(ctx context.Context, key string) (string, error) {
-	var v string
-	err := s.db.Read.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return v, err
-}
-
-func (s *Store) setSetting(ctx context.Context, key, value string) error {
-	_, err := s.db.Write.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
-	return err
-}
-
 // domains maps app id to its domains, sorted.
 func (s *Store) domains(ctx context.Context) (map[string][]string, error) {
 	rows, err := s.db.Read.QueryContext(ctx, `SELECT app_id, domain FROM app_domains ORDER BY domain`)

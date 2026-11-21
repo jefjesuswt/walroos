@@ -43,9 +43,7 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
 	d.Put("/api/apps/{name}/source", h.handlePutSource)
 	d.Post("/api/apps/from-template", h.handleFromTemplate)
-	d.Get("/api/settings/cloudflare", h.handleGetCloudflare) // zones, for the domains dialog
 
-	r.With(auth.Require(auth.PermSettings)).Put("/api/settings/cloudflare", h.handlePutCloudflare)
 }
 
 func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
@@ -77,21 +75,6 @@ func (h *Handler) handlePutVolumes(w http.ResponseWriter, r *http.Request) {
 	if decode(w, r, &vols) {
 		a, err := h.svc.SetVolumes(r.Context(), r.PathValue("name"), vols)
 		whttp.Reply(w, http.StatusOK, a, err)
-	}
-}
-
-func (h *Handler) handleGetCloudflare(w http.ResponseWriter, r *http.Request) {
-	st, err := h.svc.Cloudflare(r.Context())
-	whttp.Reply(w, http.StatusOK, st, err)
-}
-
-func (h *Handler) handlePutCloudflare(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Token string `json:"token"`
-	}
-	if decode(w, r, &in) {
-		st, err := h.svc.SetCloudflare(r.Context(), in.Token)
-		whttp.Reply(w, http.StatusOK, st, err)
 	}
 }
 

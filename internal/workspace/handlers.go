@@ -35,10 +35,6 @@ func (h *Handler) Routes(r *whttp.Router) {
 
 	r.Get("/api/workspaces/stacks", h.handleStacks) // a workspace can't be named "stacks"
 	r.Post("/api/workspaces/from-scratch", h.handleCreateProject)
-	r.Get("/api/settings/github", h.handleGetGitHub) // who repos are created as; never the token
-	s := r.With(auth.Require(auth.PermSettings))
-	s.Put("/api/settings/github", h.handlePutGitHub)
-	s.Delete("/api/settings/github", h.handleDeleteGitHub)
 }
 
 // ownsWorkspace answers 403 unless the caller may act on the workspace in the path.
@@ -75,39 +71,6 @@ func (h *Handler) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	whttp.JSON(w, http.StatusCreated, ws)
-}
-
-func (h *Handler) handleGetGitHub(w http.ResponseWriter, r *http.Request) {
-	st, err := h.svc.GitHub(r.Context())
-	if err != nil {
-		whttp.WriteError(w, err)
-		return
-	}
-	whttp.JSON(w, http.StatusOK, st)
-}
-
-func (h *Handler) handlePutGitHub(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
-	st, err := h.svc.SetGitHub(r.Context(), in.Token)
-	if err != nil {
-		whttp.WriteError(w, err)
-		return
-	}
-	whttp.JSON(w, http.StatusOK, st)
-}
-
-func (h *Handler) handleDeleteGitHub(w http.ResponseWriter, r *http.Request) {
-	if err := h.svc.DeleteGitHub(r.Context()); err != nil {
-		whttp.WriteError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {

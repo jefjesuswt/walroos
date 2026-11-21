@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 )
 
@@ -114,7 +115,7 @@ func (g *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 func newProjectHub(t *testing.T, withDevNode bool) (*hub, *fakeGitHub, *httptest.Server) {
 	h := newHub(t, withDevNode)
 	g, srv := newFakeGitHub(t)
-	h.svc.GitHubAPI = srv.URL
+	h.set.GitHubAPI = srv.URL
 	return h, g, srv
 }
 
@@ -138,7 +139,7 @@ func TestProjectStacks(t *testing.T) {
 func TestGitHubToken(t *testing.T) {
 	h, g, _ := newProjectHub(t, true)
 
-	var st workspace.GitHubStatus
+	var st settings.GitHubStatus
 	if h.call(t, "GET", "/api/settings/github", nil, &st); st.Configured {
 		t.Fatalf("fresh hub: %+v", st)
 	}
@@ -146,7 +147,7 @@ func TestGitHubToken(t *testing.T) {
 		token, msg string
 		code       int
 	}{
-		{"", "empty token", 400},
+		{"", "token is empty", 400},
 		{"wrong", "rejected the token", 400},
 		{"gist", "repo scope", 400},
 	} {

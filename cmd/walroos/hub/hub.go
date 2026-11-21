@@ -22,6 +22,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/mcp"
 	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/web"
 	"github.com/jefjesuswt/walroos/internal/workspace"
@@ -153,9 +154,10 @@ and --owner with your tailnet login so you can use the UI.
 		if err != nil {
 			return ui.WrapError("workspace env key: %w", err)
 		}
-		wsSvc := workspace.NewService(workspace.NewStore(db), fleetSvc, agents, box)
+		settingsSvc := settings.NewService(db, box)
+		wsSvc := workspace.NewService(workspace.NewStore(db), fleetSvc, agents, box, settingsSvc)
 		wsHandler := workspace.NewHandler(wsSvc)
-		appSvc := app.NewService(app.NewStore(db), fleetSvc, agents, box)
+		appSvc := app.NewService(app.NewStore(db), fleetSvc, agents, box, settingsSvc)
 		go appSvc.Run(ctx)
 		dbSvc := database.NewService(database.NewStore(db), fleetSvc, agents, box, appSvc)
 		go dbSvc.Run(ctx)
@@ -172,6 +174,7 @@ and --owner with your tailnet login so you can use the UI.
 			keysHandler.UserRoutes(r)
 			users.UserRoutes(r)
 			wsHandler.Routes(r)
+			settings.NewHandler(settingsSvc).Routes(r)
 			app.NewHandler(appSvc).Routes(r)
 			database.NewHandler(dbSvc).Routes(r)
 			project.NewHandler(projectSvc).Routes(r)

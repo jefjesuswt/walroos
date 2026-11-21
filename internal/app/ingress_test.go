@@ -11,6 +11,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/cloudflare"
+	"github.com/jefjesuswt/walroos/internal/settings"
 )
 
 // fakeCF is Cloudflare's API as walroos uses it: one zone, tunnels, their ingress and DNS.
@@ -98,10 +99,10 @@ func (f *fakeCF) serve(w http.ResponseWriter, r *http.Request) {
 func TestAppDomains(t *testing.T) {
 	h := newHub(t, "prod")
 	cf, url := newFakeCF(t)
-	h.svc.CloudflareAPI = url
+	h.set.CloudflareAPI = url
 	h.call(t, "POST", "/api/apps", app.CreateInput{Name: "web", RepoURL: "https://example.com/web.git", Port: 8000}, nil)
 
-	var st app.CloudflareStatus
+	var st settings.CloudflareStatus
 	if h.call(t, "GET", "/api/settings/cloudflare", nil, &st); st.Configured {
 		t.Fatalf("configured before any token: %+v", st)
 	}
