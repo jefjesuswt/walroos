@@ -1,0 +1,10 @@
+/* New workspace: what Detect found. */
+.detected { display: flex; flex-direction: column; gap: var(--sp3); padding: var(--sp4); border-radius: var(--r3); background: var(--s1); }
+.detected-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp3); }
+.detected-t { display: grid; gap: 2px; min-width: 0; }
+.detected-t .mono { font-size: var(--fs-xs); }
+.tools { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp2); }
+.tools li { display: flex; align-items: center; justify-content: space-between; gap: var(--sp3); min-height: 32px; }
+.tools .check:has(input:disabled) { cursor: default; }
+.detected .disclosure > div { display: grid; gap: var(--sp2); }
+.detected textarea { width: 100%; font-size: var(--fs-xs); }

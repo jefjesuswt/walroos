@@ -1,0 +1,34 @@
+/* Overlays: dialogs (bottom sheets on phones), action sheets, toasts. */
+/* layers */
+.overlay { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; animation: fade var(--dur) var(--ease-out); }
+@keyframes fade { from { opacity: 0; } }
+.ov-modal { align-items: flex-start; justify-content: center; padding: 10vh var(--sp4) var(--sp4); overflow-y: auto; }
+
+.modal { width: 100%; max-width: 560px; background: var(--s3); border-radius: var(--r4); box-shadow: var(--elev3); animation: rise var(--dur) var(--ease-out); }
+.modal.wide { max-width: 720px; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes slide { from { transform: translateX(24px); opacity: 0; } }
+.m-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp3); padding: var(--sp6) var(--sp6) var(--sp4); }
+.m-head > div { display: grid; gap: 2px; }
+.m-head > div > * { display: block; }
+.m-head p { font-size: var(--fs); } .m-head h2 { font-size: var(--fs-xl); font-weight: 400; line-height: 32px; }
+.m-body { padding: 0 var(--sp6) var(--sp6); display: flex; flex-direction: column; gap: var(--sp5); }
+
+.m-foot { display: flex; justify-content: flex-end; gap: var(--sp2); padding: 0 var(--sp6) var(--sp6); } .m-foot .btn:not(.btn-primary):not(.btn-danger) { border-color: transparent; padding: 0 var(--sp3); }
+
+#toasts { position: fixed; right: var(--sp4); bottom: var(--sp4); z-index: 70; display: flex; flex-direction: column; gap: var(--sp2); pointer-events: none; }
+.toast { display: flex; align-items: center; gap: var(--sp3); min-height: 48px; padding: var(--sp2) var(--sp4); background: var(--md-inverse-surface); color: var(--md-inverse-on-surface); border-radius: var(--r0); font-size: var(--fs); box-shadow: var(--elev3); animation: rise var(--dur) var(--ease-out); max-width: 400px; pointer-events: auto; }
+.toast .ic { color: currentColor; }
+.toast.bad { background: var(--bad-soft); color: var(--bad-tx); }
+.toast.out { opacity: 0; transform: translateY(4px); transition: opacity var(--dur-out) var(--ease-in), transform var(--dur-out) var(--ease-in); }
+
+.sheet-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--sp6)); }
+.sheet-list button { display: flex; align-items: center; gap: var(--sp4); height: 56px; padding: 0 var(--sp6); border: 0; background: none; font-size: var(--fs-md); text-align: left; cursor: pointer; }
+.sheet-list button .ic { color: var(--tx2); }
+
+.sheet-list button.danger, .sheet-list button.danger .ic { color: var(--bad); }
+.sheet-list button:disabled { opacity: .38; cursor: default; }
+@media (hover: hover) { .sheet-list button:not(:disabled):hover { box-shadow: var(--hover); } }
+/* A confirm's option (also delete the data) sits apart from the explanation above it. */
+.m-body > p + .check { margin-top: var(--sp3); }

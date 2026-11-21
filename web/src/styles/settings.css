@@ -1,0 +1,9 @@
+/* Settings: theme swatches. */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp3); }
+.swatch { display: grid; gap: var(--sp2); padding: var(--sp3); border: 2px solid transparent; border-radius: var(--r3); background: var(--sw-bg); color: var(--sw-tx); cursor: pointer; text-align: left; position: relative; transition: border-color var(--dur) var(--ease); }
+.swatch[aria-pressed="true"] { border-color: var(--ac); }
+.swatch-chips { display: flex; gap: 6px; }
+.swatch-chips i { width: 20px; height: 20px; border-radius: 50%; background: var(--c); }
+.swatch-name { font-weight: 600; display: flex; align-items: center; gap: var(--sp2); }
+.swatch-sub { font-size: var(--fs-xs); opacity: .75; }
+.swatch-wrap { position: relative; display: grid; } .swatch-wrap > .btn-icon { position: absolute; top: 6px; right: 6px; color: inherit; width: 32px; height: 32px; }

@@ -1,0 +1,96 @@
+/* Forms: buttons, inputs, fields, rows, checks, segmented buttons, radio cards. */
+/* ---------- controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp2);
+  height: 40px; padding: 0 var(--sp6);
+  background: transparent; border: 1px solid var(--md-outline); border-radius: var(--rf);
+  color: var(--ac); font-weight: 500; font-size: var(--fs); letter-spacing: .01em; white-space: nowrap; cursor: pointer;
+  transition: box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.btn:has(> .ic) { padding-left: var(--sp4); }
+.btn .ic { width: 18px; height: 18px; }
+@media (hover: hover) { .btn:hover { box-shadow: var(--hover); } }
+.btn:active { box-shadow: var(--press); }
+.btn-primary { background: var(--ac); border-color: transparent; color: var(--ac-tx); }
+@media (hover: hover) { .btn-primary:hover { box-shadow: var(--hover), var(--elev1); } }
+
+.btn-tonal { background: var(--sec-c); border-color: transparent; color: var(--sec-c-tx); }
+.btn-danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 60%, transparent); }
+.btn-danger.btn-primary, .m-foot .btn-danger { background: var(--bad); color: var(--md-on-error); border-color: transparent; }
+.btn-ghost { border-color: transparent; padding: 0 var(--sp3); }
+
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .38; cursor: not-allowed; pointer-events: none; box-shadow: none; }
+.btn-icon {
+  display: inline-grid; place-items: center; flex: none;
+  width: 40px; height: 40px; border-radius: var(--rf);
+  background: transparent; border: 0; color: var(--tx2); cursor: pointer;
+  transition: box-shadow var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+@media (hover: hover) { .btn-icon:hover { box-shadow: var(--hover); color: var(--tx); } }
+.btn-icon:active { box-shadow: var(--press); }
+.btn-icon[disabled] { opacity: .38; cursor: default; box-shadow: none; }
+.btn-icon.copied { color: var(--ok); }
+.split { display: inline-flex; }
+.split > .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split > .menu > summary.btn { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-color: color-mix(in srgb, var(--ac-tx) 25%, var(--ac)); padding: 0 var(--sp2); }
+
+input[type=text], input[type=url], input[type=search], input[type=password], input:not([type]), select, textarea {
+  height: 48px; padding: 0 var(--sp4);
+  background: transparent; border: 1px solid var(--md-outline); border-radius: var(--r0);
+  font-size: var(--fs); min-width: 0;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+select { padding-right: var(--sp2); }
+textarea { height: auto; padding: var(--sp3) var(--sp4); line-height: 1.5; resize: vertical; font-family: var(--f-mono); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ac); box-shadow: inset 0 0 0 1px var(--ac); }
+input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--bad); }
+input::placeholder, textarea::placeholder { color: var(--tx2); opacity: .7; }
+input.mono, textarea.mono { font-family: var(--f-mono); }
+input[type=checkbox], input[type=radio] { accent-color: var(--ac); width: 16px; height: 16px; margin: 0; }
+.form { display: flex; flex-direction: column; gap: var(--sp4); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp4); }
+.env-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto; gap: var(--sp2); align-items: center; }
+@media (max-width: 560px) { .env-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; } .env-row .check { grid-column: 3; } }
+@media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
+.card-body, .card-pad { min-width: 0; }
+.card .table-wrap { border: 0; border-radius: 0; }
+/* align-content: start: in a .field-row the taller field (one with a hint) must not stretch the
+   others, which would push their control down out of line. */
+.field { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.field > * { display: block; }
+.field > input, .field > select, .field > textarea { width: 100%; }
+.field label, .label { font-size: var(--fs-sm); font-weight: 500; }
+.req { color: var(--bad); }
+.help { font-size: var(--fs-xs); color: var(--tx2); }
+.err { font-size: var(--fs-xs); color: var(--bad); }
+
+.check { display: flex; align-items: center; gap: var(--sp2); font-size: var(--fs-sm); cursor: pointer; }
+.disclosure { border: 1px solid var(--bd); border-radius: var(--r2); }
+.disclosure > summary { cursor: pointer; padding: var(--sp2) var(--sp3); font-size: var(--fs-sm); font-weight: 500; list-style: none; display: flex; align-items: center; gap: var(--sp2); }
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid var(--tx2); border-bottom: 1.5px solid var(--tx2); transform: rotate(-45deg); transition: transform var(--dur) var(--ease-out); }
+.disclosure[open] > summary::before { transform: rotate(45deg); }
+.disclosure > div { padding: 0 var(--sp3) var(--sp3); }
+
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp1) var(--sp4); font-size: var(--fs-sm); margin: 0; }
+.kv dt { color: var(--tx2); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.radio-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp3); }
+.radio-card { display: grid; gap: var(--sp1); padding: var(--sp3); border: 1px solid var(--bd2); border-radius: var(--r2); cursor: pointer; background: var(--s1); }
+.radio-card > * { display: block; }
+.radio-card:has(input:checked) { border-color: var(--ac); background: var(--ac-soft); }
+.radio-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.radio-cards-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.radio-card.is-off { cursor: default; opacity: .72; }
+.radio-card .rc-h { display: flex; align-items: center; gap: var(--sp2); font-weight: 500; }
+
+/* ---------- New workspace: detect ---------- */
+.input-btn { display: flex; gap: var(--sp2); }
+.input-btn > input { flex: 1 1 0; min-width: 0; }
+.input-btn > .btn { flex: none; height: 48px; }
+
+/* A field's hint that's a problem (no node with the role). */
+.help-bad { color: var(--bad); }
+/* A form's own buttons, in a row (Save, Cancel). */
+.actions { display: flex; flex-wrap: wrap; gap: var(--sp2); }

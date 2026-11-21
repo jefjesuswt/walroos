@@ -1,0 +1,57 @@
+/* Tables: columns that drop by the table's width, lead cells, row actions. */
+/* tables */
+.table-wrap { position: relative; overflow-x: auto; overscroll-behavior-x: contain; border-radius: var(--r3); background: var(--s2); container: table / inline-size; }
+/* Columns drop by the table's own width, not the window's: the sidebar takes ~300px of it, so a
+   1024px window leaves a 700px table that the viewport breakpoints still treated as wide. */
+@container table (max-width: 1120px) { .tbl .hide-md { display: none; } }
+@container table (max-width: 1020px) { .tbl .hide-lg { display: none; } }
+@container table (max-width: 880px) { .tbl .hide-sm { display: none; } }
+.tbl .show-xs-inline { display: none; }
+@container table (max-width: 640px) {
+  .tbl .show-xs-inline { display: block; }
+  .tbl .input.input-sm { max-width: 112px; }
+  .tbl thead, .tbl .hide-xs { display: none; }
+  .tbl .show-xs { display: table-cell; width: 1%; }
+  .tbl td.show-xs { padding-right: var(--sp1); }
+  .tbl .err-line { max-width: 110px; }
+}
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs); }
+.tbl th { text-align: left; font-weight: 500; color: var(--tx2); font-size: var(--fs-xs); letter-spacing: .04em; padding: var(--sp3) var(--sp4); border-bottom: 1px solid var(--bd); white-space: nowrap; }
+.tbl td { padding: var(--sp2) var(--sp4); border-bottom: 1px solid color-mix(in srgb, var(--bd) 70%, transparent); vertical-align: middle; height: 72px; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tbody tr { transition: box-shadow var(--dur) var(--ease); }
+@media (hover: hover) { .tbl tbody tr:hover { box-shadow: var(--hover); } }
+.tbl .ta-r { text-align: right; }
+.cell-title { display: block; font-weight: 500; color: var(--tx); }
+@media (hover: hover) { a.cell-title:hover { color: var(--ac); } }
+.cell-sub { display: block; font-size: var(--fs-sm); color: var(--tx2); }
+.cell-stack { display: grid; gap: 2px; min-width: 0; }
+.cell-stack > * { display: block; }
+.cell-stack > .od-row { display: flex; }
+/* The lead column (name + repo) takes the room the others leave and truncates its text, so a
+   long name never pushes the state or the actions out of the table. max-width: 0 is what lets an
+   auto-layout cell shrink below its content. */
+.tbl .col-grow { width: 100%; max-width: 0; min-width: 200px; }
+@media (max-width: 767px) { .tbl .col-grow { min-width: 120px; } }
+.tbl .col-grow .cell-title, .tbl .col-grow .cell-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tbl .cell-lead > .cell-stack { flex: 1 1 auto; }
+/* A secondary name (a node) clips on one line instead of breaking at every hyphen. */
+.input.input-sm { height: 36px; width: auto; min-width: 0; padding-block: 0; }
+.tbl .roles-cell { min-width: 152px; } /* two chips a line, not one under the other */
+.clip { display: block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.repo { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 280px; color: var(--tx2); }
+.repo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.link { color: var(--ac); }
+@media (hover: hover) { a.link:hover { text-decoration: underline; } }
+
+/* ---- M3 extras ---- */
+.lead { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: var(--r2); background: var(--ac-c); color: var(--ac-c-tx); }
+.lead.off { background: var(--s4); color: var(--tx2); }
+.cell-lead { display: flex; align-items: center; gap: var(--sp4); min-width: 0; }
+
+.row-link { cursor: pointer; }
+.col-meter-sm { min-width: 100px; }
+.col-meter { min-width: 130px; }
+/* An error line in a table without a growing column (every app's deployments). */
+.tbl .err-wide { max-width: min(360px, 40vw); }
