@@ -34,10 +34,15 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
+// validName: a DNS label that isn't a route under /api/workspaces.
+func validName(n string) bool {
+	return nameRe.MatchString(n) && n != "stacks" && n != "from-scratch" && n != "detect"
+}
+
 // Create picks a dev node, asks its agent to create the workspace and stores the row.
 // The agent answers 202; the workspace becomes running (or failed) in the background.
 func (s *Service) Create(ctx context.Context, owner string, in CreateInput) (Workspace, error) {
-	if !nameRe.MatchString(in.Name) || in.RepoURL == "" {
+	if !validName(in.Name) || in.RepoURL == "" {
 		return Workspace{}, ErrInvalid
 	}
 	if !RemoteRepo(in.RepoURL) {

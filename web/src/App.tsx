@@ -2,19 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type User } from './api';
 import { AppDetail, AppsPage, DeploymentsPage } from './Apps';
 import { DatabaseDetail, DatabasesPage } from './Databases';
+import { ProjectDetail, ProjectsPage } from './Projects';
 import { NodesPage } from './Nodes';
 import { SettingsPage } from './Settings';
 import { WorkspacesPage } from './Workspaces';
 import { allowed, EmptyState, Icon, Logo, MeCtx, type Perm } from './ui';
 
-// [route, label, icon, milestone that brings it]; NEEDS hides a page from roles without the perm
-const NEEDS: Record<string, Perm> = { databases: 'databases' };
+// [route, label, icon, milestone that brings it]. Apps and databases live in projects (their
+// pages keep their routes); PARENT says which nav entry their detail pages belong to.
+const NEEDS: Record<string, Perm> = {};
+const PARENT: Record<string, string> = { apps: 'projects', databases: 'projects' };
+const HIDDEN = [['apps', 'Apps', 'apps', ''], ['databases', 'Databases', 'database', '']] as const;
 const NAV = [
   ['overview', 'Overview', 'overview', 'M1'],
   ['workspaces', 'Workspaces', 'workspace', ''],
-  ['apps', 'Apps', 'apps', ''],
+  ['projects', 'Projects', 'apps', ''],
   ['deployments', 'Deployments', 'deploy', ''],
-  ['databases', 'Databases', 'database', ''],
   ['nodes', 'Nodes', 'nodes', ''],
   ['integrations', 'Integrations', 'plug', 'M4'],
   ['settings', 'Settings', 'settings', ''],
@@ -46,6 +49,7 @@ export function App() {
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [newApp, setNewApp] = useState(false);
   const [newDatabase, setNewDatabase] = useState(false);
+  const [newProject, setNewProject] = useState(false);
   const [sub, setSub] = useState(() => decodeURIComponent(routeParts()[1] ?? ''));
 
   useEffect(() => {
@@ -98,7 +102,7 @@ export function App() {
     };
   }, []);
 
-  const nav = NAV.find(n => n[0] === route);
+  const nav = NAV.find(n => n[0] === route) ?? HIDDEN.find(n => n[0] === route);
   useEffect(() => { document.title = `${sub || nav?.[1] || 'Not found'} · walroos`; }, [nav, sub]);
 
   if (authError) {
@@ -118,7 +122,7 @@ export function App() {
         <div className="sb-top"><a className="brand" href="#/nodes" aria-label="walroos"><Logo /><span className="lbl">walroos</span></a></div>
         <nav className="nav" aria-label="Main">
           {NAV.filter(([r]) => !NEEDS[r] || can(NEEDS[r])).map(([r, label, icon, soon]) => (
-            <a key={r} href={`#/${r}`} aria-current={r === route ? 'page' : undefined} title={soon ? `${label} · coming in ${soon}` : label}>
+            <a key={r} href={`#/${r}`} aria-current={r === (PARENT[route] ?? route) ? 'page' : undefined} title={soon ? `${label} · coming in ${soon}` : label}>
               <Icon n={icon} /><span className="lbl">{label}</span>
             </a>
           ))}
@@ -154,6 +158,7 @@ export function App() {
           <div className="tb-primary">
             {route === 'nodes' && can('nodes') && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
             {route === 'apps' && !sub && can('apps') && <button className="btn btn-primary" onClick={() => setNewApp(true)}><Icon n="plus" /><span className="tb-label">New app</span></button>}
+            {route === 'projects' && !sub && can('apps') && <button className="btn btn-primary" onClick={() => setNewProject(true)}><Icon n="plus" /><span className="tb-label">New project</span></button>}
             {route === 'databases' && !sub && can('databases') && <button className="btn btn-primary" onClick={() => setNewDatabase(true)}><Icon n="plus" /><span className="tb-label">New database</span></button>}
             {route === 'workspaces' && <button className="btn btn-primary" onClick={() => setNewWorkspace(true)}><Icon n="plus" /><span className="tb-label">New workspace</span></button>}
           </div>
@@ -163,6 +168,7 @@ export function App() {
             {route === 'nodes' ? <NodesPage addOpen={addNode} setAddOpen={setAddNode} />
               : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
               : route === 'apps' ? (sub ? <AppDetail key={sub} name={sub} /> : <AppsPage newOpen={newApp} setNewOpen={setNewApp} />)
+              : route === 'projects' ? (sub ? <ProjectDetail key={sub} name={sub} /> : <ProjectsPage newOpen={newProject} setNewOpen={setNewProject} />)
               : route === 'deployments' ? <DeploymentsPage />
               : route === 'databases' ? (sub ? <DatabaseDetail key={sub} name={sub} /> : <DatabasesPage newOpen={newDatabase} setNewOpen={setNewDatabase} />)
               : route === 'settings' ? <SettingsPage />

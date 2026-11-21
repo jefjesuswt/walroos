@@ -1,7 +1,7 @@
 // Small components ported 1:1 from the Open Design prototype (index.html at the repo root).
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { EnvVar, User } from './api';
+import { api, type EnvVar, type Project, type User } from './api';
 
 const P: Record<string, string> = {
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -282,5 +282,20 @@ export function EnvModal({ title, sub, savedMsg, load, save, onClose, onSaved }:
         </div>
       )}
     </Modal>
+  );
+}
+
+// ProjectField picks the project a new service goes in. Locked when the dialog was opened from a
+// project's page.
+export function ProjectField({ value, onChange, locked }: { value: string; onChange: (v: string) => void; locked?: boolean }) {
+  const [list, setList] = useState<Project[]>([]);
+  useEffect(() => { if (!locked) api.projects().then(setList, () => undefined); }, [locked]);
+  return (
+    <Field label="Project" hint="Services of a project reach each other by name, on their own network. Nothing else can reach them.">
+      <select className="input" value={value} disabled={locked} onChange={e => onChange(e.target.value)}>
+        {locked ? <option value={value}>{value}</option>
+          : list.map(p => <option key={p.id} value={p.name === 'default' ? '' : p.name}>{p.name}</option>)}
+      </select>
+    </Field>
   );
 }

@@ -215,7 +215,7 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
   const submit = () => {
     setBusy(true);
     if (fresh) {
-      api.createProject({ name, stack, version, github: onGitHub, private: priv, node })
+      api.createFromScratch({ name, stack, version, github: onGitHub, private: priv, node })
         .then(w => { toast(onGitHub ? `${w.name}: repo created, workspace on its way` : `${w.name} is being created`); onCreated(); },
           e => { setError({ title: "Couldn't create it", msg: e.message }); setBusy(false); });
       return;
@@ -233,14 +233,14 @@ function NewWorkspaceModal({ nodes, onClose, onCreated }: { nodes: Node[]; onClo
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !name || (fresh ? !stack || !version : !repo || !!dcError)} onClick={submit}>
-          {busy ? 'Creating…' : fresh ? 'Create project' : 'Create workspace'}
+          {busy ? 'Creating…' : 'Create workspace'}
         </button>
       </>}>
       {error && <ErrorAlert title={error.title} msg={error.msg} />}
       <div className="form">
         <div className="seg" role="group" aria-label="Source">
           <button type="button" aria-pressed={!fresh} onClick={() => { setFresh(false); setError(null); }}>{!fresh && <Icon n="check" />}From repo</button>
-          <button type="button" aria-pressed={fresh} onClick={() => { setFresh(true); setError(null); }}>{fresh && <Icon n="check" />}New project</button>
+          <button type="button" aria-pressed={fresh} onClick={() => { setFresh(true); setError(null); }}>{fresh && <Icon n="check" />}From scratch</button>
         </div>
         {fresh ? <>
           <Field label="Name" hint={<>DNS label: the repo's name and the SSH user, <span className="mono">{name || 'myproject'}.walroos</span>.</>}>

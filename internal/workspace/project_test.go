@@ -121,7 +121,7 @@ func newProjectHub(t *testing.T, withDevNode bool) (*hub, *fakeGitHub, *httptest
 func TestProjectStacks(t *testing.T) {
 	h, _, _ := newProjectHub(t, true)
 	var stacks []agent.ProjectStack
-	if code := h.call(t, "GET", "/api/projects/stacks", nil, &stacks); code != 200 {
+	if code := h.call(t, "GET", "/api/workspaces/stacks", nil, &stacks); code != 200 {
 		t.Fatalf("stacks: %d", code)
 	}
 	ids := map[string][]string{}
@@ -191,7 +191,7 @@ func TestCreateProjectOnGitHub(t *testing.T) {
 	h.call(t, "PUT", "/api/settings/github", map[string]string{"token": "classic"}, nil)
 
 	var w workspace.Workspace
-	code := h.call(t, "POST", "/api/projects", map[string]any{"name": "shiny", "stack": "go", "version": "1.26", "github": true, "private": true}, &w)
+	code := h.call(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "shiny", "stack": "go", "version": "1.26", "github": true, "private": true}, &w)
 	if code != 201 {
 		t.Fatalf("create: %d", code)
 	}
@@ -216,7 +216,7 @@ func TestCreateProjectOnGitHub(t *testing.T) {
 	}
 
 	// Bun runs on a Node image and installs bun after the container starts.
-	if code := h.call(t, "POST", "/api/projects", map[string]any{"name": "bunny", "stack": "bun", "version": "24", "github": true}, &w); code != 201 {
+	if code := h.call(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "bunny", "stack": "bun", "version": "24", "github": true}, &w); code != 201 {
 		t.Fatalf("bun: %d", code)
 	}
 	if dc := g.files[".devcontainer/devcontainer.json"]; !strings.Contains(dc, "javascript-node:24") || !strings.Contains(dc, "npm install -g bun") || g.private["bunny"] {
@@ -228,11 +228,11 @@ func TestCreateProjectLocal(t *testing.T) {
 	h, g, _ := newProjectHub(t, true)
 
 	// No token: github=true is refused, github=false is a local git init.
-	if code, msg := h.callErr(t, "POST", "/api/projects", map[string]any{"name": "solo", "stack": "python", "version": "3.13", "github": true}); code != 409 || !strings.Contains(msg, "GitHub isn't set up") {
+	if code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "solo", "stack": "python", "version": "3.13", "github": true}); code != 409 || !strings.Contains(msg, "GitHub isn't set up") {
 		t.Fatalf("no token: %d %q", code, msg)
 	}
 	var w workspace.Workspace
-	if code := h.call(t, "POST", "/api/projects", map[string]any{"name": "solo", "stack": "python", "version": "3.13"}, &w); code != 201 {
+	if code := h.call(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "solo", "stack": "python", "version": "3.13"}, &w); code != 201 {
 		t.Fatalf("local: %d", code)
 	}
 	if w.RepoURL != "" || w.Stack != "python" {
@@ -255,7 +255,7 @@ func TestCreateProjectLocal(t *testing.T) {
 func TestCreateProjectSad(t *testing.T) {
 	h, g, srv := newProjectHub(t, true)
 	h.call(t, "PUT", "/api/settings/github", map[string]string{"token": "classic"}, nil)
-	h.call(t, "POST", "/api/projects", map[string]any{"name": "dup", "stack": "go", "version": "1.26"}, nil)
+	h.call(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "dup", "stack": "go", "version": "1.26"}, nil)
 
 	for _, c := range []struct {
 		name string
@@ -270,7 +270,7 @@ func TestCreateProjectSad(t *testing.T) {
 		{"workspace exists", map[string]any{"name": "dup", "stack": "go", "version": "1.26", "github": true}, 409, "already exists"},
 		{"repo exists", map[string]any{"name": "taken", "stack": "go", "version": "1.26", "github": true}, 409, "already exists on the GitHub account"},
 	} {
-		code, msg := h.callErr(t, "POST", "/api/projects", c.body)
+		code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", c.body)
 		if code != c.code || !strings.Contains(msg, c.msg) {
 			t.Errorf("%s: %d %q, want %d %q", c.name, code, msg, c.code, c.msg)
 		}
@@ -281,24 +281,24 @@ func TestCreateProjectSad(t *testing.T) {
 
 	// A token that can't create repos (fine-grained without Administration).
 	h.call(t, "PUT", "/api/settings/github", map[string]string{"token": "fine-ro"}, nil)
-	if code, msg := h.callErr(t, "POST", "/api/projects", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true}); code != 400 || !strings.Contains(msg, "can't create repos") {
+	if code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true}); code != 400 || !strings.Contains(msg, "can't create repos") {
 		t.Errorf("no scope: %d %q", code, msg)
 	}
 	// The stored token was revoked since it was saved.
 	h.call(t, "PUT", "/api/settings/github", map[string]string{"token": "fine"}, nil)
 	g.revoked = "fine"
-	if code, msg := h.callErr(t, "POST", "/api/projects", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true}); code != 400 || !strings.Contains(msg, "rejected the token") {
+	if code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true}); code != 400 || !strings.Contains(msg, "rejected the token") {
 		t.Errorf("revoked token: %d %q", code, msg)
 	}
 	h.call(t, "PUT", "/api/settings/github", map[string]string{"token": "classic"}, nil)
 
 	// GitHub down: 5xx, then unreachable. Nothing is created on the node.
 	g.down = true
-	if code, msg := h.callErr(t, "POST", "/api/projects", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true}); code != 502 || !strings.Contains(msg, "didn't answer") {
+	if code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true}); code != 502 || !strings.Contains(msg, "didn't answer") {
 		t.Errorf("GitHub 503: %d %q", code, msg)
 	}
 	srv.Close()
-	code, msg := h.callErr(t, "POST", "/api/projects", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true})
+	code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "nope", "stack": "go", "version": "1.26", "github": true})
 	if code != 502 || !strings.Contains(msg, "didn't answer") || strings.Contains(msg, "classic") {
 		t.Errorf("GitHub unreachable: %d %q", code, msg)
 	}
@@ -311,7 +311,7 @@ func TestCreateProjectSad(t *testing.T) {
 func TestCreateProjectNoNode(t *testing.T) {
 	h, g, _ := newProjectHub(t, false)
 	h.call(t, "PUT", "/api/settings/github", map[string]string{"token": "classic"}, nil)
-	if code, msg := h.callErr(t, "POST", "/api/projects", map[string]any{"name": "lonely", "stack": "go", "version": "1.26", "github": true}); code != 409 || !strings.Contains(msg, "no online node") {
+	if code, msg := h.callErr(t, "POST", "/api/workspaces/from-scratch", map[string]any{"name": "lonely", "stack": "go", "version": "1.26", "github": true}); code != 409 || !strings.Contains(msg, "no online node") {
 		t.Errorf("no node: %d %q", code, msg)
 	}
 	if g.repos["lonely"] {

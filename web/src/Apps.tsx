@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type App, type Cloudflare, type Deployment, type Node, type Volume } from './api';
-import { ago, Badge, Confirm, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast } from './ui';
+import { ago, Badge, Confirm, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, ProjectField, useCan, usePoll, useToast } from './ui';
 
 // What the app is doing, from the node's live release first: a deployment's state is only
 // what the hub saw (it can say failed for a deploy the node finished after a hub restart).
@@ -121,6 +121,7 @@ export function AppDetail({ name }: { name: string }) {
         <div className="ph-text">
           <div className="title-row"><h1 className="mono">{a.name}</h1><Badge s={s} label={label} /></div>
           <div className="ph-meta">
+            <a href={`#/projects/${a.project}`}><Icon n="apps" /><span className="mono">{a.project}</span></a>
             <span><Icon n="nodes" /><span className="mono">{a.node_name}</span></span>
             <span className="mono od-truncate" title={a.image || a.repo_url}>{source(a)}</span>
             {a.running && <span>live <span className="sha">{short(a.running.sha)}</span></span>}
@@ -447,10 +448,10 @@ function DeployModal({ app, onClose, onQueued }: { app: App; onClose: () => void
   );
 }
 
-function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (a: App) => void }) {
+export function NewAppModal({ onClose, onCreated, project = '' }: { onClose: () => void; onCreated: (a: App) => void; project?: string }) {
   const toast = useToast();
   const [nodes, setNodes] = useState<Node[]>([]);
-  const [f, setF] = useState({ name: '', repo_url: '', image: '', branch: '', dockerfile: '', port: '', health_path: '', node: '' });
+  const [f, setF] = useState({ name: '', repo_url: '', image: '', branch: '', dockerfile: '', port: '', health_path: '', node: '', project });
   const [fromImage, setFromImage] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -462,7 +463,7 @@ function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   const submit = (deploy: boolean) => {
     setBusy(true);
-    api.createApp(fromImage ? { name: f.name, image: f.image.trim(), port, health_path: f.health_path, node: f.node } : { ...f, image: '', port })
+    api.createApp(fromImage ? { name: f.name, image: f.image.trim(), port, health_path: f.health_path, node: f.node, project: f.project } : { ...f, image: '', port })
       .then(async a => {
         if (deploy) await api.deployApp(a.name).catch(e => toast(e.message, 'bad'));
         toast(deploy ? `${a.name} created, deploying` : `${a.name} created`);
@@ -472,7 +473,7 @@ function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   return (
     <Modal title="New app" wide onClose={onClose}
-      sub={`${fromImage ? 'Pulled on a node with the prod role, again on each deploy' : 'Cloned on a node with the prod role and built from its Dockerfile'}. It joins the walroos network and publishes no host ports.`}
+      sub={`${fromImage ? 'Pulled on a node with the prod role, again on each deploy' : 'Cloned on a node with the prod role and built from its Dockerfile'}. It joins its project's network, where the project's services reach it by name, and publishes no host ports.`}
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn" disabled={busy || !f.name || !src || !port} onClick={() => submit(false)}>Create</button>
@@ -486,6 +487,7 @@ function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <button aria-pressed={!fromImage} onClick={() => setFromImage(false)}>{!fromImage && <Icon n="check" />}Repository</button>
           <button aria-pressed={fromImage} onClick={() => setFromImage(true)}>{fromImage && <Icon n="check" />}Published image</button>
         </div>
+        <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
         {fromImage ? (
           <Field label="Image" hint="Fully qualified, with its registry. The node pulls it on each deploy; a rollback runs the exact image it got then.">
             <input key="image" className="input mono" value={f.image} onChange={set('image')} placeholder="ghcr.io/owner/app:latest" autoFocus />

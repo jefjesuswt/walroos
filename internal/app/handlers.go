@@ -184,7 +184,7 @@ func errorJSON(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound), errors.Is(err, ErrNoProject):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy),
 		errors.Is(err, ErrNoCloudflare), errors.Is(err, ErrDomainTaken), errors.Is(err, cloudflare.ErrRecordExists):

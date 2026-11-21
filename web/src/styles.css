@@ -470,6 +470,8 @@ a.link { color: var(--ac); }
 /* apps */
 .app-card { display: flex; flex-direction: column; gap: var(--sp2); padding: var(--sp3); cursor: pointer; transition: border-color var(--dur) var(--ease-out); }
 @media (hover: hover) { .app-card:hover { border-color: var(--bd2); } }
+.app-card .chip { max-width: 100%; min-width: 0; }
+.app-card .chip > .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); }
 .ac-head .cell-title { font-size: var(--fs-md); }
 .ac-domain { display: inline-flex; align-items: center; gap: 6px; color: var(--tx2); min-width: 0; max-width: 100%; align-self: flex-start; }
@@ -768,6 +770,8 @@ body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0;
 .sheet-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--sp6)); }
 .sheet-list button { display: flex; align-items: center; gap: var(--sp4); height: 56px; padding: 0 var(--sp6); border: 0; background: none; font-size: var(--fs-md); text-align: left; cursor: pointer; }
 .sheet-list button .ic { color: var(--tx2); }
+.sheet-list.rich button { height: auto; min-height: 56px; padding-block: var(--sp3); align-items: flex-start; }
+.sheet-list.rich button > span { display: grid; gap: 2px; }
 .sheet-list button.danger, .sheet-list button.danger .ic { color: var(--bad); }
 .sheet-list button:disabled { opacity: .38; cursor: default; }
 @media (hover: hover) { .sheet-list button:not(:disabled):hover { box-shadow: var(--hover); } }

@@ -20,6 +20,7 @@ var (
 	ErrNoImage        = errors.New("only a succeeded deployment can be rolled back to")
 	ErrVolumes        = errors.New("each volume needs a name (lowercase, digits, '_.-') or a host_path inside the node's ~/walroos-data, and an absolute target; no two targets alike, 16 at most")
 	ErrBusy           = errors.New("a deploy of this app is running on its node; try again when it ends")
+	ErrNoProject      = errors.New("project not found")
 )
 
 // App is what to build and how to check it.
@@ -28,6 +29,8 @@ type App struct {
 	Name       string         `json:"name"`
 	NodeID     string         `json:"node_id"`
 	NodeName   string         `json:"node_name"`
+	ProjectID  string         `json:"project_id"`
+	Project    string         `json:"project"` // its name; the project's network is the app's
 	RepoURL    string         `json:"repo_url"`
 	Image      string         `json:"image"` // a published image, instead of RepoURL: pulled on each deploy
 	Branch     string         `json:"branch"`
@@ -52,6 +55,7 @@ type CreateInput struct {
 	Port       int    `json:"port"`
 	HealthPath string `json:"health_path"`
 	Node       string `json:"node"`
+	Project    string `json:"project"` // name; "" = default
 }
 
 // Deployment is one run of the deploy: queued, running, then succeeded or failed.

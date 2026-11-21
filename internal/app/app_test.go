@@ -186,8 +186,9 @@ func TestAppDeployFlow(t *testing.T) {
 		t.Fatalf("v1 = %+v", v1)
 	}
 	spec := h.agent.specs[0]
-	if spec.ID != d.ID || spec.RepoURL != a.RepoURL || spec.Port != 8000 || len(spec.Env) != 1 || spec.Env[0] != "DB_URL=postgres://x" {
-		t.Errorf("agent got %+v", spec)
+	if spec.ID != d.ID || spec.RepoURL != a.RepoURL || spec.Port != 8000 || len(spec.Env) != 1 || spec.Env[0] != "DB_URL=postgres://x" ||
+		a.Project != "default" || spec.Network != agent.AppNetwork {
+		t.Errorf("agent got %+v (project %q)", spec, a.Project)
 	}
 
 	// A failed deploy is recorded with its log; it can't be rolled back to.
@@ -413,5 +414,21 @@ func TestAppVolumes(t *testing.T) {
 	}
 	if code := h.call(t, "DELETE", "/api/apps/db?purge=1", nil, nil); code != 204 || strings.Join(h.agent.deleted, ",") != "db?purge=1" {
 		t.Fatalf("purge: %d %v", code, h.agent.deleted)
+	}
+}
+
+// An app in a project deploys on that project's network; one without stays on the shared one.
+func TestAppProjectNetwork(t *testing.T) {
+	h := newHub(t, "prod")
+	h.db.Write.Exec(`INSERT INTO projects (id, name, created_at) VALUES ('p1', 'shop', ?)`, time.Now().UTC())
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps", app.CreateInput{Name: "api", RepoURL: "https://example.com/api.git", Port: 8000, Project: "shop"}, &a); code != 201 || a.Project != "shop" {
+		t.Fatalf("create in shop: %d %+v", code, a)
+	}
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/api/deploy", map[string]string{}, &d)
+	h.wait(t, "api", d.ID)
+	if got := h.agent.specs[0].Network; got != "walroos-p-shop" {
+		t.Errorf("network = %q, want walroos-p-shop", got)
 	}
 }

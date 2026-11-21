@@ -43,12 +43,16 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 	if !nameRe.MatchString(in.Name) || !(fromRepo || fromImage) || !spec.Valid() {
 		return App{}, ErrInvalid
 	}
+	projectID, err := ProjectID(ctx, s.store.db, in.Project)
+	if err != nil {
+		return App{}, err
+	}
 	node, err := s.pickNode(ctx, in.Node)
 	if err != nil {
 		return App{}, err
 	}
 	a := App{
-		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
+		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: cmpOr(in.Project, "default"), RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
 		Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
@@ -333,7 +337,7 @@ func (s *Service) run(ctx context.Context, d Deployment) {
 	log := func(line string) { s.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
 		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
-		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes,
+		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes, Network: agent.ProjectNetwork(a.Project),
 	}
 	if b, ok := s.builder(ctx, a.NodeID); ok && d.Image == "" && a.Image == "" {
 		baddr, bhash, err := s.nodes.AgentTarget(ctx, b.ID)

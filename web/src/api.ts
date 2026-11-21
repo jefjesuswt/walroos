@@ -69,7 +69,7 @@ export interface NewWorkspace {
   stack?: string; // Detection.stack, stored for display
 }
 
-// A stack a new project can start from (GET /api/projects/stacks). Versions are image tags, newest first.
+// A stack a workspace from scratch can start from (GET /api/workspaces/stacks). Versions are image tags, newest first.
 export interface ProjectStack {
   id: string;
   label: string;
@@ -164,6 +164,8 @@ export interface App {
   name: string;
   node_id: string;
   node_name: string;
+  project_id: string;
+  project: string; // its project's name
   repo_url: string; // '' when image is set
   image: string; // a published image, pulled on each deploy, instead of a repo
   branch: string;
@@ -195,6 +197,7 @@ export interface NewApp {
   port: number;
   health_path?: string;
   node?: string;
+  project?: string; // name; '' = default
 }
 
 // A database engine (GET /api/databases/engines). Versions are image tags, newest first.
@@ -211,6 +214,8 @@ export interface Database {
   name: string;
   node_id: string;
   node_name: string;
+  project_id: string;
+  project: string;
   engine: string;
   version: string;
   user: string;
@@ -231,6 +236,16 @@ export interface Backup {
   file: string;
   size: number;
   created_at: string;
+}
+
+// A project groups apps and databases; they share a network on their node and reach each other by name.
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  apps: App[];
+  databases: Database[];
 }
 
 export class ApiError extends Error {
@@ -264,8 +279,8 @@ export const api = {
   workspace: (name: string) => req<Workspace>('GET', `/api/workspaces/${name}`),
   createWorkspace: (w: NewWorkspace) => req<Workspace>('POST', '/api/workspaces', w),
   detect: (repo_url: string, branch: string, node: string) => req<Detection>('POST', '/api/workspaces/detect', { repo_url, branch, node }),
-  projectStacks: () => req<ProjectStack[]>('GET', '/api/projects/stacks'),
-  createProject: (p: NewProject) => req<Workspace>('POST', '/api/projects', p),
+  projectStacks: () => req<ProjectStack[]>('GET', '/api/workspaces/stacks'),
+  createFromScratch: (p: NewProject) => req<Workspace>('POST', '/api/workspaces/from-scratch', p),
   startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
   stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
   rebuildWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/rebuild`),
@@ -292,10 +307,14 @@ export const api = {
   setGitHub: (token: string) => req<GitHub>('PUT', '/api/settings/github', { token }),
   removeGitHub: () => req<void>('DELETE', '/api/settings/github'),
 
+  projects: () => req<Project[]>('GET', '/api/projects'),
+  project: (name: string) => req<Project>('GET', `/api/projects/${name}`),
+  createProjectGroup: (name: string, description: string) => req<Project>('POST', '/api/projects', { name, description }),
+  deleteProject: (name: string) => req<void>('DELETE', `/api/projects/${name}`),
   engines: () => req<Engine[]>('GET', '/api/databases/engines'),
   databases: () => req<Database[]>('GET', '/api/databases'),
   database: (name: string) => req<Database>('GET', `/api/databases/${name}`),
-  createDatabase: (d: { name: string; engine: string; version: string; node?: string }) => req<Database>('POST', '/api/databases', d),
+  createDatabase: (d: { name: string; engine: string; version: string; node?: string; project?: string }) => req<Database>('POST', '/api/databases', d),
   deleteDatabase: (name: string, purge = false) => req<void>('DELETE', `/api/databases/${name}${purge ? '?purge=1' : ''}`),
   setSchedule: (name: string, backup_every_hours: number, backup_keep: number) =>
     req<Database>('PUT', `/api/databases/${name}/schedule`, { backup_every_hours, backup_keep }),

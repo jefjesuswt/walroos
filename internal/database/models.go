@@ -16,6 +16,7 @@ var (
 	ErrNoNode      = errors.New("no online node with the prod role; join one with `walroos node join --roles prod`")
 	ErrNodeRole    = errors.New("the chosen node doesn't have the prod role")
 	ErrOtherNode   = errors.New("the app runs on another node: apps only reach databases on their own node")
+	ErrOtherProj   = errors.New("the app is in another project: apps only reach databases of their own project")
 	ErrEnvKey      = errors.New("key must be an env variable name (A-Z, 0-9, _)")
 	ErrBusy        = errors.New("a backup, restore or delete of this database is running; try again when it ends")
 	ErrNoBackup    = errors.New("backup not found on the node")
@@ -24,16 +25,18 @@ var (
 
 // Database is a database service and how apps reach it.
 type Database struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	NodeID   string `json:"node_id"`
-	NodeName string `json:"node_name"`
-	Engine   string `json:"engine"`
-	Version  string `json:"version"`
-	User     string `json:"user"`
-	DB       string `json:"db"`
-	Host     string `json:"host"` // container name on the node's walroos network
-	Port     int    `json:"port"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	NodeID    string `json:"node_id"`
+	NodeName  string `json:"node_name"`
+	ProjectID string `json:"project_id"`
+	Project   string `json:"project"` // its name; the database is on the project's network
+	Engine    string `json:"engine"`
+	Version   string `json:"version"`
+	User      string `json:"user"`
+	DB        string `json:"db"`
+	Host      string `json:"host"` // container name on the node's walroos network
+	Port      int    `json:"port"`
 	// URL is the connection string apps use (with the password). Only on Get: lists don't carry it.
 	URL string `json:"url,omitempty"`
 
@@ -55,6 +58,7 @@ type CreateInput struct {
 	Engine  string `json:"engine"`
 	Version string `json:"version"`
 	Node    string `json:"node"`
+	Project string `json:"project"` // name; "" = default
 }
 
 // Schedule is when backups run and how many the node keeps.

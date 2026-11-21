@@ -50,6 +50,7 @@ type AppSpec struct {
 	Image      string   `json:"image"`
 	Env        []string `json:"env"`
 	Volumes    []Volume `json:"volumes,omitempty"`    // with any, a deploy stops the old release before starting the new one
+	Network    string   `json:"network,omitempty"`    // the project's network (ProjectNetwork); "" = AppNetwork
 	Pull       string   `json:"pull,omitempty"`       // build node's registry (tailnet host:port): pull Sha from it, don't build
 	PullToken  string   `json:"pull_token,omitempty"` // PullToken for this app on that node
 }
@@ -125,7 +126,7 @@ func (spec AppSpec) Valid() bool {
 		(spec.Source == "" || len(spec.Source) <= 255 && imageRe.MatchString(spec.Source) && spec.RepoURL == "" && spec.Pull == "") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
 		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) && // rollback runs only this app's own builds
-		validVolumes(spec.Volumes) &&
+		validVolumes(spec.Volumes) && validNetwork(spec.Network) &&
 		(spec.Pull == "" || validHostPort(spec.Pull) && tokenRe.MatchString(spec.PullToken) && len(spec.Sha) >= 12 && spec.Image == "")
 }
 
@@ -164,7 +165,7 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 	// Cleanup must finish even if the hub hangs up mid-deploy, or the new release is orphaned.
 	bg := context.WithoutCancel(ctx)
 
-	if err := ensureNetwork(ctx, AppNetwork); err != nil {
+	if err := ensureServiceNetwork(ctx, spec.Network); err != nil {
 		return Release{}, err
 	}
 	rel := Release{Image: spec.Image, Container: spec.Name + "-" + spec.ID}
@@ -321,7 +322,7 @@ Description=walroos app %[1]s (%[3]s)
 [Container]
 Image=%[4]s
 ContainerName=%[2]s
-Network=%[5]s
+Network=%[5]s:alias=%[1]s
 Label=%[6]s=%[1]s
 Label=%[7]s=%[3]s
 EnvironmentFile=%[8]s
@@ -340,7 +341,7 @@ Restart=always
 
 [Install]
 WantedBy=default.target
-`, spec.Name, rel.Container, rel.Sha, rel.Image, AppNetwork, labelApp, labelSha, envFile, guard, mounts)
+`, spec.Name, rel.Container, rel.Sha, rel.Image, cmpOr(spec.Network, AppNetwork), labelApp, labelSha, envFile, guard, mounts)
 	if err := os.WriteFile(filepath.Join(a.dir, rel.Container+".container"), []byte(unit), 0o644); err != nil {
 		return err
 	}
@@ -602,6 +603,39 @@ func unitValue(unit []byte, prefix string) string {
 		}
 	}
 	return ""
+}
+
+const labelProject = "walroos.project"
+
+// ProjectNetwork is the podman network a project's services share: they reach each other by
+// name there and nothing else can. The default project keeps AppNetwork, so services created
+// before projects existed don't move.
+func ProjectNetwork(project string) string {
+	if project == "" || project == "default" {
+		return AppNetwork
+	}
+	return "walroos-p-" + project
+}
+
+func validNetwork(n string) bool {
+	p, ok := strings.CutPrefix(n, "walroos-p-")
+	return n == "" || n == AppNetwork || ok && workspaceNameRe.MatchString(p)
+}
+
+// ensureServiceNetwork creates a project's network the first time: labeled (the egress guard
+// finds it by the label) and isolate=strict, so no other network's containers can reach it.
+func ensureServiceNetwork(ctx context.Context, n string) error {
+	if n == "" || n == AppNetwork {
+		return ensureNetwork(ctx, AppNetwork)
+	}
+	if !validNetwork(n) {
+		return fmt.Errorf("bad network name %q", n)
+	}
+	if _, err := podman(ctx, "network", "exists", n); err == nil {
+		return nil
+	}
+	_, err := podman(ctx, "network", "create", "--label", labelProject+"="+strings.TrimPrefix(n, "walroos-p-"), "--opt", "isolate=strict", n)
+	return err
 }
 
 // ensureNetwork creates a network the first time.

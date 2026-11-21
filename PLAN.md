@@ -302,6 +302,16 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Proyectos (fase 1, 2026-11-21)
+
+Como en Dokploy: un **proyecto** agrupa los servicios de un producto (apps y bases de datos). Página **Projects** (tarjetas con sus servicios y estado) y vista de proyecto con "Create service" → Application / Database. Apps y Databases salen del menú; sus páginas de detalle siguen y enlazan a su proyecto.
+- **Red por proyecto:** `walroos-p-<proyecto>` en el nodo, con `isolate=strict`: sus servicios se ven por nombre (alias = nombre del servicio, p. ej. `http://api:3000`, `shop-db:5432`) y nadie de otro proyecto llega, ni por IP. El guard de egress la incluye (busca las redes con la etiqueta `walroos.project`). El proyecto `default` sigue en la red `walroos`, así lo que existía no se mueve.
+- **Migración 011:** tabla `projects`, proyecto `default`, `project_id` en `apps` y `databases` (lo existente queda en `default`).
+- **API:** `GET/POST /api/projects`, `GET/DELETE /api/projects/{name}` (solo vacíos; `default` nunca). `POST /api/apps` y `/api/databases` aceptan `project`. "Link to app" solo dentro del mismo proyecto. Crear y borrar proyectos: owner y deployer.
+- **Renombrado:** el "New project" de workspaces (desde cero) pasa a **From scratch**: `POST /api/workspaces/from-scratch`, `GET /api/workspaces/stacks`, herramienta MCP `create_workspace_from_scratch`. MCP nuevo: `list_projects`, `get_project`, `create_project`; `create_app` y `create_database` con `project`.
+- **Probado:** test del hub (proyectos, servicios en su red, proyecto desconocido, link entre proyectos, borrar, roles), MCP, y podman real (`TestProjectNetworkPodman`: alias en el mismo proyecto, otro proyecto no llega ni por IP, el guard cubre el bridge nuevo; las apps siguen pasando con el alias y el `expose` reescrito). Migración probada sobre una copia de la `hub.db` real.
+- Límites (`ponytail:`): nombres de servicio globales (no se repite `api` en dos proyectos); un proyecto no reparte servicios entre nodos (la red es local); sin mover servicios entre proyectos; la red de un proyecto borrado se queda en el nodo. Siguiente fase: variables compartidas y referencias `${{db.URL}}`.
+
 ## Usuarios y roles (2026-11-21)
 
 Invitados de confianza con tres roles fijos (`internal/auth/permissions.go`, migración 010):

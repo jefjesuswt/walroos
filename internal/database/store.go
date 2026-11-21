@@ -22,23 +22,23 @@ func NewStore(db *config.Database) *Store {
 
 func (s *Store) Insert(ctx context.Context, d Database) error {
 	_, err := s.db.Write.ExecContext(ctx,
-		`INSERT INTO databases (id, name, node_id, engine, version, db_user, db_name, password, backup_every_hours, backup_keep, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.Name, d.NodeID, d.Engine, d.Version, d.User, d.DB, d.password, d.BackupEveryHours, d.BackupKeep, d.CreatedAt)
+		`INSERT INTO databases (id, name, node_id, project_id, engine, version, db_user, db_name, password, backup_every_hours, backup_keep, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.Name, d.NodeID, d.ProjectID, d.Engine, d.Version, d.User, d.DB, d.password, d.BackupEveryHours, d.BackupKeep, d.CreatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: databases.name") {
 		return ErrExists
 	}
 	return err
 }
 
-const cols = `d.id, d.name, d.node_id, n.name, d.engine, d.version, d.db_user, d.db_name, d.password,
+const cols = `d.id, d.name, d.node_id, n.name, d.project_id, p.name, d.engine, d.version, d.db_user, d.db_name, d.password,
 	d.backup_every_hours, d.backup_keep, d.last_backup_at, d.last_backup_error, d.created_at
-	FROM databases d JOIN nodes n ON n.id = d.node_id`
+	FROM databases d JOIN nodes n ON n.id = d.node_id JOIN projects p ON p.id = d.project_id`
 
 func scan(row interface{ Scan(...any) error }) (Database, error) {
 	var d Database
 	var last sql.NullTime
-	err := row.Scan(&d.ID, &d.Name, &d.NodeID, &d.NodeName, &d.Engine, &d.Version, &d.User, &d.DB, &d.password,
+	err := row.Scan(&d.ID, &d.Name, &d.NodeID, &d.NodeName, &d.ProjectID, &d.Project, &d.Engine, &d.Version, &d.User, &d.DB, &d.password,
 		&d.BackupEveryHours, &d.BackupKeep, &last, &d.LastBackupError, &d.CreatedAt)
 	if last.Valid {
 		t := last.Time

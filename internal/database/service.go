@@ -54,6 +54,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 	if _, err := s.store.Get(ctx, in.Name); err == nil {
 		return Database{}, ErrExists
 	}
+	projectID, err := app.ProjectID(ctx, s.store.db, in.Project)
+	if err != nil {
+		return Database{}, err
+	}
 	node, err := s.pickNode(ctx, in.Node)
 	if err != nil {
 		return Database{}, err
@@ -71,7 +75,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 	if err != nil {
 		return Database{}, err
 	}
-	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, Engine: e.ID, Version: in.Version,
+	project := in.Project
+	if project == "" {
+		project = "default"
+	}
+	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: project, Engine: e.ID, Version: in.Version,
 		User: ident, DB: ident, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
 	// Row first: if the node fails, the row goes; the other way round a failed insert would
 	// leave a database running that the hub doesn't know.
@@ -79,7 +87,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 		return Database{}, err
 	}
 	live, err := s.agents.CreateDatabase(ctx, address, tokenHash, agent.DatabaseSpec{
-		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password})
+		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password, Network: agent.ProjectNetwork(project)})
 	if err != nil {
 		s.store.Delete(ctx, d.ID)
 		return Database{}, agentErr(err)
@@ -314,6 +322,9 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 	a, err := s.apps.Get(ctx, in.App)
 	if err != nil {
 		return nil, err
+	}
+	if a.ProjectID != d.ProjectID {
+		return nil, ErrOtherProj
 	}
 	if a.NodeID != d.NodeID {
 		return nil, ErrOtherNode

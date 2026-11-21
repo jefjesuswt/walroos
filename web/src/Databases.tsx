@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type App, type Backup, type Database, type Engine, type Node } from './api';
-import { ago, Badge, Confirm, CopyBtn, EmptyState, ErrorAlert, Field, Icon, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Confirm, CopyBtn, EmptyState, ErrorAlert, Field, Icon, Modal, ProjectField, usePoll, useToast } from './ui';
 
 const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis' };
 const label = (d: Database) => `${engineLabel[d.engine] ?? d.engine} ${d.version}`;
@@ -93,11 +93,11 @@ export function DatabasesPage({ newOpen, setNewOpen }: { newOpen: boolean; setNe
   );
 }
 
-function NewDatabaseModal({ onClose, onCreated }: { onClose: () => void; onCreated: (d: Database) => void }) {
+export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose: () => void; onCreated: (d: Database) => void; project?: string }) {
   const toast = useToast();
   const [engines, setEngines] = useState<Engine[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
-  const [f, setF] = useState({ name: '', engine: 'postgres', version: '', node: '' });
+  const [f, setF] = useState({ name: '', engine: 'postgres', version: '', node: '', project });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -116,7 +116,7 @@ function NewDatabaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   return (
     <Modal title="New database" wide onClose={onClose}
-      sub="Runs on a node with the prod role, on the walroos network: apps on that node reach it by name. No ports open on the node."
+      sub="Runs on a node with the prod role, on its project's network: the project's apps reach it by name. No ports open on the node."
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !f.name || !f.version} onClick={submit}>{busy ? 'Creating…' : 'Create database'}</button>
@@ -145,6 +145,7 @@ function NewDatabaseModal({ onClose, onCreated }: { onClose: () => void; onCreat
             </select>
           </Field>
         </div>
+        <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
         <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role. Join one with <span className="mono">--roles prod</span>.</span>
           : 'Put it on the node of the apps that use it: they only reach databases on their own node.'}>
           <select className="input" value={f.node} onChange={e => setF(x => ({ ...x, node: e.target.value }))}>
@@ -202,6 +203,7 @@ export function DatabaseDetail({ name }: { name: string }) {
         <div className="ph-text">
           <div className="title-row"><h1 className="mono">{d.name}</h1><Badge s={s} label={l} /></div>
           <div className="ph-meta">
+            <a href={`#/projects/${d.project}`}><Icon n="apps" /><span className="mono">{d.project}</span></a>
             <span><Icon n="database" />{label(d)}</span>
             <span><Icon n="nodes" /><span className="mono">{d.node_name}</span></span>
           </div>

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 )
 
 // Apps reach the internet through a Cloudflare Tunnel: one cloudflared per prod node, on
@@ -97,11 +96,13 @@ func (a *Apps) expose(ctx context.Context, app, container string) error {
 	if err != nil {
 		return err
 	}
-	line := []byte("Network=" + AppNetwork + "\n")
-	if !bytes.Contains(unit, line) {
-		return fmt.Errorf("%s: no %q line", f, strings.TrimSpace(string(line)))
+	// After the unit's own network line (AppNetwork or the project's).
+	i := bytes.Index(unit, []byte("\nNetwork="))
+	if i < 0 {
+		return fmt.Errorf("%s: no Network= line", f)
 	}
-	unit = bytes.Replace(unit, line, append(line, "Network="+EdgeNetwork+":alias="+app+"\n"...), 1)
+	end := i + 1 + bytes.IndexByte(unit[i+1:], '\n') + 1
+	unit = append(unit[:end:end], append([]byte("Network="+EdgeNetwork+":alias="+app+"\n"), unit[end:]...)...)
 	if err := os.WriteFile(f, unit, 0o644); err != nil {
 		return err
 	}

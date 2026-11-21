@@ -126,6 +126,7 @@ type DatabaseSpec struct {
 	User     string `json:"user"`
 	DB       string `json:"db"`
 	Password string `json:"password"`
+	Network  string `json:"network,omitempty"` // the project's network (ProjectNetwork); "" = AppNetwork
 }
 
 // Database is a database's state on this node.
@@ -153,10 +154,10 @@ var (
 func (spec DatabaseSpec) Valid() bool {
 	e, ok := engine(spec.Engine)
 	return ok && slices.Contains(e.Versions, spec.Version) && workspaceNameRe.MatchString(spec.Name) &&
-		identRe.MatchString(spec.User) && identRe.MatchString(spec.DB) && passwordRe.MatchString(spec.Password)
+		identRe.MatchString(spec.User) && identRe.MatchString(spec.DB) && passwordRe.MatchString(spec.Password) && validNetwork(spec.Network)
 }
 
-// DatabaseContainer is the container (and host name) of a database: apps reach it on AppNetwork.
+// DatabaseContainer is the container (and host name) of a database: apps reach it on its project's network.
 func DatabaseContainer(name string) string { return "walroos-db-" + name }
 
 // backups is where dumps go: outside the data root, so no app volume can mount them.
@@ -181,7 +182,7 @@ func (a *Apps) CreateDatabase(ctx context.Context, spec DatabaseSpec) (Database,
 	if _, err := os.Stat(filepath.Join(a.dir, c+".container")); err == nil {
 		return Database{}, fmt.Errorf("%w: %s already exists on this node", ErrInvalidDatabase, c)
 	}
-	if err := ensureNetwork(ctx, AppNetwork); err != nil {
+	if err := ensureServiceNetwork(ctx, spec.Network); err != nil {
 		return Database{}, err
 	}
 	if err := ensureVolume(ctx, c, labelDB, spec.Name); err != nil {
@@ -210,7 +211,7 @@ Description=walroos database %[1]s (%[2]s %[3]s)
 [Container]
 Image=%[4]s
 ContainerName=%[5]s
-Network=%[6]s
+Network=%[6]s:alias=%[1]s
 Label=%[7]s=%[1]s
 Label=walroos.engine=%[2]s
 Label=walroos.version=%[3]s
@@ -232,7 +233,7 @@ TimeoutStartSec=900
 
 [Install]
 WantedBy=default.target
-`, spec.Name, spec.Engine, spec.Version, image, c, AppNetwork, labelDB, envFile, e.data(spec.Version), execLine, guard)
+`, spec.Name, spec.Engine, spec.Version, image, c, cmpOr(spec.Network, AppNetwork), labelDB, envFile, e.data(spec.Version), execLine, guard)
 	if err := os.WriteFile(filepath.Join(a.dir, c+".container"), []byte(unit), 0o644); err != nil {
 		return Database{}, err
 	}
