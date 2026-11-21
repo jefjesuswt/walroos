@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react';
 import { api, ROLES, type JoinToken, type Node, type Role } from './api';
-import { ago, Badge, Chip, Cmd, Confirm, EmptyState, Icon, Meter, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Chip, Cmd, Confirm, EmptyState, ErrorAlert, Icon, Meter, Modal, usePoll, useToast } from './ui';
 
 export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpen: (v: boolean) => void }) {
   const toast = useToast();
   const [nodes, setNodes] = useState<Node[] | null>(null);
   const [error, setError] = useState('');
   const [removing, setRemoving] = useState<Node | null>(null);
+  const [editing, setEditing] = useState<Node | null>(null);
 
   const load = useCallback(() => {
     api.nodes().then(n => { setNodes(n); setError(''); }, e => setError(e.message));
@@ -51,11 +52,12 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
               <th className="hide-md" style={{ minWidth: 130 }}>Disk</th><th className="hide-md">Podman</th>
               <th className="hide-sm">Last seen</th><th><span className="sr-only">Actions</span></th>
             </tr></thead>
-            <tbody>{nodes.map(n => <NodeRow key={n.id} n={n} onRemove={() => setRemoving(n)} />)}</tbody>
+            <tbody>{nodes.map(n => <NodeRow key={n.id} n={n} onRemove={() => setRemoving(n)} onRoles={() => setEditing(n)} />)}</tbody>
           </table>
         </div>
       )}
 
+      {editing && <RolesModal n={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {addOpen && <AddNodeModal known={nodes ?? []} onClose={() => setAddOpen(false)} onJoined={load} />}
 
       {removing && (
@@ -67,7 +69,7 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
   );
 }
 
-function NodeRow({ n, onRemove }: { n: Node; onRemove: () => void }) {
+function NodeRow({ n, onRemove, onRoles }: { n: Node; onRemove: () => void; onRoles: () => void }) {
   const t = n.telemetry;
   const live = n.status === 'online';
   const dash = <span className="muted">—</span>;
@@ -88,8 +90,46 @@ function NodeRow({ n, onRemove }: { n: Node; onRemove: () => void }) {
       <td className="hide-sm od-nowrap" style={n.status === 'offline' ? { color: 'var(--bad)' } : undefined}>
         <span className={n.status === 'offline' ? '' : 'muted'}>{ago(n.last_seen)}</span>
       </td>
-      <td className="ta-r"><button className="btn-icon" aria-label={`Remove ${n.name}`} title="Remove node" onClick={onRemove}><Icon n="trash" /></button></td>
+      <td className="ta-r od-nowrap"><button className="btn-icon" aria-label={`Roles of ${n.name}`} title="Roles" onClick={onRoles}><Icon n="settings" /></button>
+        <button className="btn-icon" aria-label={`Remove ${n.name}`} title="Remove node" onClick={onRemove}><Icon n="trash" /></button></td>
     </tr>
+  );
+}
+
+const ROLE_HELP: Record<Role, string> = {
+  dev: 'Runs workspaces.',
+  build: 'Builds app images for prod nodes.',
+  prod: 'Runs apps and databases.',
+};
+
+function RolesModal({ n, onClose, onSaved }: { n: Node; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
+  const [roles, setRoles] = useState<Role[]>(n.roles);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toggle = (r: Role) => setRoles(rs => rs.includes(r) ? rs.filter(x => x !== r) : ROLES.filter(x => x === r || rs.includes(x)));
+  const dropped = n.roles.filter(r => !roles.includes(r));
+  const save = () => {
+    setBusy(true);
+    api.setNodeRoles(n.id, roles).then(() => { toast(`${n.name}: ${roles.join(', ')}`); onSaved(); }, e => { setError(e.message); setBusy(false); });
+  };
+  return (
+    <Modal title={`Roles · ${n.name}`} onClose={onClose} sub="Roles decide where new workspaces, builds, apps and databases go."
+      foot={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || roles.length === 0 || roles.join() === n.roles.join()} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+      </>}>
+      {error && <ErrorAlert title="Couldn't change them" msg={error} />}
+      <div className="form">
+        {ROLES.map(r => (
+          <label key={r} className="check">
+            <input type="checkbox" checked={roles.includes(r)} disabled={roles.length === 1 && roles[0] === r} onChange={() => toggle(r)} />
+            <span><span className="mono">{r}</span> <span className="muted">· {ROLE_HELP[r]}</span></span>
+          </label>
+        ))}
+        {dropped.length > 0 && <p className="help">Without {dropped.join(' and ')}, what already runs on {n.name} keeps running; only new ones go elsewhere.</p>}
+      </div>
+    </Modal>
   );
 }
 
