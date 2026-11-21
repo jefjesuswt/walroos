@@ -329,7 +329,9 @@ input[type=checkbox], input[type=radio] { accent-color: var(--ac); width: 16px; 
 @media (max-width: 560px) { .field-row { grid-template-columns: 1fr; } }
 .card-body, .card-pad { min-width: 0; }
 .card .table-wrap { border: 0; border-radius: 0; }
-.field { display: grid; gap: 6px; min-width: 0; }
+/* align-content: start: in a .field-row the taller field (one with a hint) must not stretch the
+   others, which would push their control down out of line. */
+.field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field > * { display: block; }
 .field > input, .field > select, .field > textarea { width: 100%; }
 .field label, .label { font-size: var(--fs-sm); font-weight: 500; }
