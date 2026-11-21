@@ -15,6 +15,7 @@ go test ./...
 WALROOS_PODMAN_TEST=1 go test ./internal/agent/... # + workspaces, apps, databases, SSH on real rootless podman
 GOOS=linux CGO_ENABLED=0 go test -c ./internal/agent/sshgw # SSH tests are linux-only: run the binary in WSL
 go run ./cmd/walroos hub --dev                    # 127.0.0.1:8080, no Tailscale, user dev@localhost
+scripts/release.sh v0.2.0                         # every platform into dist/ + SHA256SUMS (a v* tag does it in CI)
 cd web && bun run dev                             # Vite :5173, proxies /api to :8080 (WALROOS_API=url for another hub)
 ```
 
@@ -23,7 +24,9 @@ Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (
 ## Layout
 
 ```
-cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, run, telemetry)
+cmd/walroos/            cobra root; hub/ (control plane, install, backup/restore), node/ (agent: join, run, install, telemetry), userservice/ (systemd --user units)
+install.sh, scripts/    install from the latest release; build a release
+.github/workflows/      ci (tests on every PR), release (a v* tag publishes the binaries)
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs, users and their roles (owner, deployer, developer), permissions
 internal/agent/         the hub ↔ node contract: specs, results, validation, ports, the Client the hub calls nodes with

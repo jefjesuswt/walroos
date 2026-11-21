@@ -68,21 +68,35 @@ The full design is in [ARCHITECTURE.md](ARCHITECTURE.md) (in Spanish).
 - **Tailscale** (or Headscale) on every machine; the hub brings its own.
 - **Podman** (rootless) and **git** on Linux nodes.
 
-## Quick start
+## Install
 
-There are no release binaries yet, so build from source:
+On each machine (the hub, every node, and your laptop for `walroos ssh-config`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jefjesuswt/walroos/main/install.sh | sh
+```
+
+It downloads the binary for your system from the [latest release](https://github.com/jefjesuswt/walroos/releases/latest), checks its SHA-256 and puts it in `~/.local/bin` (`WALROOS_INSTALL_DIR` for another place, `WALROOS_VERSION=v0.2.0` for another release). Linux binaries (amd64, arm64) run the hub and nodes; the macOS and Windows ones are the CLI for your laptop. You can also download them from the release page by hand, or build from source:
 
 ```bash
 git clone https://github.com/jefjesuswt/walroos && cd walroos
 cd web && bun install && bun run build && cd ..   # web UI, embedded into the binary
-CGO_ENABLED=0 go build -o bin/walroos ./cmd/walroos
+CGO_ENABLED=0 go build -o ~/.local/bin/walroos ./cmd/walroos
 ```
+
+## Quick start
 
 **1. Start the hub.** The first run needs your tailnet login as owner. To join the tailnet, either open the login URL it prints or pass an auth key:
 
 ```bash
-./bin/walroos hub --owner you@github
-# or: TS_AUTHKEY=tskey-auth-... ./bin/walroos hub --owner you@github
+walroos hub --owner you@github
+# or: TS_AUTHKEY=tskey-auth-... walroos hub --owner you@github
+```
+
+Once it's on the tailnet, stop it (Ctrl+C) and keep it running as a service that starts on boot:
+
+```bash
+walroos hub install    # systemd --user service; logs: journalctl --user -u walroos-hub -f
 ```
 
 **2. Add a node.** Open `http://walroos-hub` from any device on your tailnet, then go to **Nodes → Add node** and copy the join command. On the node:
@@ -150,6 +164,24 @@ Your forge isn't on your tailnet, so the hub publishes `/hooks/*`, and nothing e
 
 Restart the hub after changing them. The Automation tab says if the hooks aren't reachable and why. A forge inside your tailnet (a self-hosted Forgejo) can call `http://walroos-hub/hooks/...` directly instead.
 
+## Back up the hub
+
+The hub's state is three things that go together: `hub.db`, `secret.key` (without it every sealed token and variable is lost) and `tsnet/` (its identity on the tailnet, so nodes find it again). Save them all with:
+
+```bash
+walroos hub backup                  # walroos-hub-<date>.tar.gz; works while the hub runs
+```
+
+To bring the hub back, on the same machine or a new one:
+
+```bash
+systemctl --user stop walroos-hub   # if it's running here
+walroos hub restore walroos-hub-20261121-180000.tar.gz   # --force moves an existing hub aside
+walroos hub install
+```
+
+Nodes reconnect by themselves. Never run two hubs from the same backup at once: they'd share one tailnet identity.
+
 ## Development
 
 ```bash
@@ -169,7 +201,9 @@ internal/web/     serves the embedded UI
 web/              React + Vite + TypeScript UI
 ```
 
-Conventions (minimal code, one pattern per domain, migrations, commits) are in [CLAUDE.md](CLAUDE.md). The current task list is in [PLAN.md](PLAN.md). `index.html` at the root is the design prototype the UI is ported from.
+**Releasing:** push a tag (`git tag v0.2.0 && git push origin v0.2.0`). The `release` workflow runs the tests, builds every platform with `scripts/release.sh` and publishes the binaries and `SHA256SUMS` as a GitHub release, which `install.sh` then downloads. The `ci` workflow tests every pull request.
+
+Conventions (minimal code, one pattern per domain, migrations, commits) are in [AGENTS.md](AGENTS.md). The current task list is in [PLAN.md](PLAN.md). `index.html` at the root is the design prototype the UI is ported from.
 
 ## Roadmap
 
