@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -54,7 +55,7 @@ func TestDatabasePodman(t *testing.T) {
 			name := fmt.Sprintf("t%s%s%d", c.engine[:2], strings.ReplaceAll(c.version, ".", ""), time.Now().UnixNano()%1e6)
 			t.Cleanup(func() { a.DeleteDatabase(context.Background(), name, true) })
 
-			spec := DatabaseSpec{Name: name, Engine: c.engine, Version: c.version, User: "app", DB: "app", Password: "s3cretPassw0rdXYZ"}
+			spec := DatabaseSpec{Name: name, Engine: c.engine, Version: c.version, User: "app", DB: "app", Password: rand.Text()} // a throwaway per run, letters and digits
 			if _, err := a.CreateDatabase(ctx, spec); err != nil {
 				t.Fatal(err)
 			}
