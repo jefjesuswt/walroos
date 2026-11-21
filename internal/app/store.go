@@ -37,13 +37,13 @@ func (s *Store) Insert(ctx context.Context, a App) error {
 	return err
 }
 
-const appCols = `a.id, a.name, a.node_id, n.name, a.project_id, p.name, a.description, a.repo_url, a.image, a.volumes, a.branch, a.dockerfile, a.port, a.health_path, a.created_at
+const appCols = `a.id, a.name, a.node_id, n.name, a.project_id, p.name, a.description, a.repo_url, a.image, a.volumes, a.branch, a.dockerfile, a.port, a.health_path, a.trigger, a.deploy_token_hash != '', a.created_at
 	FROM apps a JOIN nodes n ON n.id = a.node_id JOIN projects p ON p.id = a.project_id`
 
 func scanApp(row interface{ Scan(...any) error }) (App, error) {
 	var a App
 	var vols string
-	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.ProjectID, &a.Project, &a.Description, &a.RepoURL, &a.Image, &vols, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.CreatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.NodeID, &a.NodeName, &a.ProjectID, &a.Project, &a.Description, &a.RepoURL, &a.Image, &vols, &a.Branch, &a.Dockerfile, &a.Port, &a.HealthPath, &a.Trigger, &a.DeployToken, &a.CreatedAt)
 	if err == nil {
 		err = json.Unmarshal([]byte(vols), &a.Volumes)
 	}

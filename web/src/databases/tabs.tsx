@@ -1,15 +1,13 @@
 // The tabs of a database's page.
-import { useState } from 'react';
 import { api, type Backup, type Database } from '../api';
 import { dbLabel, size } from '../status';
-import { ago, CopyBtn, DangerZone, ErrorAlert, Icon, Section } from '../ui';
+import { ago, CopyField, DangerZone, ErrorAlert, Icon, Section } from '../ui';
 
 const schedule = (d: Database) => d.backup_every_hours === 0 ? 'off'
   : d.backup_every_hours % 24 === 0 ? `every ${d.backup_every_hours / 24 === 1 ? 'day' : `${d.backup_every_hours / 24} days`}`
   : `every ${d.backup_every_hours} h`;
 
 export function ConnectionCard({ d }: { d: Database }) {
-  const [reveal, setReveal] = useState(false);
   const url = d.url ?? '';
   const masked = url.replace(/:([^:@/]+)@/, ':••••••••@');
   return (
@@ -20,13 +18,7 @@ export function ConnectionCard({ d }: { d: Database }) {
         <dt>Port</dt><dd className="mono">{d.port}</dd>
         {d.engine !== 'redis' && <><dt>User</dt><dd className="mono">{d.user}</dd><dt>Database</dt><dd className="mono">{d.db}</dd></>}
       </dl>
-      {url && (
-        <div className="cmd">
-          <code className="od-truncate" title={reveal ? url : undefined}>{reveal ? url : masked}</code>
-          <button className="btn-icon" aria-label={reveal ? 'Hide password' : 'Show password'} title={reveal ? 'Hide' : 'Show'} onClick={() => setReveal(!reveal)}><Icon n="eye" /></button>
-          <CopyBtn text={url} label="Copy connection URL" />
-        </div>
-      )}
+      {url && <CopyField value={url} masked={masked} label="connection URL" />}
       <p className="help"><strong>Link to app</strong> puts this URL in an app's environment as a secret; it applies on the app's next deploy.</p>
     </Section>
   );

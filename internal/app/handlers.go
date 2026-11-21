@@ -43,6 +43,11 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
 	d.Put("/api/apps/{name}/source", h.handlePutSource)
 	d.Post("/api/apps/from-template", h.handleFromTemplate)
+	d.Put("/api/apps/{name}/trigger", h.handlePutTrigger)
+	d.Get("/api/apps/{name}/webhook-secret", h.handleWebhookSecret)
+	d.Post("/api/apps/{name}/webhook-secret", h.handleRotateWebhookSecret)
+	d.Post("/api/apps/{name}/deploy-token", h.handleNewDeployToken)
+	d.Delete("/api/apps/{name}/deploy-token", h.handleRevokeDeployToken)
 
 }
 
@@ -169,4 +174,37 @@ func (h *Handler) handleDeployment(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleRollback(w http.ResponseWriter, r *http.Request) {
 	d, err := h.svc.Rollback(r.Context(), r.PathValue("name"), r.PathValue("id"))
 	whttp.Reply(w, http.StatusAccepted, d, err)
+}
+
+func (h *Handler) handlePutTrigger(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Trigger string `json:"trigger"`
+	}
+	if decode(w, r, &in) {
+		a, err := h.svc.SetTrigger(r.Context(), r.PathValue("name"), in.Trigger)
+		whttp.Reply(w, http.StatusOK, a, err)
+	}
+}
+
+func (h *Handler) handleWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	secret, err := h.svc.WebhookSecret(r.Context(), r.PathValue("name"))
+	whttp.Reply(w, http.StatusOK, map[string]string{"secret": secret}, err)
+}
+
+func (h *Handler) handleRotateWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	secret, err := h.svc.RotateWebhookSecret(r.Context(), r.PathValue("name"))
+	whttp.Reply(w, http.StatusOK, map[string]string{"secret": secret}, err)
+}
+
+func (h *Handler) handleNewDeployToken(w http.ResponseWriter, r *http.Request) {
+	token, err := h.svc.NewDeployToken(r.Context(), r.PathValue("name"))
+	whttp.Reply(w, http.StatusCreated, map[string]string{"token": token}, err)
+}
+
+func (h *Handler) handleRevokeDeployToken(w http.ResponseWriter, r *http.Request) {
+	if err := h.svc.RevokeDeployToken(r.Context(), r.PathValue("name")); err != nil {
+		whttp.WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

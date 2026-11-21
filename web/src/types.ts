@@ -159,6 +159,15 @@ export interface Cloudflare {
   zones: string[];
 }
 
+// How an app deploys by itself: the button only, a push webhook, or CI after the tests pass.
+export type Trigger = 'manual' | 'on_push' | 'on_ci';
+
+// Where the forge reaches the hub's hooks (Tailscale Funnel), or why it can't.
+export interface Hooks {
+  url: string;
+  error?: string;
+}
+
 export interface App {
   id: string;
   name: string;
@@ -175,6 +184,8 @@ export interface App {
   health_path: string;
   domains: string[]; // public hostnames through the node's Cloudflare Tunnel
   volumes: Volume[]; // apply on the next deploy
+  trigger: Trigger;
+  deploy_token: boolean; // CI has a deploy token (shown once, when made)
   created_at: string;
   last_deployment?: Deployment;
   running?: Release;

@@ -115,7 +115,26 @@ Clients on that machine then reach the tailnet through the proxy. `walroos ssh-c
 claude mcp add --transport http walroos http://walroos-hub/mcp
 ```
 
-Tools: `list_nodes`, `list_workspaces`, `detect_stack`, `create_workspace`, `get_workspace`, `start_workspace`, `stop_workspace`, `workspace_ssh_info`. Ask "create a workspace for github.com/you/app" and Claude detects the stack, creates it, waits until it's running and gives you the `ssh` line.
+Tools cover nodes, workspaces (`detect_stack`, `create_workspace`, `create_workspace_from_scratch`, `workspace_ssh_info`…), projects, apps (`create_app`, `deploy_app`, `rollback_app`, `app_logs`…) and databases. Each user only gets the tools their role allows. Ask "create a workspace for github.com/you/app" and Claude detects the stack, creates it, waits until it's running and gives you the `ssh` line.
+
+**4. Deploy an app.** Give a node the `prod` role, open **Projects**, create a project and add an **Application** (a repo with a `Dockerfile`, or a published image), a **Database** or a **Template**. **Deploy** builds it on the node, starts it next to the running release, checks its health and switches over. **Domains** puts it on the internet with TLS through a Cloudflare Tunnel (add a Cloudflare API token in **Settings** first).
+
+### Deploy on every push, or after CI
+
+Each app's **Automation** tab picks how it deploys by itself. Walroos isn't a CI engine: your forge runs the tests, walroos deploys.
+
+- **On push.** Every push to the app's branch deploys that commit. Add the webhook the tab shows in the repo's settings (GitHub, Gitea, Forgejo or GitLab): its payload URL, its secret, push events only.
+- **After CI.** Your workflow runs the tests and, if they pass, calls walroos with the app's deploy token. The tab makes the token (shown once) and gives you a ready GitHub Actions workflow. For an app built from a published image, the workflow also builds and pushes the image. Save the hub URL and the token as the repository secrets `WALROOS_URL` and `WALROOS_DEPLOY_TOKEN`.
+
+Your forge isn't on your tailnet, so the hub publishes `/hooks/*`, and nothing else, on the internet with [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) at `https://walroos-hub.<your-tailnet>.ts.net`. The UI, the API and MCP stay on the tailnet. Funnel needs two things in the Tailscale admin console:
+
+1. **DNS → HTTPS Certificates**: enabled.
+2. The `funnel` attribute for the hub in the tailnet policy, for example:
+   ```json
+   "nodeAttrs": [{ "target": ["autogroup:member"], "attr": ["funnel"] }]
+   ```
+
+Restart the hub after changing them. The Automation tab says if the hooks aren't reachable and why. A forge inside your tailnet (a self-hosted Forgejo) can call `http://walroos-hub/hooks/...` directly instead.
 
 ## Development
 
@@ -145,8 +164,8 @@ Conventions (minimal code, one pattern per domain, migrations, commits) are in [
 | **M0 Base** | Nodes join with a one-time token, heartbeat with telemetry, Tailscale auth, web UI with live nodes | The UI lists nodes with live telemetry | ✅ Done |
 | **M1 Workspaces** | Create from a repo + `devcontainer.json`, persistent volumes, SSH gateway, `walroos ssh-config`, UI | `ssh myproject.walroos` from the laptop and `claude` runs inside | ✅ Done |
 | **M2 MCP** | `/mcp` on the hub with node and workspace tools | Claude Code creates a workspace and connects to it | ✅ Done |
-| **M3 Deploy** | Apps, build + registry, Quadlets, Cloudflare Tunnel ingress, zero-downtime, logs, rollback | A "Deploy" button and `app.example.com` answers with TLS from behind CGNAT | Planned |
-| **M4 CI/CD** | Git providers, webhooks via Tailscale Funnel, deploy on push or on CI, deploy tokens | Merge a PR on GitHub and the app updates by itself | Planned |
+| **M3 Deploy** | Apps, build + registry, Quadlets, Cloudflare Tunnel ingress, zero-downtime, logs, rollback, projects, databases with backups, templates | A "Deploy" button and `app.example.com` answers with TLS from behind CGNAT | ✅ Done |
+| **M4 CI/CD** | Webhooks via Tailscale Funnel (GitHub, Gitea/Forgejo, GitLab), deploy on push or after CI, deploy tokens, workflow templates | Merge a PR on GitHub and the app updates by itself | ✅ Done |
 | **M5** | Preview deploys per PR, compose, devcontainer features, Caddy for nodes with a public IP, notifications | | Later |
 
 M1 progress:

@@ -69,6 +69,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	svc := newServices(ctx, db, box, nw)
+	go serveHooks(ctx, svc, nw)
 	return serve(ctx, nw, routes(svc, users, nw))
 }
 
