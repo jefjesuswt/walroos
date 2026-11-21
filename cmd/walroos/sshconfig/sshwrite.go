@@ -39,58 +39,79 @@ func MergeSSH(config []byte, block, suffix string) (out []byte, changed bool, dr
 	if lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	}
-
-	var kept []string
-	at := -1 // where the managed section was, in kept
-	inside := false
-	dropping := false
-	var held []string // comments and blank lines after a dropped block's last option
+	sc := sshScan{at: -1, suffix: suffix}
 	for _, line := range lines {
-		t := strings.TrimSpace(line)
-		switch {
-		case strings.HasPrefix(t, beginMarker):
-			if inside || at >= 0 {
-				return nil, false, nil, errors.New("~/.ssh/config has two walroos sections; fix it by hand, then run this again")
-			}
-			kept, held, dropping = append(kept, held...), nil, false
-			inside, at = true, len(kept)
-			continue
-		case strings.HasPrefix(t, endMarker):
-			if !inside {
-				return nil, false, nil, errors.New("~/.ssh/config has an \"# END walroos\" line without its \"# BEGIN walroos\"; fix it by hand, then run this again")
-			}
-			inside = false
-			continue
-		case inside, strings.HasPrefix(t, printedHeader):
-			continue // the header `ssh-config >>` pasted along with the blocks
-		}
-
-		if kw, args := directive(t); kw == "host" || kw == "match" {
-			kept, held = append(kept, held...), nil
-			dropping = kw == "host" && allOurs(args, suffix)
-			if dropping {
-				dropped = append(dropped, strings.Join(args, " "))
-				for len(kept) > 0 && strings.TrimSpace(kept[len(kept)-1]) == "" {
-					kept = kept[:len(kept)-1] // its separator: the blank lines after it take its place
-				}
-				continue
-			}
-		}
-		switch {
-		case !dropping:
-			kept = append(kept, line)
-		case t == "" || strings.HasPrefix(t, "#"):
-			held = append(held, line) // likely about the next block: keep unless more options follow
-		default:
-			held = nil
+		if err := sc.line(line); err != nil {
+			return nil, false, nil, err
 		}
 	}
-	if inside {
+	if sc.inside {
 		return nil, false, nil, errors.New("~/.ssh/config has \"# BEGIN walroos\" without its \"# END walroos\"; fix it by hand, then run this again")
 	}
-	kept = append(kept, held...)
+	out = place(append(sc.kept, sc.held...), sc.at, block)
+	return out, !bytes.Equal(out, config), sc.dropped, nil
+}
 
-	if at < 0 && block != "" { // first time: at the end, after a blank line
+// sshScan walks the config line by line, keeping what isn't walroos': the managed section
+// goes (at remembers where), and so do stray Host blocks for our workspaces pasted by hand.
+type sshScan struct {
+	kept, held, dropped []string // held: comments and blank lines after a dropped block's last option
+	at                  int      // where the managed section was, in kept
+	inside, dropping    bool
+	suffix              string
+}
+
+func (sc *sshScan) line(line string) error {
+	t := strings.TrimSpace(line)
+	switch {
+	case strings.HasPrefix(t, beginMarker):
+		if sc.inside || sc.at >= 0 {
+			return errors.New("~/.ssh/config has two walroos sections; fix it by hand, then run this again")
+		}
+		sc.kept, sc.held, sc.dropping = append(sc.kept, sc.held...), nil, false
+		sc.inside, sc.at = true, len(sc.kept)
+		return nil
+	case strings.HasPrefix(t, endMarker):
+		if !sc.inside {
+			return errors.New("~/.ssh/config has an \"# END walroos\" line without its \"# BEGIN walroos\"; fix it by hand, then run this again")
+		}
+		sc.inside = false
+		return nil
+	case sc.inside, strings.HasPrefix(t, printedHeader):
+		return nil // the header `ssh-config >>` pasted along with the blocks
+	}
+	if kw, args := directive(t); (kw == "host" || kw == "match") && sc.startBlock(kw, args) {
+		return nil
+	}
+	switch {
+	case !sc.dropping:
+		sc.kept = append(sc.kept, line)
+	case t == "" || strings.HasPrefix(t, "#"):
+		sc.held = append(sc.held, line) // likely about the next block: keep unless more options follow
+	default:
+		sc.held = nil
+	}
+	return nil
+}
+
+// startBlock begins a Host or Match block; it reports whether the line is dropped (a Host
+// block that only names our workspaces).
+func (sc *sshScan) startBlock(kw string, args []string) bool {
+	sc.kept, sc.held = append(sc.kept, sc.held...), nil
+	sc.dropping = kw == "host" && allOurs(args, sc.suffix)
+	if !sc.dropping {
+		return false
+	}
+	sc.dropped = append(sc.dropped, strings.Join(args, " "))
+	for len(sc.kept) > 0 && strings.TrimSpace(sc.kept[len(sc.kept)-1]) == "" {
+		sc.kept = sc.kept[:len(sc.kept)-1] // its separator: the blank lines after it take its place
+	}
+	return true
+}
+
+// place writes kept with block where the old section was, or at the end after a blank line.
+func place(kept []string, at int, block string) []byte {
+	if at < 0 && block != "" {
 		if n := len(kept); n > 0 {
 			if !strings.HasSuffix(kept[n-1], "\n") {
 				kept[n-1] += "\n"
@@ -111,7 +132,7 @@ func MergeSSH(config []byte, block, suffix string) (out []byte, changed bool, dr
 	if at == len(kept) {
 		b.WriteString(block)
 	}
-	return b.Bytes(), !bytes.Equal(b.Bytes(), config), dropped, nil
+	return b.Bytes()
 }
 
 // directive splits an ssh_config line into its lowercased keyword and arguments

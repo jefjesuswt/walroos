@@ -6,20 +6,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 const API = "https://api.cloudflare.com/client/v4"
 
 // ErrRecordExists: the name already has a DNS record walroos didn't make. Never overwritten.
-var ErrRecordExists = errors.New("walroos doesn't overwrite it; remove it in Cloudflare first")
+var ErrRecordExists = whttp.Conflict("walroos doesn't overwrite it; remove it in Cloudflare first")
 
-var ErrForbidden = errors.New("the Cloudflare token lacks a permission: it needs Zone · DNS · Edit, Zone · Zone · Read and Account · Cloudflare Tunnel · Edit")
+var ErrForbidden = whttp.Upstream("the Cloudflare token lacks a permission: it needs Zone · DNS · Edit, Zone · Zone · Read and Account · Cloudflare Tunnel · Edit")
 
 type Client struct {
 	Token string

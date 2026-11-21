@@ -2,7 +2,6 @@ package auth
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"regexp"
 	"slices"
@@ -13,12 +12,12 @@ import (
 )
 
 var (
-	ErrUserExists   = errors.New("that login is already a user")
-	ErrUserNotFound = errors.New("user not found")
-	ErrInvalidUser  = errors.New("login must be a Tailscale login (you@github, name@example.com) and role one of owner, deployer, developer")
-	ErrLastOwner    = errors.New("the hub needs an owner: make someone else owner first")
-	ErrSelf         = errors.New("you can't remove yourself or change your own role; another owner can")
-	ErrOwnsThings   = errors.New("they still own workspaces: delete those first")
+	ErrUserExists   = whttp.Conflict("that login is already a user")
+	ErrUserNotFound = whttp.NotFound("user not found")
+	ErrInvalidUser  = whttp.Invalid("login must be a Tailscale login (you@github, name@example.com) and role one of owner, deployer, developer")
+	ErrLastOwner    = whttp.Conflict("the hub needs an owner: make someone else owner first")
+	ErrSelf         = whttp.Invalid("you can't remove yourself or change your own role; another owner can")
+	ErrOwnsThings   = whttp.Conflict("they still own workspaces: delete those first")
 )
 
 // A Tailscale login name: user@provider or an email. Kept loose; WhoIs decides who matches.
@@ -100,7 +99,7 @@ func (s *Store) UserRoutes(r *whttp.Router) {
 
 func (s *Store) handleList(w http.ResponseWriter, r *http.Request) {
 	list, err := s.List(r)
-	userReply(w, http.StatusOK, list, err)
+	whttp.Reply(w, http.StatusOK, list, err)
 }
 
 func (s *Store) handleAdd(w http.ResponseWriter, r *http.Request) {
@@ -111,11 +110,11 @@ func (s *Store) handleAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	m.Login = strings.TrimSpace(m.Login)
 	if !loginRe.MatchString(m.Login) || !slices.Contains(Roles, m.Role) {
-		userReply[any](w, 0, nil, ErrInvalidUser)
+		whttp.Reply(w, 0, nil, ErrInvalidUser)
 		return
 	}
 	m.CreatedAt = time.Now().UTC()
-	userReply(w, http.StatusCreated, m, s.add(r, m))
+	whttp.Reply(w, http.StatusCreated, m, s.add(r, m))
 }
 
 func (s *Store) handleSetRole(w http.ResponseWriter, r *http.Request) {
@@ -129,38 +128,23 @@ func (s *Store) handleSetRole(w http.ResponseWriter, r *http.Request) {
 	login := r.PathValue("login")
 	switch {
 	case !slices.Contains(Roles, in.Role):
-		userReply[any](w, 0, nil, ErrInvalidUser)
+		whttp.Reply(w, 0, nil, ErrInvalidUser)
 	case login == Caller(r.Context()).Login:
-		userReply[any](w, 0, nil, ErrSelf)
+		whttp.Reply(w, 0, nil, ErrSelf)
 	default:
-		userReply(w, http.StatusOK, Member{Login: login, Role: in.Role}, s.change(r, login, in.Role))
+		whttp.Reply(w, http.StatusOK, Member{Login: login, Role: in.Role}, s.change(r, login, in.Role))
 	}
 }
 
 func (s *Store) handleRemove(w http.ResponseWriter, r *http.Request) {
 	login := r.PathValue("login")
 	if login == Caller(r.Context()).Login {
-		userReply[any](w, 0, nil, ErrSelf)
+		whttp.Reply(w, 0, nil, ErrSelf)
 		return
 	}
 	if err := s.change(r, login, ""); err != nil {
-		userReply[any](w, 0, nil, err)
+		whttp.Reply(w, 0, nil, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func userReply[T any](w http.ResponseWriter, code int, v T, err error) {
-	switch {
-	case err == nil:
-		whttp.JSON(w, code, v)
-	case errors.Is(err, ErrInvalidUser), errors.Is(err, ErrSelf):
-		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrUserNotFound):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrUserExists), errors.Is(err, ErrLastOwner), errors.Is(err, ErrOwnsThings):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	default:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	}
 }

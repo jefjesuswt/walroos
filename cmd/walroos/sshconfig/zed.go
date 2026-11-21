@@ -45,32 +45,56 @@ func MergeZed(settings []byte, list []workspace, suffix string) (out []byte, cha
 	if len(bytes.TrimSpace(settings)) == 0 {
 		settings = []byte("{}\n")
 	}
+	v, current, err := parseZed(settings)
+	if err != nil {
+		return nil, false, nil, err
+	}
+	// Before anything below touches them: the entries kept are the same maps, edited in place.
+	before, _ := json.Marshal(current)
+	wanted := map[string]workspace{}
+	for _, ws := range list {
+		wanted[ws.Name+suffix] = ws
+	}
+	others, ours := sortEntries(current, wanted, suffix)
+	merged, warnings := mergeEntries(others, ours, wanted)
+
+	after, _ := json.Marshal(merged)
+	if bytes.Equal(before, after) || (len(current) == 0 && len(merged) == 0) {
+		return settings, false, warnings, nil
+	}
+	val, err := json.MarshalIndent(merged, "  ", "  ") // Zed's own two-space style, as a top-level member
+	if err != nil {
+		return nil, false, nil, err
+	}
+	out, err = splice(settings, v, val)
+	return out, err == nil, warnings, err
+}
+
+// parseZed reads settings.json (comments allowed) and its ssh_connections list.
+func parseZed(settings []byte) (hujson.Value, []any, error) {
 	v, err := hujson.Parse(settings)
 	if err != nil {
-		return nil, false, nil, fmt.Errorf("Zed's settings.json isn't valid JSON (with comments): %w", err)
+		return v, nil, fmt.Errorf("Zed's settings.json isn't valid JSON (with comments): %w", err)
 	}
 	std := v.Clone()
 	std.Standardize()
 	var doc map[string]any
 	if err := json.Unmarshal(std.Pack(), &doc); err != nil || doc == nil {
-		return nil, false, nil, errors.New("Zed's settings.json isn't a JSON object")
+		return v, nil, errors.New("Zed's settings.json isn't a JSON object")
 	}
 	var current []any
 	if raw, ok := doc["ssh_connections"]; ok && raw != nil {
 		if current, ok = raw.([]any); !ok {
-			return nil, false, nil, errors.New(`Zed's "ssh_connections" isn't a list`)
+			return v, nil, errors.New(`Zed's "ssh_connections" isn't a list`)
 		}
 	}
+	return v, current, nil
+}
 
-	// Before anything below touches them: the entries kept are the same maps, edited in place.
-	before, _ := json.Marshal(current)
-
-	wanted := map[string]workspace{}
-	for _, ws := range list {
-		wanted[ws.Name+suffix] = ws
-	}
-	var others []any
-	ours := map[string]map[string]any{}
+// sortEntries splits the connections into ours (a wanted workspace, duplicates folded into the
+// first) and others; ours that no longer exist are dropped.
+func sortEntries(current []any, wanted map[string]workspace, suffix string) (others []any, ours map[string]map[string]any) {
+	ours = map[string]map[string]any{}
 	for _, raw := range current {
 		e, ok := raw.(map[string]any)
 		host, _ := e["host"].(string)
@@ -89,16 +113,19 @@ func MergeZed(settings []byte, list []workspace, suffix string) (out []byte, cha
 			others = append(others, raw)
 		}
 	}
+	return others, ours
+}
 
-	names := make([]string, 0, len(wanted))
+// mergeEntries appends one entry per wanted workspace, by host name, each listing its folder.
+func mergeEntries(others []any, ours map[string]map[string]any, wanted map[string]workspace) (merged []any, warnings []string) {
+	hosts := make([]string, 0, len(wanted))
 	for h := range wanted {
-		names = append(names, h)
+		hosts = append(hosts, h)
 	}
-	sort.Strings(names)
-	merged := others
-	for _, h := range names {
-		ws := wanted[h]
-		e := ours[h]
+	sort.Strings(hosts)
+	merged = others
+	for _, h := range hosts {
+		ws, e := wanted[h], ours[h]
 		if e == nil {
 			e = map[string]any{"host": h, "projects": []any{}}
 		}
@@ -114,25 +141,19 @@ func MergeZed(settings []byte, list []workspace, suffix string) (out []byte, cha
 	if merged == nil {
 		merged = []any{}
 	}
+	return merged, warnings
+}
 
-	after, _ := json.Marshal(merged)
-	if bytes.Equal(before, after) || (len(current) == 0 && len(merged) == 0) {
-		return settings, false, warnings, nil
-	}
-	val, err := json.MarshalIndent(merged, "  ", "  ") // Zed's own two-space style, as a top-level member
-	if err != nil {
-		return nil, false, nil, err
-	}
-	// Splice the text in rather than re-serializing: every other byte of the file stays as is
-	// (hujson's Patch would also work, but writes the new value on one line).
+// splice puts val in as ssh_connections without re-serializing: every other byte of the file
+// stays as is (hujson's Patch would also work, but writes the new value on one line).
+func splice(settings []byte, v hujson.Value, val []byte) ([]byte, error) {
 	obj, _ := v.Value.(*hujson.Object)
 	if obj == nil {
-		return nil, false, nil, errors.New("Zed's settings.json isn't a JSON object")
+		return nil, errors.New("Zed's settings.json isn't a JSON object")
 	}
 	for _, m := range obj.Members {
 		if name, _ := m.Name.Value.(hujson.Literal); name.String() == "ssh_connections" {
-			out := append(append(append([]byte{}, settings[:m.Value.StartOffset]...), val...), settings[m.Value.EndOffset:]...)
-			return out, true, warnings, nil
+			return append(append(append([]byte{}, settings[:m.Value.StartOffset]...), val...), settings[m.Value.EndOffset:]...), nil
 		}
 	}
 	insert := "\n  \"ssh_connections\": " + string(val)
@@ -142,8 +163,7 @@ func MergeZed(settings []byte, list []workspace, suffix string) (out []byte, cha
 		insert += "\n"
 	}
 	brace := v.StartOffset + 1 // right after the opening brace
-	out = append(append(append([]byte{}, settings[:brace]...), insert...), settings[brace:]...)
-	return out, true, warnings, nil
+	return append(append(append([]byte{}, settings[:brace]...), insert...), settings[brace:]...), nil
 }
 
 func projectsOf(e map[string]any) []any {

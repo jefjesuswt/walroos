@@ -5,20 +5,21 @@ package workspace
 
 import (
 	"encoding/json"
-	"errors"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNotFound  = errors.New("workspace not found")
-	ErrExists    = errors.New("a workspace with that name already exists")
-	ErrInvalid   = errors.New("name must be a DNS label (lowercase letters, digits, '-'), and repo_url is required")
-	ErrNoNode    = errors.New("no online node with the dev role; join one with `walroos node join --roles dev`")
-	ErrNodeRole  = errors.New("the chosen node doesn't have the dev role")
-	ErrAgentBusy = errors.New("the node is busy with that workspace, try again in a moment")
-	ErrRepo      = errors.New("the node couldn't read the repo")
-	ErrRepoURL   = errors.New("repo_url must be a remote git URL: https://, ssh://, git:// or user@host:path")
-	ErrStack     = errors.New("stack must be one detect returns: android, dotnet, bun, node, go, rust, python, java, devcontainer or none")
+	ErrNotFound  = whttp.NotFound("workspace not found")
+	ErrExists    = whttp.Conflict("a workspace with that name already exists")
+	ErrInvalid   = whttp.Invalid("name must be a DNS label (lowercase letters, digits, '-'), and repo_url is required")
+	ErrNoNode    = whttp.Conflict("no online node with the dev role; join one with `walroos node join --roles dev`")
+	ErrNodeRole  = whttp.Conflict("the chosen node doesn't have the dev role")
+	ErrAgentBusy = whttp.Conflict("the node is busy with that workspace, try again in a moment")
+	ErrRepo      = whttp.Unprocessable("the node couldn't read the repo")
+	ErrRepoURL   = whttp.Invalid("repo_url must be a remote git URL: https://, ssh://, git:// or user@host:path")
+	ErrStack     = whttp.Invalid("stack must be one detect returns: android, dotnet, bun, node, go, rust, python, java, devcontainer or none")
 )
 
 // stacks are the ones worth storing; detect's "devcontainer" and "none" are stored as "".

@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -39,7 +38,7 @@ var grants = map[string][]Perm{
 }
 
 // ErrForbidden is what a handler answers with 403.
-var ErrForbidden = errors.New("your role can't do that")
+var ErrForbidden = whttp.Forbidden("your role can't do that")
 
 func (u User) Can(p Perm) bool {
 	for _, g := range grants[u.Role] {
@@ -72,7 +71,7 @@ func Require(p Perm) whttp.Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			u, _ := FromContext(r.Context())
 			if err := u.Check(p); err != nil {
-				whttp.ErrorJSON(w, http.StatusForbidden, err.Error())
+				whttp.WriteError(w, err)
 				return
 			}
 			next.ServeHTTP(w, r)

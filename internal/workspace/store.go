@@ -168,34 +168,3 @@ func (s *Store) ReplaceEnv(ctx context.Context, id string, vars []EnvVar) error 
 	}
 	return tx.Commit()
 }
-
-// setting reads a row of the hub's settings table ("" if unset); apps keep Cloudflare's there too.
-func (s *Store) setting(ctx context.Context, key string) (string, error) {
-	var v string
-	err := s.db.Read.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return v, err
-}
-
-// setSettings writes several settings at once; a "" value removes the key.
-func (s *Store) setSettings(ctx context.Context, kv map[string]string) error {
-	tx, err := s.db.Write.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for k, v := range kv {
-		if v == "" {
-			_, err = tx.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, k)
-		} else {
-			_, err = tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
-				ON CONFLICT (key) DO UPDATE SET value = excluded.value`, k, v)
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
-}

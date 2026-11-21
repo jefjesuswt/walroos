@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -42,11 +41,7 @@ func (h *Handler) NodeRoutes(r *whttp.Router) {
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.FromContext(r.Context())
 	keys, err := h.store.List(r.Context(), u.Login)
-	if err != nil {
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	whttp.JSON(w, http.StatusOK, keys)
+	whttp.Reply(w, http.StatusOK, keys, err)
 }
 
 func (h *Handler) handleAdd(w http.ResponseWriter, r *http.Request) {
@@ -65,28 +60,16 @@ func (h *Handler) handleAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u, _ := auth.FromContext(r.Context())
-	err = h.store.Add(r.Context(), u.Login, k)
-	switch {
-	case errors.Is(err, ErrKeyExists):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		whttp.JSON(w, http.StatusCreated, k)
-	}
+	whttp.Reply(w, http.StatusCreated, k, h.store.Add(r.Context(), u.Login, k))
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	u, _ := auth.FromContext(r.Context())
-	err := h.store.Delete(r.Context(), u.Login, r.PathValue("id"))
-	switch {
-	case errors.Is(err, ErrKeyNotFound):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		w.WriteHeader(http.StatusNoContent)
+	if err := h.store.Delete(r.Context(), u.Login, r.PathValue("id")); err != nil {
+		whttp.WriteError(w, err)
+		return
 	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) handleAuthorize(w http.ResponseWriter, r *http.Request) {
@@ -104,14 +87,7 @@ func (h *Handler) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	login, err := h.store.Authorize(r.Context(), r.PathValue("id"), body.Workspace, body.Fingerprint)
-	switch {
-	case errors.Is(err, ErrDenied):
-		whttp.ErrorJSON(w, http.StatusForbidden, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		whttp.JSON(w, http.StatusOK, map[string]string{"login": login})
-	}
+	whttp.Reply(w, http.StatusOK, map[string]string{"login": login}, err)
 }
 
 // parseKey validates an authorized_keys line. The name defaults to the key's comment.

@@ -27,17 +27,20 @@ cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, ru
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs, users and their roles (owner, deployer, developer), permissions
 internal/agent/         node agent: hub API (:7070), workspaces and apps (Quadlets) on podman, SSH gateway (:2222), build registry proxy (:5000)
-internal/app/           apps: config, source, encrypted env, deployment queue (one at a time) and history, domains, templates
+internal/app/           apps: config, source, encrypted env (env.go), deployment queue and history (deploy.go), domains (ingress.go), templates
 internal/database/      database services (Postgres, MySQL, MariaDB, Redis, Valkey, MongoDB) and their backups
-internal/project/       projects: groups of apps and databases sharing a podman network
+internal/project/       projects: groups of apps and databases sharing a podman network; lookup/ resolves a name for app and database
 internal/workspace/     dev workspaces, stack detection, workspaces from scratch
+internal/settings/      the Cloudflare and GitHub tokens (sealed) and /api/settings; hands out clients
 internal/cloudflare/    the bits of Cloudflare's API used: zones, remote-managed tunnels, CNAMEs
-internal/fleet/         nodes: models, store, service, handlers, integration tests
+internal/github/        the bits of GitHub's API used: who the token is, create a repo, first commit
+internal/fleet/         nodes: models, store, service, handlers, placement (Pick: which node runs a new thing)
 internal/sshkeys/       users' SSH keys + the node-facing ssh-auth check
-internal/mcp/           MCP at /mcp (go-sdk, stateless): tools over the services, offered by role
+internal/mcp/           MCP at /mcp (go-sdk, stateless): tools over the services, offered by role, one file per domain
 internal/web/           serves the embedded SPA (SPA fallback, JSON 404 for /api/*)
 internal/version/
-shared/whttp/           router + JSON helpers
+shared/whttp/           router, JSON helpers, Error (sentinels with an HTTP status) and WriteError/Reply
+shared/names/           DNSLabel, EnvKey, SQLIdent: the name checks every domain shares
 web/                    React 18 + Vite + TS UI
 web/src/ui/             the UI kit every page is built from (README.md: rules and examples)
 web/src/<area>/         pages by area: apps, databases, projects, workspaces, settings, nodes
@@ -86,7 +89,7 @@ These hold for every change. Review against them before opening a PR.
 - **Composition over big types:** small types with one job, composed where they're used. No type that grows a method for every feature (split a 30-method service by job: CRUD, queue, integrations).
 - **One responsibility per package.** A domain package owns its data, its settings and its handlers; it doesn't import another domain to reach a helper. Shared helpers (node placement, name validation, HTTP error mapping) live in one place and are reused.
 - **Short, concrete, cohesive functions.** One function does one step and its name says which. Split anything past ~50 lines into named steps; never write 200–300 line functions. Table literals are the only exception.
-- **Errors carry their meaning:** domain errors are sentinel values mapped to a status in one place, not a new switch per package.
+- **Errors carry their meaning:** declare domain errors with `whttp.NotFound`/`Conflict`/`Invalid`/… so they carry their status, and end handlers with `whttp.Reply` or `whttp.WriteError`. No error switch per package.
 - Keep the existing conventions above (stdlib first, no single-implementation interfaces, `// ponytail:` for deliberate limits, one integration test per domain).
 
 ## Brand

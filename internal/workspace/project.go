@@ -2,21 +2,15 @@ package workspace
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/github"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNoGitHub     = errors.New("GitHub isn't set up: add a token in Settings, or start the project as a local git repo")
-	ErrStackVersion = errors.New("unknown stack or version: pick one of GET /api/workspaces/stacks")
-)
-
-const (
-	githubTokenKey = "github_token" // sealed like env values
-	githubLoginKey = "github_login" // who the token is, for the UI; not secret
+	ErrStackVersion = whttp.Invalid("unknown stack or version: pick one of GET /api/workspaces/stacks")
 )
 
 // ProjectInput starts a project that has no repo yet. With GitHub the hub creates the repo on
@@ -28,62 +22,6 @@ type ProjectInput struct {
 	GitHub  bool   `json:"github"`
 	Private bool   `json:"private"`
 	Node    string `json:"node"`
-}
-
-// GitHubStatus is what the UI shows; the token itself never leaves the hub.
-type GitHubStatus struct {
-	Configured bool   `json:"configured"`
-	Login      string `json:"login,omitempty"`
-}
-
-// SetGitHub stores the token (sealed) once GitHub says who it is and that it may create repos.
-func (s *Service) SetGitHub(ctx context.Context, token string) (GitHubStatus, error) {
-	if token == "" {
-		return GitHubStatus{}, fmt.Errorf("%w: empty token", ErrInvalid)
-	}
-	u, err := github.New(token, s.GitHubAPI).User(ctx)
-	if err != nil {
-		return GitHubStatus{}, err
-	}
-	if !u.CanCreateRepos() {
-		return GitHubStatus{}, github.ErrScope
-	}
-	sealed, err := s.box.Seal(token)
-	if err != nil {
-		return GitHubStatus{}, err
-	}
-	if err := s.store.setSettings(ctx, map[string]string{githubTokenKey: sealed, githubLoginKey: u.Login}); err != nil {
-		return GitHubStatus{}, err
-	}
-	return GitHubStatus{Configured: true, Login: u.Login}, nil
-}
-
-func (s *Service) GitHub(ctx context.Context) (GitHubStatus, error) {
-	sealed, err := s.store.setting(ctx, githubTokenKey)
-	if err != nil || sealed == "" {
-		return GitHubStatus{}, err
-	}
-	login, err := s.store.setting(ctx, githubLoginKey)
-	return GitHubStatus{Configured: true, Login: login}, err
-}
-
-func (s *Service) DeleteGitHub(ctx context.Context) error {
-	return s.store.setSettings(ctx, map[string]string{githubTokenKey: "", githubLoginKey: ""})
-}
-
-func (s *Service) github(ctx context.Context) (*github.Client, error) {
-	sealed, err := s.store.setting(ctx, githubTokenKey)
-	if err != nil {
-		return nil, err
-	}
-	if sealed == "" {
-		return nil, ErrNoGitHub
-	}
-	token, err := s.box.Open(sealed)
-	if err != nil {
-		return nil, fmt.Errorf("github token: %w", err)
-	}
-	return github.New(token, s.GitHubAPI), nil
 }
 
 // CreateProject checks everything it can before touching GitHub (name, stack, node), so a
@@ -104,7 +42,7 @@ func (s *Service) CreateProject(ctx context.Context, owner string, in ProjectInp
 	var gh *github.Client
 	if in.GitHub {
 		var err error
-		if gh, err = s.github(ctx); err != nil {
+		if gh, err = s.settings.GitHubClient(ctx); err != nil {
 			return Workspace{}, err
 		}
 	}

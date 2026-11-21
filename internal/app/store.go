@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -29,7 +30,7 @@ func (s *Store) Insert(ctx context.Context, a App) error {
 	_, err := s.db.Write.ExecContext(ctx,
 		`INSERT INTO apps (id, name, node_id, project_id, description, repo_url, image, branch, dockerfile, port, health_path, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.NodeID, cmpOr(a.ProjectID, "default"), a.Description, a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath, a.CreatedAt)
+		a.ID, a.Name, a.NodeID, cmp.Or(a.ProjectID, "default"), a.Description, a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath, a.CreatedAt)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed: apps.name") {
 		return ErrExists
 	}
@@ -80,23 +81,6 @@ func (s *Store) List(ctx context.Context) ([]App, error) {
 		list = append(list, a)
 	}
 	return list, rows.Err()
-}
-
-// ProjectID resolves a project name ("" = default) for services created in it.
-func ProjectID(ctx context.Context, db *config.Database, name string) (string, error) {
-	var id string
-	err := db.Read.QueryRowContext(ctx, `SELECT id FROM projects WHERE name = ?`, cmpOr(name, "default")).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNoProject
-	}
-	return id, err
-}
-
-func cmpOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }
 
 func (s *Store) setSource(ctx context.Context, id string, a App) error {
@@ -263,21 +247,6 @@ func randomID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return hex.EncodeToString(b)
-}
-
-func (s *Store) setting(ctx context.Context, key string) (string, error) {
-	var v string
-	err := s.db.Read.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-	return v, err
-}
-
-func (s *Store) setSetting(ctx context.Context, key, value string) error {
-	_, err := s.db.Write.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
-		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
-	return err
 }
 
 // domains maps app id to its domains, sorted.

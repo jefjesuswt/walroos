@@ -21,6 +21,9 @@ type AgentError struct {
 
 func (e *AgentError) Error() string { return fmt.Sprintf("%d: %s", e.Status, e.Msg) }
 
+// HTTPStatus: the hub answers 502 when a node refuses or fails.
+func (e *AgentError) HTTPStatus() int { return http.StatusBadGateway }
+
 func (c *Client) ListWorkspaces(ctx context.Context, address, tokenHash string) ([]Workspace, error) {
 	var list []Workspace
 	return list, c.do(ctx, http.MethodGet, address, tokenHash, "/v1/workspaces", nil, &list)

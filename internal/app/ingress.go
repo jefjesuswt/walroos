@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -10,86 +9,16 @@ import (
 	"strings"
 
 	"github.com/jefjesuswt/walroos/internal/cloudflare"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNoCloudflare = errors.New("Cloudflare isn't set up: add an API token in Settings")
-	ErrDomain       = errors.New("domains must be hostnames like app.example.com")
-	ErrDomainTaken  = errors.New("that domain already routes to another app")
-	ErrNoZone       = errors.New("not in a zone this Cloudflare token can edit")
+	ErrDomain      = whttp.Invalid("domains must be hostnames like app.example.com")
+	ErrDomainTaken = whttp.Conflict("that domain already routes to another app")
+	ErrNoZone      = whttp.Invalid("not in a zone this Cloudflare token can edit")
 )
 
-// CloudflareStatus is what the UI shows; the token itself never leaves the hub.
-type CloudflareStatus struct {
-	Configured bool     `json:"configured"`
-	Zones      []string `json:"zones"`
-}
-
-const cloudflareKey = "cloudflare_token"
-
 var hostRe = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
-// SetCloudflare stores the API token (sealed) once it has proven to see at least one zone.
-// It needs Zone:Read and DNS:Edit on the zones, and Cloudflare Tunnel:Edit on the account.
-func (s *Service) SetCloudflare(ctx context.Context, token string) (CloudflareStatus, error) {
-	token = strings.TrimSpace(token)
-	if token == "" {
-		return CloudflareStatus{}, fmt.Errorf("%w: empty token", ErrInvalid)
-	}
-	zones, err := cloudflare.New(token, s.CloudflareAPI).Zones(ctx)
-	if err != nil {
-		return CloudflareStatus{}, err
-	}
-	if len(zones) == 0 {
-		return CloudflareStatus{}, fmt.Errorf("%w: the token sees no zone; give it Zone:Read and DNS:Edit on your domain", ErrInvalid)
-	}
-	sealed, err := s.box.Seal(token)
-	if err != nil {
-		return CloudflareStatus{}, err
-	}
-	if err := s.store.setSetting(ctx, cloudflareKey, sealed); err != nil {
-		return CloudflareStatus{}, err
-	}
-	return status(zones), nil
-}
-
-func (s *Service) Cloudflare(ctx context.Context) (CloudflareStatus, error) {
-	cf, err := s.cloudflare(ctx)
-	if errors.Is(err, ErrNoCloudflare) {
-		return CloudflareStatus{Zones: []string{}}, nil
-	}
-	if err != nil {
-		return CloudflareStatus{}, err
-	}
-	zones, err := cf.Zones(ctx)
-	if err != nil {
-		return CloudflareStatus{Configured: true, Zones: []string{}}, err
-	}
-	return status(zones), nil
-}
-
-func status(zones []cloudflare.Zone) CloudflareStatus {
-	st := CloudflareStatus{Configured: true, Zones: []string{}}
-	for _, z := range zones {
-		st.Zones = append(st.Zones, z.Name)
-	}
-	return st
-}
-
-func (s *Service) cloudflare(ctx context.Context) (*cloudflare.Client, error) {
-	sealed, err := s.store.setting(ctx, cloudflareKey)
-	if err != nil {
-		return nil, err
-	}
-	if sealed == "" {
-		return nil, ErrNoCloudflare
-	}
-	token, err := s.box.Open(sealed)
-	if err != nil {
-		return nil, fmt.Errorf("cloudflare token: %w", err)
-	}
-	return cloudflare.New(token, s.CloudflareAPI), nil
-}
 
 // SetDomains routes exactly these hostnames to the app: ingress rules on its node's tunnel
 // (created, and cloudflared started, the first time) and proxied CNAMEs to it.
@@ -98,28 +27,13 @@ func (s *Service) SetDomains(ctx context.Context, name string, domains []string)
 	if err != nil {
 		return App{}, err
 	}
-	var want []string
-	for _, d := range domains {
-		d = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
-		if len(d) > 253 || !hostRe.MatchString(d) {
-			return App{}, fmt.Errorf("%w: %q", ErrDomain, d)
-		}
-		if !slices.Contains(want, d) {
-			want = append(want, d)
-		}
-	}
-	cf, err := s.cloudflare(ctx)
+	want, err := normalizeDomains(domains)
 	if err != nil {
 		return App{}, err
 	}
-	zones, err := cf.Zones(ctx)
+	cf, zones, err := s.zonesFor(ctx, want)
 	if err != nil {
 		return App{}, err
-	}
-	for _, d := range want {
-		if _, ok := cloudflare.ZoneFor(d, zones); !ok {
-			return App{}, fmt.Errorf("%s: %w", d, ErrNoZone)
-		}
 	}
 	all, err := s.store.domains(ctx)
 	if err != nil {
@@ -139,36 +53,52 @@ func (s *Service) SetDomains(ctx context.Context, name string, domains []string)
 	return s.Get(ctx, name)
 }
 
+// normalizeDomains lowercases and dedupes hostnames, refusing anything that isn't one.
+func normalizeDomains(domains []string) ([]string, error) {
+	var want []string
+	for _, d := range domains {
+		d = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(d)), ".")
+		if len(d) > 253 || !hostRe.MatchString(d) {
+			return nil, fmt.Errorf("%w: %q", ErrDomain, d)
+		}
+		if !slices.Contains(want, d) {
+			want = append(want, d)
+		}
+	}
+	return want, nil
+}
+
+// zonesFor returns the Cloudflare client and its zones, checking each domain is in one of them.
+func (s *Service) zonesFor(ctx context.Context, domains []string) (*cloudflare.Client, []cloudflare.Zone, error) {
+	cf, err := s.settings.CloudflareClient(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	zones, err := cf.Zones(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, d := range domains {
+		if _, ok := cloudflare.ZoneFor(d, zones); !ok {
+			return nil, nil, fmt.Errorf("%s: %w", d, ErrNoZone)
+		}
+	}
+	return cf, zones, nil
+}
+
 // route brings the node's tunnel in line with the database: tunnel and cloudflared up, the
 // ingress rules, then DNS for the added and removed domains.
 func (s *Service) route(ctx context.Context, cf *cloudflare.Client, zones []cloudflare.Zone, nodeID string, added, removed []string) error {
-	t, ok, err := s.store.tunnel(ctx, nodeID)
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, nodeID) // before creating a tunnel for a node we can't reach
 	if err != nil {
 		return err
 	}
-	address, tokenHash, err := s.nodes.AgentTarget(ctx, nodeID)
+	t, err := s.ensureTunnel(ctx, cf, zones, nodeID)
 	if err != nil {
 		return err
 	}
-	if !ok {
-		node, err := s.nodeName(ctx, nodeID)
-		if err != nil {
-			return err
-		}
-		t.AccountID = zones[0].Account.ID // ponytail: one Cloudflare account
-		if t.ID, err = cf.Tunnel(ctx, t.AccountID, "walroos-"+node); err != nil {
-			return err
-		}
-		if err := s.store.saveTunnel(ctx, nodeID, t); err != nil {
-			return err
-		}
-	}
-	token, err := cf.TunnelToken(ctx, t.AccountID, t.ID)
-	if err != nil {
+	if err := s.startCloudflared(ctx, cf, t, address, tokenHash); err != nil {
 		return err
-	}
-	if err := s.agents.SetTunnel(ctx, address, tokenHash, token); err != nil { // idempotent: a reinstalled node gets it back
-		return fmt.Errorf("start cloudflared on the node: %w", err)
 	}
 	rules, err := s.store.nodeRules(ctx, nodeID)
 	if err != nil {
@@ -177,16 +107,50 @@ func (s *Service) route(ctx context.Context, cf *cloudflare.Client, zones []clou
 	if err := cf.PutIngress(ctx, t.AccountID, t.ID, rules); err != nil {
 		return err
 	}
+	return pointDNS(ctx, cf, zones, t.ID, added, removed)
+}
+
+// ensureTunnel returns the node's tunnel, creating it the first time.
+func (s *Service) ensureTunnel(ctx context.Context, cf *cloudflare.Client, zones []cloudflare.Zone, nodeID string) (tunnel, error) {
+	t, ok, err := s.store.tunnel(ctx, nodeID)
+	if err != nil || ok {
+		return t, err
+	}
+	node, err := s.nodeName(ctx, nodeID)
+	if err != nil {
+		return t, err
+	}
+	t.AccountID = zones[0].Account.ID // ponytail: one Cloudflare account
+	if t.ID, err = cf.Tunnel(ctx, t.AccountID, "walroos-"+node); err != nil {
+		return t, err
+	}
+	return t, s.store.saveTunnel(ctx, nodeID, t)
+}
+
+// startCloudflared hands the node the tunnel's token. Idempotent: a reinstalled node gets it back.
+func (s *Service) startCloudflared(ctx context.Context, cf *cloudflare.Client, t tunnel, address, tokenHash string) error {
+	token, err := cf.TunnelToken(ctx, t.AccountID, t.ID)
+	if err != nil {
+		return err
+	}
+	if err := s.agents.SetTunnel(ctx, address, tokenHash, token); err != nil {
+		return fmt.Errorf("start cloudflared on the node: %w", err)
+	}
+	return nil
+}
+
+// pointDNS points the added domains at the tunnel and unpoints the removed ones.
+func pointDNS(ctx context.Context, cf *cloudflare.Client, zones []cloudflare.Zone, tunnelID string, added, removed []string) error {
 	for _, d := range added {
 		if z, ok := cloudflare.ZoneFor(d, zones); ok {
-			if err := cf.PointAt(ctx, z.ID, d, t.ID); err != nil {
+			if err := cf.PointAt(ctx, z.ID, d, tunnelID); err != nil {
 				return err
 			}
 		}
 	}
 	for _, d := range removed {
 		if z, ok := cloudflare.ZoneFor(d, zones); ok && !slices.Contains(added, d) {
-			if err := cf.Unpoint(ctx, z.ID, d, t.ID); err != nil {
+			if err := cf.Unpoint(ctx, z.ID, d, tunnelID); err != nil {
 				return err
 			}
 		}
@@ -213,7 +177,7 @@ func (s *Service) unroute(ctx context.Context, nodeID string, domains []string) 
 	if len(domains) == 0 {
 		return
 	}
-	cf, err := s.cloudflare(ctx)
+	cf, err := s.settings.CloudflareClient(ctx)
 	var zones []cloudflare.Zone
 	if err == nil {
 		zones, err = cf.Zones(ctx)

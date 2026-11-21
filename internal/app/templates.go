@@ -1,16 +1,17 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
-	"errors"
 	"strings"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/workspace"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
-var ErrNoTemplate = errors.New("template not found: pick one of GET /api/templates")
+var ErrNoTemplate = whttp.NotFound("template not found: pick one of GET /api/templates")
 
 // Template is a common service ready to run: a published image, the port it answers on, where
 // it keeps its data and the variables it needs. Creating an app from one fills all that in;
@@ -96,7 +97,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in FromTemplateInput) 
 	if t == nil {
 		return App{}, ErrNoTemplate
 	}
-	a, err := s.Create(ctx, CreateInput{Name: in.Name, Description: cmpOr(in.Description, t.Description), Project: in.Project, Node: in.Node,
+	a, err := s.Create(ctx, CreateInput{Name: in.Name, Description: cmp.Or(in.Description, t.Description), Project: in.Project, Node: in.Node,
 		Image: t.Image, Port: t.Port, HealthPath: t.HealthPath})
 	if err != nil {
 		return App{}, err

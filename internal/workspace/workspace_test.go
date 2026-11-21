@@ -2,6 +2,7 @@ package workspace_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -71,7 +73,7 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 			errJSON(422, "can't clone the repo: not found")
 			return
 		}
-		json(200, map[string]any{"stack": "go", "branch": cmpOr(body.Branch, "main"), "devcontainer": map[string]string{"image": "go"}})
+		json(200, map[string]any{"stack": "go", "branch": cmp.Or(body.Branch, "main"), "devcontainer": map[string]string{"image": "go"}})
 	case r.Method == "GET" && path == "":
 		list := []agent.Workspace{}
 		for _, ws := range f.ws {
@@ -164,6 +166,7 @@ type hub struct {
 	login   string
 	agentsC *agent.Client
 	svc     *workspace.Service
+	set     *settings.Service
 }
 
 // newHub wires the same routes as `walroos hub`, on a temp SQLite, with the caller as owner.
@@ -202,7 +205,8 @@ func newHub(t *testing.T, withDevNode bool) *hub {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h.svc = workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box)
+	h.set = settings.NewService(db, box)
+	h.svc = workspace.NewService(workspace.NewStore(db), fleetSvc, h.agentsC, box, h.set)
 	wsHandler := workspace.NewHandler(h.svc)
 
 	r := whttp.NewRouter()
@@ -212,6 +216,7 @@ func newHub(t *testing.T, withDevNode bool) *hub {
 		r.Get("/api/me", auth.HandleMe)
 		fleetHandler.UserRoutes(r)
 		wsHandler.Routes(r)
+		settings.NewHandler(h.set).Routes(r)
 	})
 	h.http = r
 	return h
@@ -468,13 +473,6 @@ func TestWorkspaceEnv(t *testing.T) {
 	if n != 0 {
 		t.Errorf("%d env rows left after delete", n)
 	}
-}
-
-func cmpOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }
 
 func TestWorkspaceDetect(t *testing.T) {

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,10 +130,10 @@ func metadataRemoteUser(label string) string {
 	}
 	var remote, container string
 	for _, e := range entries {
-		remote = cmpOr(e.RemoteUser, remote)
-		container = cmpOr(e.ContainerUser, container)
+		remote = cmp.Or(e.RemoteUser, remote)
+		container = cmp.Or(e.ContainerUser, container)
 	}
-	return cmpOr(remote, container) // remoteUser defaults to containerUser
+	return cmp.Or(remote, container) // remoteUser defaults to containerUser
 }
 
 // devcontainerCandidates are the standard locations, in the order the spec looks for them.

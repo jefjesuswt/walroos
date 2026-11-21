@@ -1,13 +1,13 @@
 package database
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -15,8 +15,10 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/project/lookup"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/workspace"
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 const backupTimeout = time.Hour
@@ -31,18 +33,14 @@ type Service struct {
 	now    func() time.Time
 }
 
+// placement: databases run on prod nodes, like apps (they share the project network).
+var placement = fleet.Placement{Role: "prod", NoNode: ErrNoNode, WrongRole: ErrNodeRole}
+
 func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box, apps *app.Service) *Service {
 	return &Service{store: store, nodes: nodes, agents: agents, box: box, apps: apps, now: time.Now}
 }
 
-var (
-	nameRe   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
-	// What the agent accepts (agent.DatabaseSpec.Valid), checked here to answer 400 instead of 502.
-	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
-	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`)
-	fileRe     = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb|archive)\.gz$`)
-)
+var ()
 
 // Engines lists what can be created, from the agent's table.
 func Engines() []agent.Engine { return agent.Engines }
@@ -51,60 +49,75 @@ func Engines() []agent.Engine { return agent.Engines }
 // never shown in lists; the connection URL carries it.
 func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) {
 	e, ok := engineOf(in.Engine)
-	if !nameRe.MatchString(in.Name) || in.Name == "engines" || !ok || !slices.Contains(e.Versions, in.Version) { // "engines" is a route
+	if !names.DNSLabel(in.Name) || in.Name == "engines" || !ok || !slices.Contains(e.Versions, in.Version) { // "engines" is a route
 		return Database{}, ErrInvalid
 	}
 	if _, err := s.store.Get(ctx, in.Name); err == nil {
 		return Database{}, ErrExists
 	}
-	projectID, err := app.ProjectID(ctx, s.store.db, in.Project)
+	cred, err := credentials(in)
 	if err != nil {
 		return Database{}, err
 	}
-	node, err := s.pickNode(ctx, in.Node)
+	d, err := s.place(ctx, in, e)
 	if err != nil {
 		return Database{}, err
 	}
-	address, tokenHash, err := s.nodes.AgentTarget(ctx, node.ID)
-	if err != nil {
+	d.User, d.DB = cred.user, cred.db
+	if d.password, err = s.box.Seal(cred.password); err != nil {
 		return Database{}, err
 	}
+	return s.start(ctx, d, cred.password)
+}
+
+type credential struct{ user, db, password string }
+
+// credentials are the ones asked for, else a user and database named after it and a random
+// 32-character password (letters and digits: no quoting in an env file or a URL).
+func credentials(in CreateInput) (credential, error) {
 	ident := strings.ReplaceAll(in.Name, "-", "_")
 	if ident[0] >= '0' && ident[0] <= '9' {
 		ident = "db_" + ident // SQL identifiers can't start with a digit
 	}
-	password := rand.Text() + rand.Text()[:6] // 32 base32 characters: letters and digits only
-	user, dbName := ident, ident
-	if in.User != "" {
-		user = in.User
+	c := credential{
+		user:     cmp.Or(in.User, ident),
+		db:       cmp.Or(in.DB, ident),
+		password: cmp.Or(in.Password, rand.Text()+rand.Text()[:6]),
 	}
-	if in.DB != "" {
-		dbName = in.DB
+	if !names.SQLIdent(c.user) || !names.SQLIdent(c.db) || !agent.ValidPassword(c.password) || len(strings.TrimSpace(in.Description)) > 500 {
+		return credential{}, ErrInvalid
 	}
-	if in.Password != "" {
-		password = in.Password
-	}
-	in.Description = strings.TrimSpace(in.Description)
-	if !identRe.MatchString(user) || !identRe.MatchString(dbName) || !passwordRe.MatchString(password) || len(in.Description) > 500 {
-		return Database{}, ErrInvalid
-	}
-	sealed, err := s.box.Seal(password)
+	return c, nil
+}
+
+// place resolves the project and the node: the row as it will be stored, without credentials.
+func (s *Service) place(ctx context.Context, in CreateInput, e agent.Engine) (Database, error) {
+	projectID, err := lookup.ID(ctx, s.store.db, in.Project)
 	if err != nil {
 		return Database{}, err
 	}
-	project := in.Project
-	if project == "" {
-		project = "default"
+	node, err := s.nodes.Pick(ctx, placement, in.Node, nil)
+	if err != nil {
+		return Database{}, err
 	}
-	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: project, Engine: e.ID, Version: in.Version,
-		User: user, DB: dbName, Description: in.Description, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
-	// Row first: if the node fails, the row goes; the other way round a failed insert would
-	// leave a database running that the hub doesn't know.
+	return Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID,
+		Project: cmp.Or(in.Project, lookup.Default), Engine: e.ID, Version: in.Version, Description: strings.TrimSpace(in.Description),
+		BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC()}, nil
+}
+
+// start stores the row, then has the node run the database. Row first: if the node fails, the
+// row goes; the other way round a failed insert would leave a database running that the hub
+// doesn't know.
+func (s *Service) start(ctx context.Context, d Database, password string) (Database, error) {
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, d.NodeID)
+	if err != nil {
+		return Database{}, err
+	}
 	if err := s.store.Insert(ctx, d); err != nil {
 		return Database{}, err
 	}
 	live, err := s.agents.CreateDatabase(ctx, address, tokenHash, agent.DatabaseSpec{
-		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password, Network: agent.ProjectNetwork(project)})
+		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password, Network: agent.ProjectNetwork(d.Project)})
 	if err != nil {
 		s.store.Delete(ctx, d.ID)
 		return Database{}, agentErr(err)
@@ -120,29 +133,6 @@ func engineOf(id string) (agent.Engine, bool) {
 		}
 	}
 	return agent.Engine{}, false
-}
-
-// pickNode returns the requested prod node, or the first online one.
-func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
-	nodes, err := s.nodes.List(ctx)
-	if err != nil {
-		return fleet.Node{}, err
-	}
-	for _, n := range nodes {
-		if want != "" && (n.ID == want || n.Name == want) {
-			if !slices.Contains(n.Roles, "prod") {
-				return fleet.Node{}, ErrNodeRole
-			}
-			return n, nil
-		}
-		if want == "" && slices.Contains(n.Roles, "prod") && n.Status == "online" {
-			return n, nil
-		}
-	}
-	if want != "" {
-		return fleet.Node{}, fleet.ErrNodeNotFound
-	}
-	return fleet.Node{}, ErrNoNode
 }
 
 // withConn fills Host and Port, and the URL (with the password) when url is set.
@@ -288,7 +278,7 @@ func (s *Service) Backups(ctx context.Context, name string) ([]agent.Backup, err
 
 // Download streams one dump from the node.
 func (s *Service) Download(ctx context.Context, name, file string) (io.ReadCloser, int64, error) {
-	if !fileRe.MatchString(file) {
+	if !agent.ValidBackupFile(file) {
 		return nil, 0, ErrInvalidFile
 	}
 	d, err := s.store.Get(ctx, name)
@@ -306,7 +296,7 @@ func (s *Service) Download(ctx context.Context, name, file string) (io.ReadClose
 // Restore replaces the database's data with a dump. The caller confirmed it: it can't be undone,
 // short of restoring another dump.
 func (s *Service) Restore(ctx context.Context, name, file string) error {
-	if !fileRe.MatchString(file) {
+	if !agent.ValidBackupFile(file) {
 		return ErrInvalidFile
 	}
 	d, err := s.store.Get(ctx, name)
@@ -336,7 +326,7 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 			key = "DATABASE_URL"
 		}
 	}
-	if !envKeyRe.MatchString(key) {
+	if !names.EnvKey(key) {
 		return nil, ErrEnvKey
 	}
 	a, err := s.apps.Get(ctx, in.App)

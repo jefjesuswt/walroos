@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +13,8 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 // Service picks a node, calls its agent and keeps the row. It never talks to podman: the node does.
@@ -24,19 +24,32 @@ type Service struct {
 	agents *agent.Client
 	box    *secretbox.Box // encrypts env values at rest
 	now    func() time.Time
-
-	GitHubAPI string // "" = GitHub's; tests point it at a fake
+	// settings has the GitHub token new projects' repos need.
+	settings *settings.Service
 }
 
-func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
-	return &Service{store: store, nodes: nodes, agents: agents, box: box, now: time.Now}
+// placement: workspaces run on dev nodes, a new one on the least busy.
+var placement = fleet.Placement{Role: "dev", NoNode: ErrNoNode, WrongRole: ErrNodeRole}
+
+// pickNode places a workspace: the node asked for, else the online dev node with the fewest.
+func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
+	if want != "" {
+		return s.nodes.Pick(ctx, placement, want, nil)
+	}
+	usage, err := s.store.nodeUsage(ctx)
+	if err != nil {
+		return fleet.Node{}, err
+	}
+	return s.nodes.Pick(ctx, placement, want, usage)
 }
 
-var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box, st *settings.Service) *Service {
+	return &Service{store: store, nodes: nodes, agents: agents, box: box, settings: st, now: time.Now}
+}
 
 // validName: a DNS label that isn't a route under /api/workspaces.
 func validName(n string) bool {
-	return nameRe.MatchString(n) && n != "stacks" && n != "from-scratch" && n != "detect"
+	return names.DNSLabel(n) && n != "stacks" && n != "from-scratch" && n != "detect"
 }
 
 // Create picks a dev node, asks its agent to create the workspace and stores the row.
@@ -132,46 +145,6 @@ func RemoteRepo(u string) bool {
 	user, rest, ok := strings.Cut(u, "@")
 	host, path, ok2 := strings.Cut(rest, ":")
 	return ok && ok2 && user != "" && host != "" && path != "" && !strings.ContainsAny(user+host, `/\ `) && !strings.HasPrefix(u, "-")
-}
-
-// pickNode returns the requested node (name or id) if it can run workspaces, else the online
-// dev node with the fewest workspaces.
-func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
-	nodes, err := s.nodes.List(ctx)
-	if err != nil {
-		return fleet.Node{}, err
-	}
-	dev := func(n fleet.Node) bool { return slices.Contains(n.Roles, "dev") }
-
-	if want != "" {
-		for _, n := range nodes {
-			if n.ID == want || n.Name == want {
-				if !dev(n) {
-					return fleet.Node{}, ErrNodeRole
-				}
-				return n, nil
-			}
-		}
-		return fleet.Node{}, fleet.ErrNodeNotFound
-	}
-
-	usage, err := s.store.nodeUsage(ctx)
-	if err != nil {
-		return fleet.Node{}, err
-	}
-	var best *fleet.Node
-	for i, n := range nodes {
-		if !dev(n) || n.Status != "online" {
-			continue
-		}
-		if best == nil || usage[n.ID] < usage[best.ID] {
-			best = &nodes[i]
-		}
-	}
-	if best == nil {
-		return fleet.Node{}, ErrNoNode
-	}
-	return *best, nil
 }
 
 // List returns the rows, refreshed from their agents so a workspace that finished creating
@@ -314,7 +287,7 @@ func SealEnv(box *secretbox.Box, vars []EnvVar) ([]EnvVar, error) {
 	seen := map[string]bool{}
 	sealed := make([]EnvVar, 0, len(vars))
 	for _, v := range vars {
-		if !envKeyRe.MatchString(v.Key) || seen[v.Key] {
+		if !names.EnvKey(v.Key) || seen[v.Key] {
 			return nil, fmt.Errorf("%w: %q is not a valid or unique variable name (A-Z, 0-9, _)", ErrInvalid, v.Key)
 		}
 		if len(v.Value) > 32<<10 {
@@ -329,8 +302,6 @@ func SealEnv(box *secretbox.Box, vars []EnvVar) ([]EnvVar, error) {
 	}
 	return sealed, nil
 }
-
-var envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
 
 // envList decrypts for the API and for passing KEY=VALUE to the agent.
 func (s *Service) envList(ctx context.Context, id string) ([]EnvVar, error) {

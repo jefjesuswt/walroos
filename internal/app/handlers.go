@@ -9,8 +9,6 @@ import (
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
-	"github.com/jefjesuswt/walroos/internal/cloudflare"
-	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -45,16 +43,14 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
 	d.Put("/api/apps/{name}/source", h.handlePutSource)
 	d.Post("/api/apps/from-template", h.handleFromTemplate)
-	d.Get("/api/settings/cloudflare", h.handleGetCloudflare) // zones, for the domains dialog
 
-	r.With(auth.Require(auth.PermSettings)).Put("/api/settings/cloudflare", h.handlePutCloudflare)
 }
 
 func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []string
 	if decode(w, r, &domains) {
 		a, err := h.svc.SetDomains(r.Context(), r.PathValue("name"), domains)
-		reply(w, http.StatusOK, a, err)
+		whttp.Reply(w, http.StatusOK, a, err)
 	}
 }
 
@@ -62,7 +58,7 @@ func (h *Handler) handleFromTemplate(w http.ResponseWriter, r *http.Request) {
 	var in FromTemplateInput
 	if decode(w, r, &in) {
 		a, err := h.svc.CreateFromTemplate(r.Context(), in)
-		reply(w, http.StatusCreated, a, err)
+		whttp.Reply(w, http.StatusCreated, a, err)
 	}
 }
 
@@ -70,7 +66,7 @@ func (h *Handler) handlePutSource(w http.ResponseWriter, r *http.Request) {
 	var in SourceInput
 	if decode(w, r, &in) {
 		a, err := h.svc.SetSource(r.Context(), r.PathValue("name"), in)
-		reply(w, http.StatusOK, a, err)
+		whttp.Reply(w, http.StatusOK, a, err)
 	}
 }
 
@@ -78,22 +74,7 @@ func (h *Handler) handlePutVolumes(w http.ResponseWriter, r *http.Request) {
 	var vols []agent.Volume
 	if decode(w, r, &vols) {
 		a, err := h.svc.SetVolumes(r.Context(), r.PathValue("name"), vols)
-		reply(w, http.StatusOK, a, err)
-	}
-}
-
-func (h *Handler) handleGetCloudflare(w http.ResponseWriter, r *http.Request) {
-	st, err := h.svc.Cloudflare(r.Context())
-	reply(w, http.StatusOK, st, err)
-}
-
-func (h *Handler) handlePutCloudflare(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Token string `json:"token"`
-	}
-	if decode(w, r, &in) {
-		st, err := h.svc.SetCloudflare(r.Context(), in.Token)
-		reply(w, http.StatusOK, st, err)
+		whttp.Reply(w, http.StatusOK, a, err)
 	}
 }
 
@@ -105,35 +86,27 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	return true
 }
 
-func reply[T any](w http.ResponseWriter, code int, v T, err error) {
-	if err != nil {
-		errorJSON(w, err)
-		return
-	}
-	whttp.JSON(w, code, v)
-}
-
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.List(r.Context())
-	reply(w, http.StatusOK, list, err)
+	whttp.Reply(w, http.StatusOK, list, err)
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var in CreateInput
 	if decode(w, r, &in) {
 		a, err := h.svc.Create(r.Context(), in)
-		reply(w, http.StatusCreated, a, err)
+		whttp.Reply(w, http.StatusCreated, a, err)
 	}
 }
 
 func (h *Handler) handleGet(w http.ResponseWriter, r *http.Request) {
 	a, err := h.svc.Get(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusOK, a, err)
+	whttp.Reply(w, http.StatusOK, a, err)
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Delete(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
-		errorJSON(w, err)
+		whttp.WriteError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -141,7 +114,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleGetEnv(w http.ResponseWriter, r *http.Request) {
 	vars, err := h.svc.Env(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusOK, vars, err)
+	whttp.Reply(w, http.StatusOK, vars, err)
 }
 
 func (h *Handler) handlePutEnv(w http.ResponseWriter, r *http.Request) {
@@ -150,18 +123,18 @@ func (h *Handler) handlePutEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.SetEnv(r.Context(), r.PathValue("name"), vars); err != nil {
-		errorJSON(w, err)
+		whttp.WriteError(w, err)
 		return
 	}
 	vars, err := h.svc.Env(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusOK, vars, err)
+	whttp.Reply(w, http.StatusOK, vars, err)
 }
 
 func (h *Handler) handleLogs(w http.ResponseWriter, r *http.Request) {
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
 	logs, err := h.svc.Logs(r.Context(), r.PathValue("name"), lines)
 	if err != nil {
-		errorJSON(w, err)
+		whttp.WriteError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -174,43 +147,26 @@ func (h *Handler) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	if decode(w, r, &in) {
 		d, err := h.svc.Deploy(r.Context(), r.PathValue("name"), in.Sha)
-		reply(w, http.StatusAccepted, d, err)
+		whttp.Reply(w, http.StatusAccepted, d, err)
 	}
 }
 
 func (h *Handler) handleAllDeployments(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.AllDeployments(r.Context())
-	reply(w, http.StatusOK, list, err)
+	whttp.Reply(w, http.StatusOK, list, err)
 }
 
 func (h *Handler) handleDeployments(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.Deployments(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusOK, list, err)
+	whttp.Reply(w, http.StatusOK, list, err)
 }
 
 func (h *Handler) handleDeployment(w http.ResponseWriter, r *http.Request) {
 	d, err := h.svc.Deployment(r.Context(), r.PathValue("name"), r.PathValue("id"))
-	reply(w, http.StatusOK, d, err)
+	whttp.Reply(w, http.StatusOK, d, err)
 }
 
 func (h *Handler) handleRollback(w http.ResponseWriter, r *http.Request) {
 	d, err := h.svc.Rollback(r.Context(), r.PathValue("name"), r.PathValue("id"))
-	reply(w, http.StatusAccepted, d, err)
-}
-
-func errorJSON(w http.ResponseWriter, err error) {
-	var ae *agent.AgentError
-	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes), errors.Is(err, ErrNoSource):
-		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound), errors.Is(err, ErrNoProject), errors.Is(err, ErrNoTemplate):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy),
-		errors.Is(err, ErrNoCloudflare), errors.Is(err, ErrDomainTaken), errors.Is(err, cloudflare.ErrRecordExists):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress), errors.Is(err, cloudflare.ErrForbidden):
-		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())
-	default:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	}
+	whttp.Reply(w, http.StatusAccepted, d, err)
 }

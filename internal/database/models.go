@@ -4,23 +4,24 @@
 package database
 
 import (
-	"errors"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNotFound    = errors.New("database not found")
-	ErrExists      = errors.New("a database with that name already exists")
-	ErrInvalid     = errors.New("name must be a DNS label; engine and version one of GET /api/databases/engines; database and user lowercase letters, digits and '_' (not starting with a digit); password 16 to 128 letters and digits; description at most 500 characters")
-	ErrSchedule    = errors.New("backup_every_hours must be 0 (off) to 720, backup_keep 1 to 100")
-	ErrNoNode      = errors.New("no online node with the prod role; join one with `walroos node join --roles prod`")
-	ErrNodeRole    = errors.New("the chosen node doesn't have the prod role")
-	ErrOtherNode   = errors.New("the app runs on another node: apps only reach databases on their own node")
-	ErrOtherProj   = errors.New("the app is in another project: apps only reach databases of their own project")
-	ErrEnvKey      = errors.New("key must be an env variable name (A-Z, 0-9, _)")
-	ErrBusy        = errors.New("a backup, restore or delete of this database is running; try again when it ends")
-	ErrNoBackup    = errors.New("backup not found on the node")
-	ErrInvalidFile = errors.New("not a backup file name")
+	ErrNotFound    = whttp.NotFound("database not found")
+	ErrExists      = whttp.Conflict("a database with that name already exists")
+	ErrInvalid     = whttp.Invalid("name must be a DNS label; engine and version one of GET /api/databases/engines; database and user lowercase letters, digits and '_' (not starting with a digit); password 16 to 128 letters and digits; description at most 500 characters")
+	ErrSchedule    = whttp.Invalid("backup_every_hours must be 0 (off) to 720, backup_keep 1 to 100")
+	ErrNoNode      = whttp.Conflict("no online node with the prod role; join one with `walroos node join --roles prod`")
+	ErrNodeRole    = whttp.Conflict("the chosen node doesn't have the prod role")
+	ErrOtherNode   = whttp.Invalid("the app runs on another node: apps only reach databases on their own node")
+	ErrOtherProj   = whttp.Invalid("the app is in another project: apps only reach databases of their own project")
+	ErrEnvKey      = whttp.Invalid("key must be an env variable name (A-Z, 0-9, _)")
+	ErrBusy        = whttp.Conflict("a backup, restore or delete of this database is running; try again when it ends")
+	ErrNoBackup    = whttp.NotFound("backup not found on the node")
+	ErrInvalidFile = whttp.Invalid("not a backup file name")
 )
 
 // Database is a database service and how apps reach it.

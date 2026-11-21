@@ -4,11 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"regexp"
 	"slices"
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 type Service struct {
@@ -27,11 +27,9 @@ func (s *Service) CreateJoinToken(ctx context.Context) (token string, expiresAt 
 	return token, expiresAt, s.store.SaveJoinToken(ctx, hash(token), expiresAt)
 }
 
-var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
 // Join trades a join token for a node identity. The returned node token is shown once.
 func (s *Service) Join(ctx context.Context, joinToken, name string, roles []string) (Node, string, error) {
-	if !nameRe.MatchString(name) {
+	if !names.DNSLabel(name) {
 		return Node{}, "", ErrInvalidName
 	}
 	roles, err := normalizeRoles(roles)

@@ -21,6 +21,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -93,7 +94,7 @@ func newHub(t *testing.T) (http.Handler, *fakeAgent) {
 	agents := &agent.Client{HTTP: &http.Client{Transport: &http.Transport{DialContext: dial}, Timeout: 5 * time.Second}}
 	box, _ := secretbox.LoadOrCreate(filepath.Join(t.TempDir(), "secret.key"))
 	nodes := fleet.NewService(fleet.NewStore(db))
-	apps := app.NewService(app.NewStore(db), nodes, agents, box)
+	apps := app.NewService(app.NewStore(db), nodes, agents, box, settings.NewService(db, box))
 	dbs := database.NewService(database.NewStore(db), nodes, agents, box, apps)
 
 	r := whttp.NewRouter()

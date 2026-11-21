@@ -21,6 +21,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -99,8 +100,9 @@ func newHub(t *testing.T, login string) (url string, created *agent.WorkspaceSpe
 		t.Fatal(err)
 	}
 	nodes := fleet.NewService(fleet.NewStore(db))
-	ws := workspace.NewService(workspace.NewStore(db), nodes, agents, box)
-	appSvc := app.NewService(app.NewStore(db), nodes, agents, box)
+	set := settings.NewService(db, box)
+	ws := workspace.NewService(workspace.NewStore(db), nodes, agents, box, set)
+	appSvc := app.NewService(app.NewStore(db), nodes, agents, box, set)
 
 	r := whttp.NewRouter()
 	r.Group(func(r *whttp.Router) {

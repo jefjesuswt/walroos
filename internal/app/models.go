@@ -4,24 +4,23 @@
 package app
 
 import (
-	"errors"
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNotFound       = errors.New("app not found")
-	ErrDeployNotFound = errors.New("deployment not found")
-	ErrExists         = errors.New("an app with that name already exists")
-	ErrInvalid        = errors.New("name must be a DNS label, repo_url a remote git URL or image a fully qualified image (registry.example.com/repo:tag) but not both, port 1-65535, sha hex, branch and dockerfile without spaces or a leading '-', health_path a URL path")
-	ErrNoNode         = errors.New("no online node with the prod role; join one with `walroos node join --roles prod`")
-	ErrNodeRole       = errors.New("the chosen node doesn't have the prod role")
-	ErrNoImage        = errors.New("only a succeeded deployment can be rolled back to")
-	ErrVolumes        = errors.New("each volume needs a name (lowercase, digits, '_.-') or a host_path inside the node's ~/walroos-data, and an absolute target; no two targets alike, 16 at most")
-	ErrBusy           = errors.New("a deploy of this app is running on its node; try again when it ends")
-	ErrNoProject      = errors.New("project not found")
-	ErrNoSource       = errors.New("the app has no source yet: set a repository or an image in its General tab")
+	ErrNotFound       = whttp.NotFound("app not found")
+	ErrDeployNotFound = whttp.NotFound("deployment not found")
+	ErrExists         = whttp.Conflict("an app with that name already exists")
+	ErrInvalid        = whttp.Invalid("name must be a DNS label, repo_url a remote git URL or image a fully qualified image (registry.example.com/repo:tag) but not both, port 1-65535, sha hex, branch and dockerfile without spaces or a leading '-', health_path a URL path")
+	ErrNoNode         = whttp.Conflict("no online node with the prod role; join one with `walroos node join --roles prod`")
+	ErrNodeRole       = whttp.Conflict("the chosen node doesn't have the prod role")
+	ErrNoImage        = whttp.Conflict("only a succeeded deployment can be rolled back to")
+	ErrVolumes        = whttp.Invalid("each volume needs a name (lowercase, digits, '_.-') or a host_path inside the node's ~/walroos-data, and an absolute target; no two targets alike, 16 at most")
+	ErrBusy           = whttp.Conflict("a deploy of this app is running on its node; try again when it ends")
+	ErrNoSource       = whttp.Invalid("the app has no source yet: set a repository or an image in its General tab")
 )
 
 // App is what to build and how to check it.
