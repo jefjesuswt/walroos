@@ -1,7 +1,7 @@
 // Small components ported 1:1 from the Open Design prototype (index.html at the repo root).
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { EnvVar } from './api';
+import type { EnvVar, User } from './api';
 
 const P: Record<string, string> = {
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -74,6 +74,25 @@ export function Meter({ label, pct, text }: { label: string; pct: number; text: 
 
 /* ---------- toasts + copy ---------- */
 type Toast = { id: number; text: string; kind: 'ok' | 'bad' };
+// Who is using the hub, and what their role lets them do. Mirrors internal/auth/permissions.go:
+// the server refuses anyway; the UI just doesn't offer what would only answer 403.
+export type Perm = 'apps' | 'databases' | 'nodes' | 'settings' | 'users' | 'any-workspace';
+const GRANTS: Record<string, Perm[]> = {
+  owner: ['apps', 'databases', 'nodes', 'settings', 'users', 'any-workspace'],
+  deployer: ['apps', 'databases'],
+};
+export const allowed = (me: User | null, p: Perm) => !!me && (GRANTS[me.role] ?? []).includes(p);
+export const MeCtx = createContext<User | null>(null);
+export function useCan() {
+  const me = useContext(MeCtx);
+  return {
+    me,
+    can: (p: Perm) => allowed(me, p),
+    // their own workspace, or a role that may touch anyone's
+    canUse: (owner: string) => !!me && (me.login === owner || allowed(me, 'any-workspace')),
+  };
+}
+
 const ToastCtx = createContext<(text: string, kind?: 'ok' | 'bad') => void>(() => {});
 export const useToast = () => useContext(ToastCtx);
 

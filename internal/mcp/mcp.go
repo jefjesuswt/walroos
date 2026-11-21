@@ -24,7 +24,7 @@ import (
 func Handler(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service) http.Handler {
 	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
 		u, _ := auth.FromContext(r.Context())
-		return newServer(nodes, ws, apps, dbs, u.Login)
+		return newServer(nodes, ws, apps, dbs, u)
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 }
 
@@ -66,7 +66,10 @@ func projectStacks() string {
 	return strings.Join(out, "; ")
 }
 
-func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, login string) *sdk.Server {
+// newServer offers u only the tools u's role may use: a tool the model never sees is one it
+// can't be talked into calling. Calls that depend on what they touch check it themselves.
+func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, u auth.User) *sdk.Server {
+	login := u.Login
 	s := sdk.NewServer(&sdk.Implementation{Name: "walroos", Version: version.Version}, nil)
 	ro := &sdk.ToolAnnotations{ReadOnlyHint: true}
 
@@ -115,6 +118,11 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, d
 			"else the node runs git init and stages them, and the user adds origin later. Stacks and versions: " + projectStacks() + ". " +
 			"Returns in state 'creating'; poll get_workspace like create_workspace."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in projectIn) (*sdk.CallToolResult, any, error) {
+			if in.GitHub {
+				if err := u.Check(auth.PermSettings); err != nil {
+					return nil, nil, err
+				}
+			}
 			w, err := ws.CreateProject(ctx, login, workspace.ProjectInput{Name: in.Name, Stack: in.Stack, Version: in.Version,
 				GitHub: in.GitHub, Private: in.Private, Node: in.Node})
 			return nil, w, err
@@ -130,6 +138,9 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, d
 	sdk.AddTool(s, &sdk.Tool{Name: "start_workspace", Annotations: &sdk.ToolAnnotations{IdempotentHint: true},
 		Description: "Start a stopped workspace."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in nameIn) (*sdk.CallToolResult, any, error) {
+			if err := ws.Authorize(ctx, u, in.Name); err != nil {
+				return nil, nil, err
+			}
 			w, err := ws.Start(ctx, in.Name)
 			return nil, w, err
 		})
@@ -137,6 +148,9 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, d
 	sdk.AddTool(s, &sdk.Tool{Name: "stop_workspace", Annotations: &sdk.ToolAnnotations{IdempotentHint: true},
 		Description: "Stop a workspace. Files in the repo and $HOME are kept."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in nameIn) (*sdk.CallToolResult, any, error) {
+			if err := ws.Authorize(ctx, u, in.Name); err != nil {
+				return nil, nil, err
+			}
 			w, err := ws.Stop(ctx, in.Name)
 			return nil, w, err
 		})
@@ -153,7 +167,12 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, d
 		})
 
 	addAppTools(s, apps)
-	addDatabaseTools(s, dbs)
+	if !u.Can(auth.PermApps) { // reading apps and logs stays
+		s.RemoveTools("create_app", "deploy_app", "rollback_app", "set_app_domains", "set_app_volumes")
+	}
+	if u.Can(auth.PermDatabases) {
+		addDatabaseTools(s, dbs)
+	}
 	return s
 }
 

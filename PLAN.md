@@ -302,6 +302,25 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Usuarios y roles (2026-11-21)
+
+Invitados de confianza con tres roles fijos (`internal/auth/permissions.go`, migración 010):
+
+| Puede… | owner | deployer | developer |
+|---|---|---|---|
+| Sus workspaces (crear, arrancar, parar, rebuild, env, borrar, SSH) | ✅ | ✅ | ✅ |
+| Workspaces de otros | ✅ | ❌ | ❌ |
+| Ver apps, deployments y logs | ✅ | ✅ | ✅ (sin env) |
+| Crear, desplegar, rollback, env, dominios, volúmenes y borrar apps | ✅ | ✅ | ❌ |
+| Bases de datos (todo, contraseñas incluidas) | ✅ | ✅ | ❌ |
+| Nodos, tokens de Cloudflare y GitHub, proyectos en el GitHub del owner, usuarios | ✅ | ❌ | ❌ |
+
+- **Usuarios:** Settings → Users (`GET/POST /api/users`, `PUT/DELETE /api/users/{login}`), solo el owner. Nadie se quita a sí mismo ni cambia su rol; el hub nunca se queda sin owner; quien aún tiene workspaces no se puede quitar. La persona tiene que estar en la tailnet.
+- **Dónde se comprueba:** en cada ruta (`auth.Require(perm)`, 403 con el rol y lo que falta), en los workspaces por dueño, en MCP (una herramienta que tu rol no puede usar ni aparece) y en SSH (como antes: el owner entra a todo, el resto a lo suyo). La UI esconde lo que el rol no permite; el servidor manda.
+- **Migración 010:** reconstruye `users` (SQLite no cambia un CHECK). El runner de migraciones ahora corre con `foreign_keys` apagado y hace `foreign_key_check` antes de cada commit (el procedimiento que documenta SQLite). Probado sobre una copia de la `hub.db` real: claves SSH y workspaces intactos.
+- **Probado:** `internal/auth/roles_test.go` recorre ~40 rutas con cada rol; users API (añadir, duplicado, login o rol inválidos, cambiar el propio, último owner, quitar con workspaces); MCP con un developer (no ve las herramientas de apps ni de bases, no para workspaces ajenos, no crea repos en GitHub). UI con una API falsa como owner y developer, móvil y escritorio.
+- Límites (`ponytail:`): apps y bases de datos son compartidas entre deployers (no guardan quién las creó); sin invitaciones ni login fuera de Tailscale.
+
 ## Bases de datos con backups (2026-11-21)
 
 Página **Databases** (y `internal/database`, migración 009): PostgreSQL 18/17/16, MySQL 8.4, MariaDB 11.8/11.4 y Redis 8/7 en un nodo `prod`, con imágenes oficiales de Docker Hub.

@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
 import { api, ROLES, type JoinToken, type Node, type Role } from './api';
-import { ago, Badge, Chip, Cmd, Confirm, EmptyState, ErrorAlert, Icon, Meter, Modal, usePoll, useToast } from './ui';
+import { ago, Badge, Chip, Cmd, Confirm, EmptyState, ErrorAlert, Icon, Meter, Modal, useCan, usePoll, useToast } from './ui';
 
 export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpen: (v: boolean) => void }) {
   const toast = useToast();
+  const { can } = useCan();
   const [nodes, setNodes] = useState<Node[] | null>(null);
   const [error, setError] = useState('');
   const [removing, setRemoving] = useState<Node | null>(null);
@@ -42,7 +43,7 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
       ) : nodes.length === 0 ? (
         <EmptyState icon="nodes" title="No nodes yet"
           text="Join a machine to the hub over Tailscale. One command, then it shows up here."
-          action={<button className="btn btn-primary" onClick={() => setAddOpen(true)}><Icon n="plus" />Add node</button>} />
+          action={can('nodes') ? <button className="btn btn-primary" onClick={() => setAddOpen(true)}><Icon n="plus" />Add node</button> : undefined} />
       ) : (
         <div className="table-wrap">
           <table className="tbl">
@@ -70,6 +71,7 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
 }
 
 function NodeRow({ n, onRemove, onRoles }: { n: Node; onRemove: () => void; onRoles: () => void }) {
+  const { can } = useCan();
   const t = n.telemetry;
   const live = n.status === 'online';
   const dash = <span className="muted">—</span>;
@@ -90,8 +92,8 @@ function NodeRow({ n, onRemove, onRoles }: { n: Node; onRemove: () => void; onRo
       <td className="hide-sm od-nowrap" style={n.status === 'offline' ? { color: 'var(--bad)' } : undefined}>
         <span className={n.status === 'offline' ? '' : 'muted'}>{ago(n.last_seen)}</span>
       </td>
-      <td className="ta-r od-nowrap"><button className="btn-icon" aria-label={`Roles of ${n.name}`} title="Roles" onClick={onRoles}><Icon n="settings" /></button>
-        <button className="btn-icon" aria-label={`Remove ${n.name}`} title="Remove node" onClick={onRemove}><Icon n="trash" /></button></td>
+      <td className="ta-r od-nowrap">{can('nodes') && <><button className="btn-icon" aria-label={`Roles of ${n.name}`} title="Roles" onClick={onRoles}><Icon n="settings" /></button>
+        <button className="btn-icon" aria-label={`Remove ${n.name}`} title="Remove node" onClick={onRemove}><Icon n="trash" /></button></>}</td>
     </tr>
   );
 }

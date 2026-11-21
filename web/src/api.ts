@@ -28,9 +28,16 @@ export interface Node {
   last_seen: string | null;
 }
 
+export type UserRole = 'owner' | 'deployer' | 'developer';
+export const USER_ROLES: UserRole[] = ['owner', 'deployer', 'developer'];
+
 export interface User {
   login: string;
-  role: 'owner' | 'member';
+  role: UserRole;
+}
+
+export interface Member extends User {
+  created_at: string;
 }
 
 export type WorkspaceState = 'creating' | 'running' | 'stopped' | 'failed' | 'deleting';
@@ -297,6 +304,11 @@ export const api = {
   backupNow: (name: string) => req<Backup>('POST', `/api/databases/${name}/backups`),
   restore: (name: string, file: string) => req<void>('POST', `/api/databases/${name}/restore`, { file }),
   backupURL: (name: string, file: string) => `/api/databases/${name}/backups/${encodeURIComponent(file)}`,
+
+  users: () => req<Member[]>('GET', '/api/users'),
+  addUser: (login: string, role: UserRole) => req<Member>('POST', '/api/users', { login, role }),
+  setUserRole: (login: string, role: UserRole) => req<Member>('PUT', `/api/users/${encodeURIComponent(login)}`, { role }),
+  removeUser: (login: string) => req<void>('DELETE', `/api/users/${encodeURIComponent(login)}`),
 
   sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),
   addSSHKey: (name: string, public_key: string) => req<SSHKey>('POST', '/api/ssh-keys', { name, public_key }),

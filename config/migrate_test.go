@@ -76,4 +76,22 @@ func TestSchemaConstraints(t *testing.T) {
 	if keys != 0 {
 		t.Errorf("deleting a user left %d ssh keys behind", keys)
 	}
+
+	// 010: three fixed roles; the old 'member' is gone. Rebuilding users kept the keys' and
+	// workspaces' foreign keys pointing at it: deleting a user still cascades to their keys.
+	for role, ok := range map[string]bool{"owner": true, "deployer": true, "developer": true, "member": false, "admin": false} {
+		if err := exec(`INSERT INTO users (login, role, created_at) VALUES (?, ?, ?)`, role+"@github", role, now); (err == nil) != ok {
+			t.Errorf("role %q accepted = %v, want %v", role, err == nil, ok)
+		}
+	}
+	mustExec(`INSERT INTO ssh_keys (id, login, name, public_key, fingerprint, created_at) VALUES ('kd', 'deployer@github', 'd', 'ssh-ed25519 AAAA', 'SHA256:dep', ?)`, now)
+	mustExec(`DELETE FROM users WHERE login = 'deployer@github'`)
+	var left int
+	db.Read.QueryRowContext(ctx, `SELECT count(*) FROM ssh_keys WHERE login = 'deployer@github'`).Scan(&left)
+	if left != 0 {
+		t.Error("deleting a user left their SSH keys: the cascade is gone")
+	}
+	if exec(`INSERT INTO ssh_keys (id, login, name, public_key, fingerprint, created_at) VALUES ('kx', 'ghost@github', 'x', 'ssh-ed25519 AAAA', 'SHA256:ghost', ?)`, now) == nil {
+		t.Error("a key for an unknown user was accepted (foreign keys off after migrating?)")
+	}
 }

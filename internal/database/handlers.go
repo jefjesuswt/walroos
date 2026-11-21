@@ -9,6 +9,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/app"
+	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -24,6 +25,7 @@ func NewHandler(svc *Service) *Handler {
 
 // Routes must be mounted behind user auth.
 func (h *Handler) Routes(r *whttp.Router) {
+	r = r.With(auth.Require(auth.PermDatabases)) // passwords and data: deployers and the owner
 	r.Get("/api/databases", h.handleList)
 	r.Post("/api/databases", h.handleCreate)
 	r.Get("/api/databases/engines", h.handleEngines)

@@ -47,6 +47,11 @@ func newHub(t *testing.T, login string) (url string, created *agent.WorkspaceSpe
 		VALUES ('n1', 'homelab-1', 'dev', 'h', '100.64.0.7', ?, ?)`, now, now); err != nil {
 		t.Fatal(err)
 	}
+	if login == "dev@github" { // a developer, and a workspace that isn't theirs
+		db.Write.Exec(`INSERT INTO users (login, role, created_at) VALUES ('dev@github', 'developer', ?)`, now)
+		db.Write.Exec(`INSERT INTO workspaces (id, name, owner, node_id, repo_url, state, created_at)
+			VALUES ('w0', 'theirs', 'owner@github', 'n1', 'https://github.com/a/b', 'running', ?)`, now)
+	}
 
 	var mu sync.Mutex
 	created = &agent.WorkspaceSpec{}
@@ -235,4 +240,41 @@ func TestMCPRequiresAllowedUser(t *testing.T) {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// A developer's MCP server has no tool their role can't use, and the workspace tools only act on
+// their own workspaces.
+func TestMCPDeveloperRole(t *testing.T) {
+	url, _ := newHub(t, "dev@github")
+	s := connect(t, url)
+	tools, err := s.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tl := range tools.Tools {
+		names = append(names, tl.Name)
+	}
+	for _, gone := range []string{"create_app", "deploy_app", "rollback_app", "set_app_domains", "set_app_volumes", "list_databases", "create_database", "link_database", "backup_database"} {
+		if slices.Contains(names, gone) {
+			t.Errorf("developer sees %s", gone)
+		}
+	}
+	for _, kept := range []string{"list_apps", "get_app", "app_logs", "create_workspace", "create_project", "list_nodes"} {
+		if !slices.Contains(names, kept) {
+			t.Errorf("developer lacks %s", kept)
+		}
+	}
+	if _, text, isErr := call(t, s, "stop_workspace", map[string]any{"name": "theirs"}); !isErr || !strings.Contains(text, "owner@github's") {
+		t.Errorf("stop someone else's workspace: isErr=%v %q", isErr, text)
+	}
+	if _, text, isErr := call(t, s, "create_project", map[string]any{"name": "p", "stack": "go", "version": "1.26", "github": true}); !isErr || !strings.Contains(text, "developer") {
+		t.Errorf("project on the owner's GitHub: isErr=%v %q", isErr, text)
+	}
+	if w, text, isErr := call(t, s, "create_workspace", map[string]any{"name": "mine", "repo_url": "https://github.com/a/b"}); isErr || w["owner"] != "dev@github" {
+		t.Fatalf("create own workspace: %v %s", w, text)
+	}
+	if _, text, isErr := call(t, s, "stop_workspace", map[string]any{"name": "mine"}); isErr {
+		t.Errorf("stop own workspace: %s", text)
+	}
 }

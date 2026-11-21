@@ -27,18 +27,32 @@ func (h *Handler) Routes(r *whttp.Router) {
 	r.Post("/api/workspaces", h.handleCreate)
 	r.Post("/api/workspaces/detect", h.handleDetect)
 	r.Get("/api/workspaces/{name}", h.handleGet)
-	r.Post("/api/workspaces/{name}/start", h.handleStart)
-	r.Post("/api/workspaces/{name}/stop", h.handleStop)
-	r.Post("/api/workspaces/{name}/rebuild", h.handleRebuild)
-	r.Get("/api/workspaces/{name}/env", h.handleGetEnv)
-	r.Put("/api/workspaces/{name}/env", h.handlePutEnv)
-	r.Delete("/api/workspaces/{name}", h.handleDelete)
+	// Acting on one: its owner, or a role that may touch anyone's (the hub's owner).
+	own := r.With(h.ownsWorkspace)
+	own.Post("/api/workspaces/{name}/start", h.handleStart)
+	own.Post("/api/workspaces/{name}/stop", h.handleStop)
+	own.Post("/api/workspaces/{name}/rebuild", h.handleRebuild)
+	own.Get("/api/workspaces/{name}/env", h.handleGetEnv)
+	own.Put("/api/workspaces/{name}/env", h.handlePutEnv)
+	own.Delete("/api/workspaces/{name}", h.handleDelete)
 
 	r.Get("/api/projects/stacks", h.handleStacks)
 	r.Post("/api/projects", h.handleCreateProject)
-	r.Get("/api/settings/github", h.handleGetGitHub)
-	r.Put("/api/settings/github", h.handlePutGitHub)
-	r.Delete("/api/settings/github", h.handleDeleteGitHub)
+	r.Get("/api/settings/github", h.handleGetGitHub) // who repos are created as; never the token
+	s := r.With(auth.Require(auth.PermSettings))
+	s.Put("/api/settings/github", h.handlePutGitHub)
+	s.Delete("/api/settings/github", h.handleDeleteGitHub)
+}
+
+// ownsWorkspace answers 403 unless the caller may act on the workspace in the path.
+func (h *Handler) ownsWorkspace(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := h.svc.Authorize(r.Context(), auth.Caller(r.Context()), r.PathValue("name")); err != nil {
+			errorJSON(w, err)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) handleStacks(w http.ResponseWriter, r *http.Request) {
@@ -51,7 +65,13 @@ func (h *Handler) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	u, _ := auth.FromContext(r.Context())
+	u := auth.Caller(r.Context())
+	if in.GitHub { // the repo goes on the owner's account, with their token
+		if err := u.Check(auth.PermSettings); err != nil {
+			errorJSON(w, err)
+			return
+		}
+	}
 	ws, err := h.svc.CreateProject(r.Context(), u.Login, in)
 	if err != nil {
 		errorJSON(w, err)
@@ -211,6 +231,8 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
+	case errors.Is(err, auth.ErrForbidden):
+		whttp.ErrorJSON(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, ErrInvalid), errors.Is(err, ErrRepoURL), errors.Is(err, ErrStack), errors.Is(err, ErrStackVersion),
 		errors.Is(err, github.ErrToken), errors.Is(err, github.ErrScope):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())

@@ -373,6 +373,7 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 .tbl .show-xs-inline { display: none; }
 @container table (max-width: 640px) {
   .tbl .show-xs-inline { display: block; }
+  .tbl .input.input-sm { max-width: 112px; }
   .tbl thead, .tbl .hide-xs { display: none; }
   .tbl .show-xs { display: table-cell; width: 1%; }
   .tbl td.show-xs { padding-right: var(--sp1); }
@@ -395,10 +396,11 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
    long name never pushes the state or the actions out of the table. max-width: 0 is what lets an
    auto-layout cell shrink below its content. */
 .tbl .col-grow { width: 100%; max-width: 0; min-width: 200px; }
-@media (max-width: 767px) { .tbl .col-grow { min-width: 140px; } }
+@media (max-width: 767px) { .tbl .col-grow { min-width: 120px; } }
 .tbl .col-grow .cell-title, .tbl .col-grow .cell-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tbl .cell-lead > .cell-stack { flex: 1 1 auto; }
 /* A secondary name (a node) clips on one line instead of breaking at every hyphen. */
+.input.input-sm { height: 36px; width: auto; min-width: 0; padding-block: 0; }
 .tbl .roles-cell { min-width: 152px; } /* two chips a line, not one under the other */
 .clip { display: block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-actions { display: inline-flex; gap: var(--sp1); align-items: center; justify-content: flex-end; opacity: 0; transition: opacity var(--dur) var(--ease-out); }
