@@ -70,3 +70,13 @@ body:has(.content > .state:not(.state-err)) .tb-primary,
 .log-short { max-height: 55dvh; }
 .section-note { font-size: var(--fs-sm); }
 .break-any { overflow-wrap: anywhere; }
+
+/* RefHints: what an app's variables can reference, one row per service. */
+.refs { display: grid; gap: var(--sp2); padding-top: var(--sp3); border-top: 1px solid var(--bd); }
+.refs-row { display: flex; gap: var(--sp3); align-items: baseline; min-width: 0; }
+.refs-svc { flex: 0 0 auto; min-width: 7em; font-size: var(--fs-sm); color: var(--tx2); }
+.refs-keys { display: flex; flex-wrap: wrap; gap: var(--sp1); min-width: 0; }
+.refs-chip { cursor: pointer; font-size: var(--fs-xs); background: var(--s2); color: var(--tx); border: 1px solid var(--bd2); }
+@media (hover: hover) { .refs-chip:hover { border-color: var(--ac); color: var(--ac); } }
+.refs-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 560px) { .refs-row { flex-direction: column; gap: var(--sp1); } }

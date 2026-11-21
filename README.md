@@ -119,6 +119,20 @@ Tools cover nodes, workspaces (`detect_stack`, `create_workspace`, `create_works
 
 **4. Deploy an app.** Give a node the `prod` role, open **Projects**, create a project and add an **Application** (a repo with a `Dockerfile`, or a published image), a **Database** or a **Template**. **Deploy** builds it on the node, starts it next to the running release, checks its health and switches over. **Domains** puts it on the internet with TLS through a Cloudflare Tunnel (add a Cloudflare API token in **Settings** first).
 
+### Connect services
+
+The services of a project share a private network on their node and reach each other by name (`http://api:3000`, `shop-db:5432`); other projects can't reach them. To hand one service's address or credentials to another, reference it in the app's variables instead of copying values:
+
+```
+DATABASE_URL=${{shop-db.URL}}
+API_URL=${{api.URL}}
+STRIPE_KEY=${{shared.STRIPE_KEY}}
+```
+
+- A database offers `URL`, `HOST`, `PORT`, `USER`, `PASSWORD` and `DATABASE`; an app offers `URL`, `HOST` and `PORT`.
+- `shared.*` are the project's **Variables** (on the project page), for values several services use.
+- References are checked when you save and filled in on each deploy, so they follow the service. The app's **Environment** tab lists what you can reference; a database's **Link to app** adds `DATABASE_URL=${{<db>.URL}}` for you.
+
 ### Deploy on every push, or after CI
 
 Each app's **Automation** tab picks how it deploys by itself. Walroos isn't a CI engine: your forge runs the tests, walroos deploys.

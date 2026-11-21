@@ -46,7 +46,8 @@ func newServices(ctx context.Context, db *config.Database, box *secretbox.Box, n
 	s.workspace = workspace.NewService(workspace.NewStore(db), s.fleet, nw.agents, box, s.settings)
 	s.app = app.NewService(app.NewStore(db), s.fleet, nw.agents, box, s.settings)
 	s.database = database.NewService(database.NewStore(db), s.fleet, nw.agents, box, s.app)
-	s.project = project.NewService(db, s.app, s.database)
+	s.project = project.NewService(db, s.app, s.database, box)
+	s.app.SetResolver(s.project.Vars) // ${{service.KEY}} in app variables
 	s.hooks = hooks.NewHandler(s.app)
 	go s.app.Run(ctx)
 	go s.database.Run(ctx)

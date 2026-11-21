@@ -17,7 +17,7 @@ export function Meter({ label, pct, text }: { label: string; pct: number; text: 
 }
 
 // navigator.clipboard needs a secure context; http://walroos-hub on the tailnet isn't one.
-function copyText(text: string): Promise<void> {
+export function copyText(text: string): Promise<void> {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
   const ta = document.createElement('textarea');
   ta.value = text;

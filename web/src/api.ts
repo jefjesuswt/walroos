@@ -1,5 +1,5 @@
 // The hub's HTTP API. Its types are in types.ts; they're re-exported here, so pages import both from './api'.
-import { type Role, type Node, type UserRole, type User, type Member, type Workspace, type NewWorkspace, type ProjectStack, type NewProject, type GitHub, type Detection, type EnvVar, type SSHKey, type JoinToken, type Deployment, type Cloudflare, type App, type Volume, type NewApp, type Engine, type Database, type Backup, type Project, type Template, type Trigger, type Hooks } from './types';
+import { type Role, type Node, type UserRole, type User, type Member, type Workspace, type NewWorkspace, type ProjectStack, type NewProject, type GitHub, type Detection, type EnvVar, type SSHKey, type JoinToken, type Deployment, type Cloudflare, type App, type Volume, type NewApp, type Engine, type Database, type Backup, type Project, type Template, type Trigger, type Hooks, type Ref } from './types';
 
 export * from './types';
 
@@ -76,6 +76,9 @@ export const api = {
   project: (name: string) => req<Project>('GET', `/api/projects/${name}`),
   createProjectGroup: (name: string, description: string) => req<Project>('POST', '/api/projects', { name, description }),
   deleteProject: (name: string) => req<void>('DELETE', `/api/projects/${name}`),
+  projectEnv: (name: string) => req<EnvVar[]>('GET', `/api/projects/${name}/env`),
+  setProjectEnv: (name: string, vars: EnvVar[]) => req<void>('PUT', `/api/projects/${name}/env`, vars),
+  projectRefs: (name: string) => req<Ref[]>('GET', `/api/projects/${name}/refs`),
   engines: () => req<Engine[]>('GET', '/api/databases/engines'),
   databases: () => req<Database[]>('GET', '/api/databases'),
   database: (name: string) => req<Database>('GET', `/api/databases/${name}`),

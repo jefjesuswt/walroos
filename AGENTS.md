@@ -37,9 +37,10 @@ internal/agent/         the hub ↔ node contract: specs, results, validation, p
   agenttest/            helpers the agent's tests share
 internal/app/           apps: config, source, encrypted env (env.go), deployment queue and history (deploy.go), domains (ingress.go), templates
 internal/database/      database services (Postgres, MySQL, MariaDB, Redis, Valkey, MongoDB) and their backups
-internal/project/       projects: groups of apps and databases sharing a podman network; lookup/ resolves a name for app and database
+internal/project/       projects: groups of apps and databases sharing a podman network, shared variables, references; lookup/ resolves a name
 internal/workspace/     dev workspaces, stack detection, workspaces from scratch
 internal/settings/      the Cloudflare and GitHub tokens (sealed) and /api/settings; hands out clients
+internal/envstore/      environment variables sealed at rest, one table per owner (workspaces, apps, projects)
 internal/hooks/         public /hooks/*: push webhooks (GitHub, Gitea/Forgejo, GitLab) and CI deploys with a deploy token
 internal/cloudflare/    the bits of Cloudflare's API used: zones, remote-managed tunnels, CNAMEs
 internal/github/        the bits of GitHub's API used: who the token is, create a repo, first commit
@@ -50,6 +51,7 @@ internal/web/           serves the embedded SPA (SPA fallback, JSON 404 for /api
 internal/version/
 shared/whttp/           router, JSON helpers, Error (sentinels with an HTTP status) and WriteError/Reply
 shared/names/           DNSLabel, EnvKey, SQLIdent: the name checks every domain shares
+shared/envref/          ${{service.KEY}} references in env values: find, check, expand
 web/                    React 18 + Vite + TS UI
 web/src/ui/             the UI kit every page is built from (README.md: rules and examples)
 web/src/<area>/         pages by area: apps, databases, projects, workspaces, settings, nodes
