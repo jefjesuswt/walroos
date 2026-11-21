@@ -302,6 +302,15 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Sitios estáticos, como Netlify (2026-11-21)
+
+- [x] Build **Static site** en la fuente de la app: repo sin Dockerfile. Runtime Node o Bun (auto por el lockfile), comandos de install y build, carpeta a publicar (auto: `dist/*/browser`, `dist`, `build`, `out`, `public`), SPA. Todo opcional.
+- [x] El agente genera el Dockerfile: etapa de build en `node:24-slim`, `oven/bun:1-slim` o `busybox` (HTML plano), con caché del gestor de paquetes. Imagen final `FROM scratch` con el propio binario (`walroos static-server`) y el sitio, como usuario 65534 en el puerto 8080.
+- [x] Las variables de la app llegan al build como secreto de podman (`VITE_*`, `NEXT_PUBLIC_*`), no quedan en las capas. Con nodo de build, también viajan a él (solo en sitios estáticos).
+- [x] El servidor no sirve dotfiles (`.env`, `.git`), no lista carpetas, y usa `404.html` o `index.html` (SPA).
+- [x] Versión como en Netlify: `NODE_VERSION` y `BUN_VERSION` (esta además elige Bun), luego `.nvmrc` o `.node-version`. Por defecto Node 24 y Bun 1.
+- ponytail: no lee `engines` de package.json ni `PNPM_VERSION`/`YARN_VERSION` (pnpm viene de corepack). Sin directorio base para monorepos. Sin gzip (Cloudflare comprime). Cada imagen trae el binario de walroos (~40 MB, capa compartida entre releases).
+
 ## Proyectos (fase 2): servicios conectados ✅ (2026-11-21)
 
 Como Railway: las variables de una app referencian a otros servicios del proyecto en vez de copiar valores.

@@ -11,6 +11,7 @@ import (
 	"github.com/jefjesuswt/walroos/cmd/walroos/node"
 	"github.com/jefjesuswt/walroos/cmd/walroos/sftpserver"
 	"github.com/jefjesuswt/walroos/cmd/walroos/sshconfig"
+	"github.com/jefjesuswt/walroos/cmd/walroos/staticserver"
 	"github.com/jefjesuswt/walroos/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -35,5 +36,5 @@ func main() {
 }
 
 func init() {
-	rootCmd.AddCommand(hub.Cmd, node.Cmd, sshconfig.Cmd, sftpserver.Cmd)
+	rootCmd.AddCommand(hub.Cmd, node.Cmd, sshconfig.Cmd, sftpserver.Cmd, staticserver.Cmd)
 }

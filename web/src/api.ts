@@ -1,5 +1,5 @@
 // The hub's HTTP API. Its types are in types.ts; they're re-exported here, so pages import both from './api'.
-import { type Role, type Node, type UserRole, type User, type Member, type Workspace, type NewWorkspace, type ProjectStack, type NewProject, type GitHub, type Detection, type EnvVar, type SSHKey, type JoinToken, type Deployment, type Cloudflare, type App, type Volume, type NewApp, type Engine, type Database, type Backup, type Project, type Template, type Trigger, type Hooks, type Ref } from './types';
+import { type Role, type Node, type UserRole, type User, type Member, type Workspace, type NewWorkspace, type ProjectStack, type NewProject, type GitHub, type Detection, type EnvVar, type SSHKey, type JoinToken, type Deployment, type Cloudflare, type App, type Volume, type NewApp, type Engine, type Database, type Backup, type Project, type Template, type Trigger, type Hooks, type Ref, type StaticBuild } from './types';
 
 export * from './types';
 
@@ -57,7 +57,7 @@ export const api = {
   setDomains: (name: string, domains: string[]) => req<App>('PUT', `/api/apps/${name}/domains`, domains),
   templates: () => req<Template[]>('GET', '/api/templates'),
   createFromTemplate: (t: { template: string; name: string; project?: string; node?: string }) => req<App>('POST', '/api/apps/from-template', t),
-  setAppSource: (name: string, src: { repo_url?: string; image?: string; branch?: string; dockerfile?: string; port: number; health_path?: string }) =>
+  setAppSource: (name: string, src: { repo_url?: string; image?: string; branch?: string; dockerfile?: string; static?: StaticBuild; port: number; health_path?: string }) =>
     req<App>('PUT', `/api/apps/${name}/source`, src),
   setTrigger: (name: string, trigger: Trigger) => req<App>('PUT', `/api/apps/${name}/trigger`, { trigger }),
   webhookSecret: (name: string) => req<{ secret: string }>('GET', `/api/apps/${name}/webhook-secret`),

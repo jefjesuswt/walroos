@@ -76,6 +76,9 @@ A form dialog:
 </Modal>
 ```
 
+A `Seg` (a group of buttons) goes in `<Field label="Runtime" group>`: a `<label>` would press the first button whenever its text is clicked.
+
+
 A list with row actions (icon buttons on wide screens, a ⋮ sheet on phones):
 
 ```tsx

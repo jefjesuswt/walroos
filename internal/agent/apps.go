@@ -17,21 +17,22 @@ const AppNetwork = "walroos" // apps reach each other here by container name; ap
 // AppSpec is one deploy. Image set means rollback: run that image, skip clone and build.
 // Source set means a published image: pull it instead of cloning and building.
 type AppSpec struct {
-	Name       string   `json:"name"`
-	ID         string   `json:"id"` // deployment id from the hub; the container is <name>-<id>
-	RepoURL    string   `json:"repo_url"`
-	Source     string   `json:"source,omitempty"` // a published image (registry/repo:tag), instead of RepoURL
-	Branch     string   `json:"branch"`
-	Sha        string   `json:"sha"`        // "" deploys the branch head
-	Dockerfile string   `json:"dockerfile"` // relative to the repo; default Dockerfile
-	Port       int      `json:"port"`
-	HealthPath string   `json:"health_path"` // default /
-	Image      string   `json:"image"`
-	Env        []string `json:"env"`
-	Volumes    []Volume `json:"volumes,omitempty"`    // with any, a deploy stops the old release before starting the new one
-	Network    string   `json:"network,omitempty"`    // the project's network (ProjectNetwork); "" = AppNetwork
-	Pull       string   `json:"pull,omitempty"`       // build node's registry (tailnet host:port): pull Sha from it, don't build
-	PullToken  string   `json:"pull_token,omitempty"` // PullToken for this app on that node
+	Name       string       `json:"name"`
+	ID         string       `json:"id"` // deployment id from the hub; the container is <name>-<id>
+	RepoURL    string       `json:"repo_url"`
+	Source     string       `json:"source,omitempty"` // a published image (registry/repo:tag), instead of RepoURL
+	Branch     string       `json:"branch"`
+	Sha        string       `json:"sha"`              // "" deploys the branch head
+	Dockerfile string       `json:"dockerfile"`       // relative to the repo; default Dockerfile
+	Static     *StaticBuild `json:"static,omitempty"` // set: no Dockerfile, build and serve it as a static site
+	Port       int          `json:"port"`
+	HealthPath string       `json:"health_path"` // default /
+	Image      string       `json:"image"`
+	Env        []string     `json:"env"`
+	Volumes    []Volume     `json:"volumes,omitempty"`    // with any, a deploy stops the old release before starting the new one
+	Network    string       `json:"network,omitempty"`    // the project's network (ProjectNetwork); "" = AppNetwork
+	Pull       string       `json:"pull,omitempty"`       // build node's registry (tailnet host:port): pull Sha from it, don't build
+	PullToken  string       `json:"pull_token,omitempty"` // PullToken for this app on that node
 }
 
 // Volume is storage that outlives releases: a named podman volume (Name) or a directory
@@ -85,6 +86,7 @@ func (spec AppSpec) Valid() bool {
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
 		(spec.Image == "" || isOwn && len(tag) == 12 && shaRe.MatchString(tag)) && // rollback runs only this app's own builds
 		validVolumes(spec.Volumes) && ValidNetwork(spec.Network) &&
+		spec.Static.valid() && (spec.Static == nil || spec.Dockerfile == "" && spec.Source == "" && spec.Port == StaticPort) &&
 		(spec.Pull == "" || validHostPort(spec.Pull) && tokenRe.MatchString(spec.PullToken) && len(spec.Sha) >= 12 && spec.Image == "")
 }
 

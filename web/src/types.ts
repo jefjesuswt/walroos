@@ -186,6 +186,7 @@ export interface App {
   image: string; // a published image, pulled on each deploy, instead of a repo
   branch: string;
   dockerfile: string;
+  static?: StaticBuild; // a repo with no Dockerfile, built with Node or Bun and served on port 8080
   port: number;
   health_path: string;
   domains: string[]; // public hostnames through the node's Cloudflare Tunnel
@@ -196,6 +197,15 @@ export interface App {
   last_deployment?: Deployment;
   running?: Release;
   node_down?: boolean;
+}
+
+// How a static site builds. Every field is optional: walroos finds them from the repo.
+export interface StaticBuild {
+  runtime?: '' | 'node' | 'bun'; // '' picks bun with a bun lockfile, else node
+  install?: string;
+  build?: string;
+  publish?: string; // the folder to serve, relative to the repo
+  spa?: boolean; // paths with no file get index.html
 }
 
 // A named podman volume (name) or a directory under the node's ~/walroos-data (host_path).

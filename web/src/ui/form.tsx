@@ -5,15 +5,17 @@ import { Icon } from './icons';
 
 // Field is label + control + hint. optional adds "(optional)" to the label; tone="bad" shows the
 // hint as a problem (no node with the role, a value that won't work).
-export function Field({ label, hint, optional, tone, children }: {
+export function Field({ label, hint, optional, tone, group, children }: {
   label: ReactNode; hint?: ReactNode; optional?: boolean; tone?: 'bad'; children: ReactNode;
+  group?: boolean; // the control is a group of buttons (Seg): a <label> would press the first one on a click
 }) {
+  const Tag = group ? 'div' : 'label';
   return (
-    <label className="field">
+    <Tag className="field">
       <span className="label">{label}{optional && <> <span className="muted">(optional)</span></>}</span>
       {children}
       {hint && <span className={tone === 'bad' ? 'help help-bad' : 'help'}>{hint}</span>}
-    </label>
+    </Tag>
   );
 }
 

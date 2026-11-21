@@ -23,7 +23,7 @@ Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (
 ## Layout
 
 ```
-cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, run, telemetry)
+cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, run, telemetry), staticserver/ (what static sites' images run)
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs, users and their roles (owner, deployer, developer), permissions
 internal/agent/         the hub ↔ node contract: specs, results, validation, ports, the Client the hub calls nodes with

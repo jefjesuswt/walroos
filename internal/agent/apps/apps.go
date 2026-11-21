@@ -199,18 +199,26 @@ func build(ctx context.Context, spec agent.AppSpec, log io.Writer) (sha, image s
 		return "", "", fmt.Errorf("git rev-parse: %w", err)
 	}
 	sha = strings.TrimSpace(string(out))
+	image = "localhost/walroos-app-" + spec.Name + ":" + sha[:12]
+	fmt.Fprintf(log, "building %s at %s\n", image, sha[:12])
+	if spec.Static != nil {
+		return sha, image, buildStatic(ctx, spec, dir, image, log)
+	}
 	dockerfile, err := host.Inside(dir, filepath.Join(dir, cmp.Or(spec.Dockerfile, "Dockerfile")))
 	if err != nil {
 		return "", "", fmt.Errorf("dockerfile: %w", err)
 	}
-	image = "localhost/walroos-app-" + spec.Name + ":" + sha[:12]
-	fmt.Fprintf(log, "building %s at %s\n", image, sha[:12])
-	cmd := exec.CommandContext(ctx, "podman", "build", "--label", quadlet.LabelApp+"="+spec.Name, "-t", image, "-f", dockerfile, dir)
+	return sha, image, podmanBuild(ctx, spec.Name, log, "-t", image, "-f", dockerfile, dir)
+}
+
+// podmanBuild runs podman build with args, the image labeled as app's.
+func podmanBuild(ctx context.Context, app string, log io.Writer, args ...string) error {
+	cmd := exec.CommandContext(ctx, "podman", append([]string{"build", "--label", quadlet.LabelApp + "=" + app}, args...)...)
 	cmd.Stdout, cmd.Stderr = log, log
 	if err := cmd.Run(); err != nil {
-		return "", "", fmt.Errorf("podman build: %w", err)
+		return fmt.Errorf("podman build: %w", err)
 	}
-	return sha, image, nil
+	return nil
 }
 
 // pullSource pulls the published image and tags it as this app's own, by image id: rollback

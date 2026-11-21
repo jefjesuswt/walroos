@@ -24,15 +24,16 @@ type appIn struct {
 }
 
 type createAppIn struct {
-	Name       string `json:"name" jsonschema:"DNS label: lowercase letters, digits and '-'"`
-	RepoURL    string `json:"repo_url,omitempty" jsonschema:"git URL of a repo with a Dockerfile (https or git@host:owner/repo); or set image instead"`
-	Image      string `json:"image,omitempty" jsonschema:"a published image instead of a repo, fully qualified (ghcr.io/owner/app:tag); pulled again on each deploy"`
-	Port       int    `json:"port" jsonschema:"port the container listens on"`
-	Branch     string `json:"branch,omitempty" jsonschema:"branch to build; default branch if empty"`
-	Dockerfile string `json:"dockerfile,omitempty" jsonschema:"path of the Dockerfile in the repo; Dockerfile if empty"`
-	HealthPath string `json:"health_path,omitempty" jsonschema:"URL path that must answer 2xx/3xx within 90 s; / if empty"`
-	Node       string `json:"node,omitempty" jsonschema:"node name or ID with the prod role; empty picks the first online one"`
-	Project    string `json:"project,omitempty" jsonschema:"project the app goes in (see list_projects); empty is the default project"`
+	Name       string             `json:"name" jsonschema:"DNS label: lowercase letters, digits and '-'"`
+	RepoURL    string             `json:"repo_url,omitempty" jsonschema:"git URL of a repo with a Dockerfile, or of a static site with static set (https or git@host:owner/repo); or set image instead"`
+	Image      string             `json:"image,omitempty" jsonschema:"a published image instead of a repo, fully qualified (ghcr.io/owner/app:tag); pulled again on each deploy"`
+	Port       int                `json:"port,omitempty" jsonschema:"port the container listens on; ignored for a static site (8080)"`
+	Branch     string             `json:"branch,omitempty" jsonschema:"branch to build; default branch if empty"`
+	Dockerfile string             `json:"dockerfile,omitempty" jsonschema:"path of the Dockerfile in the repo; Dockerfile if empty"`
+	HealthPath string             `json:"health_path,omitempty" jsonschema:"URL path that must answer 2xx/3xx within 90 s; / if empty"`
+	Static     *agent.StaticBuild `json:"static,omitempty" jsonschema:"set (even empty) for a repo with no Dockerfile: a static site (React, Vite, Angular, plain HTML) built with node or bun, which finds the install, the build and the output folder (NODE_VERSION, BUN_VERSION or .nvmrc in the app's env or repo pick the version); runtime, install, build, publish and spa override them. The app's env vars are there during the build"`
+	Node       string             `json:"node,omitempty" jsonschema:"node name or ID with the prod role; empty picks the first online one"`
+	Project    string             `json:"project,omitempty" jsonschema:"project the app goes in (see list_projects); empty is the default project"`
 }
 
 type deployIn struct {
@@ -99,9 +100,9 @@ func addAppTools(s *sdk.Server, apps *app.Service) {
 // addAppActions change apps. No delete_app on purpose: it's destructive and lives in the UI.
 func addAppActions(s *sdk.Server, apps *app.Service) {
 	sdk.AddTool(s, &sdk.Tool{Name: "create_app",
-		Description: "Create an app from a git repo with a Dockerfile, or from a published image, on a node with the prod role. Nothing runs until deploy_app."},
+		Description: "Create an app from a git repo with a Dockerfile, a static site from a repo (static), or from a published image, on a node with the prod role. Nothing runs until deploy_app."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in createAppIn) (*sdk.CallToolResult, any, error) {
-			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile,
+			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static,
 				Port: in.Port, HealthPath: in.HealthPath, Node: in.Node, Project: in.Project})
 			return nil, a, err
 		})
