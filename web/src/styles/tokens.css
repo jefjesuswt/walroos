@@ -1,0 +1,111 @@
+/* Design tokens: M3 color roles, type, spacing, radii, elevation; base element styles. */
+/* walroos design tokens. Colors are Material 3 roles (--md-*) that src/theme.ts sets from the
+   active theme; components use the short aliases below, never a hex. */
+:root {
+  --bg: var(--md-surface, #0B0F14);
+  --s1: var(--md-surface-container-low);
+  --s2: var(--md-surface-container);
+  --s3: var(--md-surface-container-high);
+  --s4: var(--md-surface-container-highest);
+  --bd: var(--md-outline-variant);
+  --bd2: color-mix(in srgb, var(--md-outline) 55%, var(--md-outline-variant));
+  --tx: var(--md-on-surface, #E6EDF3);
+  --tx2: var(--md-on-surface-variant);
+  --ac: var(--md-primary);
+  --ac-tx: var(--md-on-primary);
+  --ac-c: var(--md-primary-container);
+  --ac-c-tx: var(--md-on-primary-container);
+  --ac-soft: color-mix(in srgb, var(--md-primary) 14%, transparent);
+  --sec-c: var(--md-secondary-container);
+  --sec-c-tx: var(--md-on-secondary-container);
+  --ok: var(--md-success);
+  --busy: var(--md-warning);
+  --bad: var(--md-error);
+  --idle: var(--md-on-surface-variant);
+  --ok-soft: var(--md-success-container);
+  --busy-soft: var(--md-warning-container);
+  --bad-soft: var(--md-error-container);
+  --idle-soft: var(--md-surface-container-highest);
+  --ok-tx: var(--md-on-success-container);
+  --busy-tx: var(--md-on-warning-container);
+  --bad-tx: var(--md-on-error-container);
+  --scrim: color-mix(in srgb, var(--md-scrim) 55%, transparent);
+  --code-bg: var(--md-surface-container-lowest);
+  --focus: var(--md-primary);
+
+  --f-ui: 'Roboto Flex', Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs: 14px;
+  --fs-md: 16px;
+  --fs-lg: 22px;
+  --fs-xl: 24px;
+  --fs-2xl: 28px;
+
+  --sp1: 4px;
+  --sp2: 8px;
+  --sp3: 12px;
+  --sp4: 16px;
+  --sp5: 20px;
+  --sp6: 24px;
+  --sp8: 32px;
+  --sp10: 40px;
+
+  /* M3 shape scale: extra-small 4, small 8, medium 12, large 16, extra-large 28, full */
+  --r0: 4px;
+  --r1: 8px;
+  --r2: 12px;
+  --r3: 16px;
+  --r4: 28px;
+  --rf: 999px;
+  --dur: 200ms;
+  --dur-out: 150ms;
+  --ease-out: cubic-bezier(.05, .7, .1, 1);
+  --ease-in: cubic-bezier(.3, 0, .8, .15);
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  /* M3 state layers: the content color over the container, 8% hover / 10% pressed */
+  --hover: inset 0 0 0 100vmax color-mix(in srgb, currentColor 8%, transparent);
+  --press: inset 0 0 0 100vmax color-mix(in srgb, currentColor 12%, transparent);
+  --elev1: 0 1px 2px rgba(0, 0, 0, .3), 0 1px 3px 1px rgba(0, 0, 0, .15);
+  --elev3: 0 1px 3px rgba(0, 0, 0, .3), 0 4px 8px 3px rgba(0, 0, 0, .15);
+
+  --sb: 264px;
+  --sb-c: 72px;
+  --top: 64px;
+  --max: 1280px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--tx);
+  font: 400 var(--fs)/1.45 var(--f-ui);
+  letter-spacing: .01em;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+h1, h2, h3, h4, p { margin: 0; }
+h1 { font-size: var(--fs-lg); font-weight: 400; letter-spacing: 0; line-height: 28px; }
+h2 { font-size: var(--fs-md); font-weight: 500; letter-spacing: .01em; line-height: 24px; }
+h3 { font-size: var(--fs); font-weight: 500; letter-spacing: .01em; line-height: 20px; }
+code, .mono, pre, kbd { font-family: var(--f-mono); font-size: var(--fs-sm); }
+code { font-size: .92em; }
+.muted { color: var(--tx2); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--ac-soft); }
+/* Thin pill scrollbars. Chromium ignores these once scrollbar-color is set, so that's Firefox only. */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-button { display: none; }
+::-webkit-scrollbar-thumb { background: var(--bd2); background-clip: padding-box; border: 3px solid transparent; border-radius: 12px; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--tx2); }
+@supports not selector(::-webkit-scrollbar) { :root { scrollbar-width: thin; scrollbar-color: var(--bd2) transparent; } }
+
+.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.ic-lg { width: 28px; height: 28px; }

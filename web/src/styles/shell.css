@@ -1,0 +1,83 @@
+/* The app shell: sidebar, top bar, content column, sidebar resize handle. */
+/* ---------- shell ---------- */
+.app { display: grid; grid-template-columns: var(--sb) minmax(0, 1fr); min-height: 100vh; min-height: 100dvh; }
+body.sb-collapsed .app { grid-template-columns: var(--sb-c) minmax(0, 1fr); }
+
+.sidebar {
+  position: sticky; top: 0; height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; gap: var(--sp2);
+  padding: var(--sp3);
+  background: var(--s1);
+  overflow-y: auto; overflow-x: hidden;
+}
+.sb-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp2); padding: var(--sp2) var(--sp4) var(--sp4); min-height: 56px; }
+.brand { display: flex; align-items: center; gap: var(--sp3); font-weight: 600; font-size: 20px; letter-spacing: -.01em; }
+.brand img { display: block; flex: none; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav a {
+  display: flex; align-items: center; gap: var(--sp3);
+  height: 48px; padding: 0 var(--sp4); border-radius: var(--rf);
+  color: var(--tx2); font-weight: 500; letter-spacing: .01em;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+@media (hover: hover) { .nav a:hover { box-shadow: var(--hover); color: var(--tx); } }
+.nav a:active { box-shadow: var(--press); }
+.nav a[aria-current="page"] { background: var(--sec-c); color: var(--sec-c-tx); font-weight: 600; }
+
+.sb-user { display: flex; align-items: center; gap: var(--sp2); min-width: 0; }
+.sb-user-t { display: grid; min-width: 0; }
+.sb-user-t > * { display: block; }
+.avatar { width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--ac-c); color: var(--ac-c-tx); font-size: var(--fs-sm); font-weight: 600; }
+.conn { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--tx2); }
+
+body.sb-collapsed .lbl { display: none; }
+body.sb-collapsed .sb-top { flex-direction: column; padding: 0; }
+body.sb-collapsed .nav a { justify-content: center; padding: 0; }
+body.sb-collapsed .sb-user { justify-content: center; }
+
+.main { min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  height: var(--top); display: flex; align-items: center; gap: var(--sp3);
+  padding: 0 var(--sp6);
+  background: var(--bg);
+}
+/* App.tsx moves it with `top` while scrolling (no transition: it tracks the finger) and only
+   animates the final settle. `top`, not a transform: a transform would become the containing
+   block of the mobile FAB. */
+.topbar.tb-settling { transition: top var(--dur) var(--ease); }
+/* Scrolled away from the top, content slides under the bar: a container color and a hairline
+   (M3's on-scroll top app bar) instead of cards being cut by a band of page color. */
+.topbar { transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.topbar.tb-settling { transition: top var(--dur) var(--ease), background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.topbar.tb-scrolled { background: var(--s1); box-shadow: 0 1px 0 var(--bd); }
+.crumbs { display: flex; align-items: center; gap: var(--sp2); min-width: 0; flex: 1 1 0; font-size: var(--fs-sm); color: var(--tx2); }
+.crumbs ol { display: flex; align-items: center; gap: var(--sp2); list-style: none; margin: 0; padding: 0; min-width: 0; }
+.crumbs li { display: flex; align-items: center; gap: var(--sp2); min-width: 0; white-space: nowrap; }
+.crumbs li + li::before { content: '/'; color: var(--bd2); }
+.crumbs li:last-child { color: var(--tx); font-size: var(--fs-lg); font-weight: 400; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (hover: hover) { .crumbs a:hover { color: var(--tx); } }
+
+kbd { font-size: 11px; padding: 1px 6px; border: 1px solid var(--bd2); border-radius: 4px; color: var(--tx2); background: var(--s2); white-space: nowrap; }
+.menu-btn { display: none; }
+
+#view { outline: none; flex: 1 1 auto; display: flex; flex-direction: column; }
+.content { flex: 1 0 auto; width: 100%; max-width: var(--max); margin: 0 auto; padding: var(--sp2) var(--sp6) var(--sp8); display: flex; flex-direction: column; gap: var(--sp4); }
+
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp4); flex-wrap: wrap; }
+.ph-text { display: grid; gap: var(--sp1); min-width: 0; }
+.ph-text > * { display: block; }
+.ph-actions { display: flex; gap: var(--sp2); flex-wrap: wrap; }
+.ph-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp2) var(--sp4); color: var(--tx2); font-size: var(--fs-sm); }
+.ph-meta > * { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.title-row { display: flex; align-items: center; gap: var(--sp3); flex-wrap: wrap; }
+
+/* ---------- sidebar resize handle (App.tsx) ---------- */
+.sb-resize { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; cursor: col-resize; touch-action: none; user-select: none; outline: none; }
+.sb-resize::after { content: ''; position: absolute; top: 0; bottom: 0; right: 0; width: 3px; border-radius: 2px; transition: background var(--dur) var(--ease-out); }
+.sb-resize:hover::after, .sb-resize:focus-visible::after, .sb-resize:active::after { background: var(--ac); }
+@media (max-width: 767px) { .sb-resize { display: none; } }
+
+.content-denied { padding-top: 20vh; }
+.sb-user-name { font-weight: 500; }

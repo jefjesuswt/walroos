@@ -1,0 +1,89 @@
+/* Breakpoints. Last, so they win over the rules above. */
+.scrim { display: none; }
+
+/* responsive */
+@media (max-width: 1100px) {
+
+  .hide-md { display: none; }
+
+}
+@media (max-width: 1000px) {
+  .hide-sm { display: none; }
+  .cmd code { font-size: var(--fs-xs); }
+}
+@media (max-width: 767px) {
+  .app, body.sb-collapsed .app { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: fixed; left: 0; top: 0; z-index: 40; width: 272px; transform: translateX(-100%); transition: transform var(--dur-out) var(--ease-in); }
+  body.drawer-open .sidebar { transform: none; transition: transform var(--dur) var(--ease-out); }
+  body.drawer-open .scrim { display: block; position: fixed; inset: 0; z-index: 35; background: var(--scrim); }
+  body.sb-collapsed .lbl { display: revert; }
+
+  .menu-btn { display: inline-grid; }
+  .topbar { padding: 0 var(--sp3); }
+
+  .content { padding: var(--sp3) var(--sp3) var(--sp6); gap: var(--sp3); }
+  .hide-sm { display: none; }
+   .radio-cards { grid-template-columns: minmax(0, 1fr); }
+
+  .grid-cards { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: var(--fs-lg); }
+  .topbar .tb-primary .tb-label { display: none; }
+  .ln { grid-template-columns: minmax(0, 1fr); gap: 0; }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
+
+/* cards size to their content instead of stretching to the tallest sibling */
+ .grid-cards > .card { align-self: start; }
+
+/* ---- v3: chrome cleanup, accordions, sessions, profile ---- */
+.topbar .menu-btn { display: none; }
+.sidebar > .sb-user { margin-top: auto; display: flex; align-items: center; gap: var(--sp3); padding: var(--sp2) var(--sp3); border-radius: var(--rf); color: var(--tx); min-width: 0; }
+.sidebar > .sb-user[aria-current="page"] { background: var(--s2); border-color: var(--bd2); }
+body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0; }
+.page-bar { min-height: 32px; }
+.page-sub { font-size: var(--fs-sm); }
+.card-head h2 .count { font-weight: 400; font-size: var(--fs-xs); color: var(--tx2); margin-left: var(--sp2); }
+
+.pref { display: flex; align-items: center; justify-content: space-between; gap: var(--sp3); flex-wrap: wrap; font-size: var(--fs-sm); }
+
+.card > .m-foot { border-radius: 0 0 var(--r2) var(--r2); }
+
+@media (max-width: 767px) {
+  .topbar .menu-btn { display: inline-grid; }
+
+}
+
+@media (max-width: 767px) {
+  .topbar .tb-primary .btn-primary {
+    position: fixed; right: var(--sp4); bottom: var(--sp4); z-index: 30;
+    height: 56px; padding: 0 var(--sp5) 0 var(--sp4); border-radius: var(--r3);
+    background: var(--ac-c); color: var(--ac-c-tx); box-shadow: var(--elev3);
+  }
+  .topbar .tb-primary .tb-label { display: inline; }
+  .content { padding-bottom: 96px; }
+  .crumbs li:last-child { font-size: var(--fs-md); font-weight: 500; }
+}
+.tbl .btn-icon { width: 36px; height: 36px; }
+.tbl td.ta-r { padding-left: 0; padding-right: var(--sp2); }
+@media (max-width: 1280px) { .tbl .hide-lg { display: none; } }
+.show-xs { display: none; }
+
+.err-line { max-width: 180px; color: var(--bad) !important; }
+@media (max-width: 767px) {
+  .tbl thead { display: none; }
+  .err-line { max-width: 110px; }
+  .tbl .hide-xs { display: none; }
+  .tbl .show-xs { display: table-cell; width: 1%; }
+  .tbl td.show-xs { padding-right: var(--sp1); }
+  /* dialogs are bottom sheets on phones */
+  .ov-modal { align-items: flex-end; padding: var(--sp10) 0 0; }
+  .modal, .modal.wide { max-width: none; border-radius: var(--r4) var(--r4) 0 0; max-height: 92vh; max-height: 92dvh; overflow-y: auto; animation: sheet var(--dur) var(--ease-out); }
+  .modal::before { content: ''; display: block; width: 32px; height: 4px; margin: var(--sp4) auto 0; border-radius: 2px; background: color-mix(in srgb, var(--tx2) 40%, transparent); }
+  .m-head { padding-top: var(--sp4); }
+  .m-foot { position: sticky; bottom: 0; background: var(--s3); padding-top: var(--sp3); }
+}
+@keyframes sheet { from { transform: translateY(40%); opacity: .4; } }
