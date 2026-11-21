@@ -46,9 +46,9 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
         <div className="table-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>Node</th><th className="hide-sm">Roles</th><th>Status</th>
+              <th className="col-grow">Node</th><th className="hide-sm">Roles</th><th>Status</th>
               <th className="hide-sm" style={{ minWidth: 100 }}>CPU</th><th className="hide-sm" style={{ minWidth: 130 }}>RAM</th>
-              <th className="hide-md" style={{ minWidth: 130 }}>Disk</th><th className="hide-md">Podman</th><th className="hide-md">walroos</th>
+              <th className="hide-md" style={{ minWidth: 130 }}>Disk</th><th className="hide-md">Podman</th>
               <th className="hide-sm">Last seen</th><th><span className="sr-only">Actions</span></th>
             </tr></thead>
             <tbody>{nodes.map(n => <NodeRow key={n.id} n={n} onRemove={() => setRemoving(n)} />)}</tbody>
@@ -74,17 +74,17 @@ function NodeRow({ n, onRemove }: { n: Node; onRemove: () => void }) {
   const gb = (mb: number) => (mb / 1024).toFixed(1);
   return (
     <tr>
-      <td><div className="cell-stack">
-        <span className="cell-title mono od-nowrap">{n.name}</span>
-        <span className="cell-sub mono od-truncate">{[n.address, t.os].filter(Boolean).join(' · ') || 'waiting for first heartbeat'}</span>
+      <td className="col-grow"><div className="cell-stack">
+        <span className="cell-title mono" title={n.name}>{n.name}</span>
+        <span className="cell-sub mono od-truncate">{[n.address, t.os, t.walroos && `walroos ${t.walroos}`].filter(Boolean).join(' · ') || 'waiting for first heartbeat'}</span>
       </div></td>
-      <td className="hide-sm"><div className="od-cluster" style={{ ['--od-gap' as string]: '4px' }}>{n.roles.map(r => <Chip key={r}>{r}</Chip>)}</div></td>
+      <td className="hide-sm roles-cell"><div className="od-cluster" style={{ ['--od-gap' as string]: '4px' }}>{n.roles.map(r => <Chip key={r}>{r}</Chip>)}</div></td>
       <td><Badge s={n.status} /></td>
       <td className="hide-sm">{live ? <Meter label="CPU" pct={t.cpu_percent} text={`${Math.round(t.cpu_percent)}%`} /> : dash}</td>
       <td className="hide-sm">{live && t.mem_total_mb ? <Meter label="RAM" pct={t.mem_used_mb / t.mem_total_mb * 100} text={`${gb(t.mem_used_mb)}/${gb(t.mem_total_mb)} GB`} /> : dash}</td>
       <td className="hide-md">{live && t.disk_total_gb ? <Meter label="Disk" pct={t.disk_used_gb / t.disk_total_gb * 100} text={`${t.disk_used_gb}/${t.disk_total_gb} GB`} /> : dash}</td>
-      <td className="hide-md">{t.podman ? <div className="cell-stack"><span className="mono">{t.podman}</span><span className="cell-sub od-nowrap">{t.containers} containers</span></div> : dash}</td>
-      <td className="hide-md mono">{t.walroos || dash}</td>
+      <td className="hide-md">{t.podman ? <div className="cell-stack"><span className="mono">{t.podman}</span>
+        <span className="cell-sub od-nowrap">{t.containers} containers</span></div> : dash}</td>
       <td className="hide-sm od-nowrap" style={n.status === 'offline' ? { color: 'var(--bad)' } : undefined}>
         <span className={n.status === 'offline' ? '' : 'muted'}>{ago(n.last_seen)}</span>
       </td>

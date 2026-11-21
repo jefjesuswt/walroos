@@ -51,15 +51,15 @@ export function SettingsPage() {
         ) : (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Name</th><th>Fingerprint</th><th className="hide-sm">Added</th><th><span className="sr-only">Actions</span></th></tr></thead>
+              <thead><tr><th className="col-grow">Name</th><th className="hide-xs">Fingerprint</th><th className="hide-sm">Added</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {keys.map(k => (
                   <tr key={k.id}>
-                    <td><div className="cell-stack">
-                      <span className="cell-title">{k.name}</span>
-                      <span className="cell-sub mono od-truncate" style={{ maxWidth: 340 }} title={k.public_key}>{k.public_key}</span>
+                    <td className="col-grow"><div className="cell-stack">
+                      <span className="cell-title" title={k.name}>{k.name}</span>
+                      <span className="cell-sub mono" title={k.public_key}>{k.public_key}</span>
                     </div></td>
-                    <td className="mono od-truncate" style={{ maxWidth: 220 }} title={k.fingerprint}>{k.fingerprint}</td>
+                    <td className="mono hide-xs"><span className="clip" title={k.fingerprint}>{k.fingerprint}</span></td>
                     <td className="hide-sm muted od-nowrap">{ago(k.created_at)}</td>
                     <td className="ta-r"><button className="btn-icon" aria-label={`Remove ${k.name}`} title="Remove key" onClick={() => remove(k)}><Icon n="trash" /></button></td>
                   </tr>

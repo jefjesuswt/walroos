@@ -195,6 +195,11 @@ body.sb-collapsed .sb-foot { padding-inline: 0; align-items: center; }
    animates the final settle. `top`, not a transform: a transform would become the containing
    block of the mobile FAB. */
 .topbar.tb-settling { transition: top var(--dur) var(--ease); }
+/* Scrolled away from the top, content slides under the bar: a container color and a hairline
+   (M3's on-scroll top app bar) instead of cards being cut by a band of page color. */
+.topbar { transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.topbar.tb-settling { transition: top var(--dur) var(--ease), background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
+.topbar.tb-scrolled { background: var(--s1); box-shadow: 0 1px 0 var(--bd); }
 .crumbs { display: flex; align-items: center; gap: var(--sp2); min-width: 0; flex: 1 1 0; font-size: var(--fs-sm); color: var(--tx2); }
 .crumbs ol { display: flex; align-items: center; gap: var(--sp2); list-style: none; margin: 0; padding: 0; min-width: 0; }
 .crumbs li { display: flex; align-items: center; gap: var(--sp2); min-width: 0; white-space: nowrap; }
@@ -359,7 +364,18 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 .bar i.b-busy { background: var(--busy); } .bar i.b-bad { background: var(--bad); }
 
 /* tables */
-.table-wrap { position: relative; overflow-x: auto; overscroll-behavior-x: contain; border-radius: var(--r3); background: var(--s2); }
+.table-wrap { position: relative; overflow-x: auto; overscroll-behavior-x: contain; border-radius: var(--r3); background: var(--s2); container: table / inline-size; }
+/* Columns drop by the table's own width, not the window's: the sidebar takes ~300px of it, so a
+   1024px window leaves a 700px table that the viewport breakpoints still treated as wide. */
+@container table (max-width: 1120px) { .tbl .hide-md { display: none; } }
+@container table (max-width: 1020px) { .tbl .hide-lg { display: none; } }
+@container table (max-width: 880px) { .tbl .hide-sm { display: none; } }
+@container table (max-width: 640px) {
+  .tbl thead, .tbl .hide-xs { display: none; }
+  .tbl .show-xs { display: table-cell; width: 1%; }
+  .tbl td.show-xs { padding-right: var(--sp1); }
+  .tbl .err-line { max-width: 110px; }
+}
 .tbl { width: 100%; border-collapse: collapse; font-size: var(--fs); }
 .tbl th { text-align: left; font-weight: 500; color: var(--tx2); font-size: var(--fs-xs); letter-spacing: .04em; padding: var(--sp3) var(--sp4); border-bottom: 1px solid var(--bd); white-space: nowrap; }
 .tbl td { padding: var(--sp2) var(--sp4); border-bottom: 1px solid color-mix(in srgb, var(--bd) 70%, transparent); vertical-align: middle; height: 72px; }
@@ -373,6 +389,16 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 .cell-stack { display: grid; gap: 2px; min-width: 0; }
 .cell-stack > * { display: block; }
 .cell-stack > .od-row { display: flex; }
+/* The lead column (name + repo) takes the room the others leave and truncates its text, so a
+   long name never pushes the state or the actions out of the table. max-width: 0 is what lets an
+   auto-layout cell shrink below its content. */
+.tbl .col-grow { width: 100%; max-width: 0; min-width: 200px; }
+@media (max-width: 767px) { .tbl .col-grow { min-width: 140px; } }
+.tbl .col-grow .cell-title, .tbl .col-grow .cell-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tbl .cell-lead > .cell-stack { flex: 1 1 auto; }
+/* A secondary name (a node) clips on one line instead of breaking at every hyphen. */
+.tbl .roles-cell { min-width: 152px; } /* two chips a line, not one under the other */
+.clip { display: block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-actions { display: inline-flex; gap: var(--sp1); align-items: center; justify-content: flex-end; opacity: 0; transition: opacity var(--dur) var(--ease-out); }
 .tbl tr:hover .row-actions, .tbl tr:focus-within .row-actions, .row-actions:has(details[open]) { opacity: 1; }
 @media (hover: none) { .row-actions { opacity: 1; } }
@@ -741,7 +767,7 @@ body.sb-collapsed .sidebar > .sb-user { justify-content: center; padding: 6px 0;
 .sheet-list button.danger, .sheet-list button.danger .ic { color: var(--bad); }
 .sheet-list button:disabled { opacity: .38; cursor: default; }
 @media (hover: hover) { .sheet-list button:not(:disabled):hover { box-shadow: var(--hover); } }
-.err-line { max-width: 220px; color: var(--bad) !important; }
+.err-line { max-width: 180px; color: var(--bad) !important; }
 @media (max-width: 767px) {
   .tbl thead { display: none; }
   .err-line { max-width: 110px; }

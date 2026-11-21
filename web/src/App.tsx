@@ -59,7 +59,7 @@ export function App() {
   // Material 3 "enter always" top app bar, like Compose's enterAlwaysScrollBehavior: the bar
   // follows the scroll pixel for pixel (scroll down 20px, it slides up 20px; scroll back up, it
   // comes back the same way), and when scrolling stops it settles fully shown or fully hidden,
-  // whichever is closer. Same color as the page throughout: no surface change on scroll.
+  // whichever is closer. Away from the top it takes a container color and a hairline (tb-scrolled).
   const topbar = useRef<HTMLElement>(null);
   useEffect(() => {
     const bar = topbar.current;
@@ -73,6 +73,7 @@ export function App() {
     const on = () => {
       const y = Math.max(0, window.scrollY); // ignore rubber-band overscroll above the top
       const h = bar.offsetHeight + 1;
+      bar.classList.toggle('tb-scrolled', y > 0);
       move(y === 0 ? 0 : Math.min(h, Math.max(0, offset + y - last)), false);
       last = y;
       window.clearTimeout(settle);
@@ -83,7 +84,7 @@ export function App() {
     };
     // A new page may be too short to scroll, and then no scroll event would ever bring the bar
     // (and on phones the menu button) back: show it on every route change.
-    const reset = () => { last = Math.max(0, window.scrollY); window.clearTimeout(settle); move(0, true); };
+    const reset = () => { last = Math.max(0, window.scrollY); window.clearTimeout(settle); move(0, true); bar.classList.toggle('tb-scrolled', last > 0); };
     window.addEventListener('scroll', on, { passive: true });
     window.addEventListener('hashchange', reset);
     return () => {
