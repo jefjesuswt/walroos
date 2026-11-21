@@ -1,6 +1,7 @@
 package database
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -54,6 +55,43 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 	if _, err := s.store.Get(ctx, in.Name); err == nil {
 		return Database{}, ErrExists
 	}
+	cred, err := credentials(in)
+	if err != nil {
+		return Database{}, err
+	}
+	d, err := s.place(ctx, in, e)
+	if err != nil {
+		return Database{}, err
+	}
+	d.User, d.DB = cred.user, cred.db
+	if d.password, err = s.box.Seal(cred.password); err != nil {
+		return Database{}, err
+	}
+	return s.start(ctx, d, cred.password)
+}
+
+type credential struct{ user, db, password string }
+
+// credentials are the ones asked for, else a user and database named after it and a random
+// 32-character password (letters and digits: no quoting in an env file or a URL).
+func credentials(in CreateInput) (credential, error) {
+	ident := strings.ReplaceAll(in.Name, "-", "_")
+	if ident[0] >= '0' && ident[0] <= '9' {
+		ident = "db_" + ident // SQL identifiers can't start with a digit
+	}
+	c := credential{
+		user:     cmp.Or(in.User, ident),
+		db:       cmp.Or(in.DB, ident),
+		password: cmp.Or(in.Password, rand.Text()+rand.Text()[:6]),
+	}
+	if !names.SQLIdent(c.user) || !names.SQLIdent(c.db) || !agent.ValidPassword(c.password) || len(strings.TrimSpace(in.Description)) > 500 {
+		return credential{}, ErrInvalid
+	}
+	return c, nil
+}
+
+// place resolves the project and the node: the row as it will be stored, without credentials.
+func (s *Service) place(ctx context.Context, in CreateInput, e agent.Engine) (Database, error) {
 	projectID, err := lookup.ID(ctx, s.store.db, in.Project)
 	if err != nil {
 		return Database{}, err
@@ -62,46 +100,24 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 	if err != nil {
 		return Database{}, err
 	}
-	address, tokenHash, err := s.nodes.AgentTarget(ctx, node.ID)
+	return Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID,
+		Project: cmp.Or(in.Project, lookup.Default), Engine: e.ID, Version: in.Version, Description: strings.TrimSpace(in.Description),
+		BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC()}, nil
+}
+
+// start stores the row, then has the node run the database. Row first: if the node fails, the
+// row goes; the other way round a failed insert would leave a database running that the hub
+// doesn't know.
+func (s *Service) start(ctx context.Context, d Database, password string) (Database, error) {
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, d.NodeID)
 	if err != nil {
 		return Database{}, err
 	}
-	ident := strings.ReplaceAll(in.Name, "-", "_")
-	if ident[0] >= '0' && ident[0] <= '9' {
-		ident = "db_" + ident // SQL identifiers can't start with a digit
-	}
-	password := rand.Text() + rand.Text()[:6] // 32 base32 characters: letters and digits only
-	user, dbName := ident, ident
-	if in.User != "" {
-		user = in.User
-	}
-	if in.DB != "" {
-		dbName = in.DB
-	}
-	if in.Password != "" {
-		password = in.Password
-	}
-	in.Description = strings.TrimSpace(in.Description)
-	if !names.SQLIdent(user) || !names.SQLIdent(dbName) || !agent.ValidPassword(password) || len(in.Description) > 500 {
-		return Database{}, ErrInvalid
-	}
-	sealed, err := s.box.Seal(password)
-	if err != nil {
-		return Database{}, err
-	}
-	project := in.Project
-	if project == "" {
-		project = "default"
-	}
-	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: project, Engine: e.ID, Version: in.Version,
-		User: user, DB: dbName, Description: in.Description, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
-	// Row first: if the node fails, the row goes; the other way round a failed insert would
-	// leave a database running that the hub doesn't know.
 	if err := s.store.Insert(ctx, d); err != nil {
 		return Database{}, err
 	}
 	live, err := s.agents.CreateDatabase(ctx, address, tokenHash, agent.DatabaseSpec{
-		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password, Network: agent.ProjectNetwork(project)})
+		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password, Network: agent.ProjectNetwork(d.Project)})
 	if err != nil {
 		s.store.Delete(ctx, d.ID)
 		return Database{}, agentErr(err)

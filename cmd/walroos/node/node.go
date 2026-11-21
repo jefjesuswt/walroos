@@ -83,76 +83,94 @@ var joinCmd = &cobra.Command{
 var runCmd = &cobra.Command{
 	Use:   "run",
 	Short: "Run the agent: heartbeat with telemetry every 15s",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		st, err := loadState()
-		if err != nil {
-			return ui.WrapError("no node state at %s, run `walroos node join` first: %w", statePath(), err)
-		}
+	RunE:  func(cmd *cobra.Command, args []string) error { return runAgent(cmd.Context()) },
+}
 
-		ctx := cmd.Context()
-		ts, err := tailnet(ctx, st.Name)
-		if err != nil {
-			return err
-		}
-		defer ts.Close()
-		lc, err := ts.LocalClient()
-		if err != nil {
-			return ui.WrapError("tailscale local client: %w", err)
-		}
-		slog.Info("Node agent starting", "name", st.Name, "hub", st.Hub, "listen", listenAddr)
+// runAgent joins the tailnet as the node, serves the agent API, the build registry and the SSH
+// gateway on it, and heartbeats to the hub until ctx ends.
+func runAgent(ctx context.Context) error {
+	st, err := loadState()
+	if err != nil {
+		return ui.WrapError("no node state at %s, run `walroos node join` first: %w", statePath(), err)
+	}
+	ts, err := tailnet(ctx, st.Name)
+	if err != nil {
+		return err
+	}
+	defer ts.Close()
+	api, stop, err := serveAgent(ts, st)
+	if err != nil {
+		return err
+	}
+	defer stop()
+	return heartbeats(ctx, st, api)
+}
 
-		// Only reachable over the tailnet (tsnet listener); anything not from the hub fails WhoIs.
-		api := agent.NewServer(agent.Tailscale(lc), st.Token)
-		if exe, err := os.Executable(); err == nil {
-			api.SetRelay([]string{exe, "node", "relay"}) // app health checks run it in the app's netns
+// serveAgent starts the agent API and the registry on the tailnet, and SSH if enabled. Only
+// reachable over the tailnet (tsnet listener); anything not from the hub fails WhoIs.
+func serveAgent(ts *tsnet.Server, st state) (*agent.Server, func(), error) {
+	lc, err := ts.LocalClient()
+	if err != nil {
+		return nil, nil, ui.WrapError("tailscale local client: %w", err)
+	}
+	slog.Info("Node agent starting", "name", st.Name, "hub", st.Hub, "listen", listenAddr)
+	api := agent.NewServer(agent.Tailscale(lc), st.Token)
+	if exe, err := os.Executable(); err == nil {
+		api.SetRelay([]string{exe, "node", "relay"}) // app health checks run it in the app's netns
+	}
+	api.SetDial(ts.Dial) // prod nodes pull builds from a build node's registry over the tailnet
+	var closers []func() error
+	stop := func() {
+		for _, c := range closers {
+			c()
 		}
-		ln, err := ts.Listen("tcp", listenAddr)
+	}
+	for _, l := range []struct {
+		addr    string
+		handler http.Handler
+	}{{listenAddr, api.Handler()}, {":" + agent.RegistryPort, api.RegistryHandler()}} {
+		ln, err := ts.Listen("tcp", l.addr)
 		if err != nil {
-			return ui.WrapError("agent listen %s: %w", listenAddr, err)
+			stop()
+			return nil, nil, ui.WrapError("agent listen %s: %w", l.addr, err)
 		}
-		srv := &http.Server{Handler: api.Handler(), ReadHeaderTimeout: 10 * time.Second}
+		srv := &http.Server{Handler: l.handler, ReadHeaderTimeout: 10 * time.Second}
 		go srv.Serve(ln)
-		defer srv.Close()
-
-		// Prod nodes pull builds from a build node's registry over the tailnet.
-		api.SetDial(ts.Dial)
-		regLn, err := ts.Listen("tcp", ":"+agent.RegistryPort)
+		closers = append(closers, srv.Close)
+	}
+	if sshAddr != "" {
+		sshLn, err := startSSH(ts, api, st)
 		if err != nil {
-			return ui.WrapError("registry listen: %w", err)
+			stop()
+			return nil, nil, err
 		}
-		reg := &http.Server{Handler: api.RegistryHandler(), ReadHeaderTimeout: 10 * time.Second}
-		go reg.Serve(regLn)
-		defer reg.Close()
+		closers = append(closers, sshLn.Close)
+	}
+	return api, stop, nil
+}
 
-		if sshAddr != "" {
-			sshLn, err := startSSH(ts, api, st)
-			if err != nil {
-				return err
-			}
-			defer sshLn.Close()
+// heartbeats reports telemetry every HeartbeatInterval and learns the hub's identity from the
+// answer. It stops when ctx ends, or when the hub no longer knows this node.
+func heartbeats(ctx context.Context, st state, api *agent.Server) error {
+	ticker := time.NewTicker(fleet.HeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		hubID, err := heartbeat(ctx, st)
+		api.SetHubID(hubID)
+		var he *httpError
+		switch {
+		case errors.As(err, &he) && he.status == http.StatusUnauthorized:
+			return ui.WrapError("the hub rejected this node (removed?). Join again with a new token")
+		case err != nil:
+			slog.Error("Heartbeat failed", "hub", st.Hub, "err", err) // hub down or network blip: keep trying
 		}
-
-		ticker := time.NewTicker(fleet.HeartbeatInterval)
-		defer ticker.Stop()
-		for {
-			hubID, err := heartbeat(ctx, st)
-			api.SetHubID(hubID)
-			var he *httpError
-			switch {
-			case errors.As(err, &he) && he.status == http.StatusUnauthorized:
-				return ui.WrapError("the hub rejected this node (removed?). Join again with a new token")
-			case err != nil:
-				slog.Error("Heartbeat failed", "hub", st.Hub, "err", err) // hub down or network blip: keep trying
-			}
-
-			select {
-			case <-ctx.Done():
-				slog.Info("Node agent stopped")
-				return nil
-			case <-ticker.C:
-			}
+		select {
+		case <-ctx.Done():
+			slog.Info("Node agent stopped")
+			return nil
+		case <-ticker.C:
 		}
-	},
+	}
 }
 
 func init() {

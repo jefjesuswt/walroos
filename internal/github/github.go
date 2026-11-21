@@ -63,24 +63,10 @@ type Repo struct {
 // do sends a request and decodes the answer into out. The token only goes in the header, so no
 // error here carries it.
 func (c *Client) do(ctx context.Context, method, path string, body, out any) (http.Header, error) {
-	var rd *bytes.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		rd = bytes.NewReader(b)
-	} else {
-		rd = bytes.NewReader(nil)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, rd)
+	req, err := c.request(ctx, method, path, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.Token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		var ue *url.Error
@@ -90,13 +76,37 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) (ht
 		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 300 {
-		if out == nil {
-			return resp.Header, nil
-		}
-		return resp.Header, json.NewDecoder(resp.Body).Decode(out)
+	if resp.StatusCode >= 300 {
+		return nil, failure(resp, method, path)
 	}
+	if out == nil {
+		return resp.Header, nil
+	}
+	return resp.Header, json.NewDecoder(resp.Body).Decode(out)
+}
 
+func (c *Client) request(ctx context.Context, method, path string, body any) (*http.Request, error) {
+	rd := bytes.NewReader(nil)
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+		rd = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.URL+path, rd)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("Content-Type", "application/json")
+	return req, nil
+}
+
+// failure turns a non-2xx answer into the error that says what to fix.
+func failure(resp *http.Response, method, path string) error {
 	var e struct {
 		Message string `json:"message"`
 		Errors  []struct {
@@ -110,16 +120,16 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) (ht
 	}
 	switch {
 	case resp.StatusCode == 401:
-		return nil, ErrToken
+		return ErrToken
 	case resp.StatusCode == 403 && resp.Header.Get("X-RateLimit-Remaining") == "0",
 		resp.StatusCode == 429, resp.StatusCode >= 500:
-		return nil, fmt.Errorf("%w (%d %s)", ErrUnavailable, resp.StatusCode, msg)
+		return fmt.Errorf("%w (%d %s)", ErrUnavailable, resp.StatusCode, msg)
 	case resp.StatusCode == 403, resp.StatusCode == 404: // fine-grained tokens get 404 for what they can't see
-		return nil, ErrScope
+		return ErrScope
 	case resp.StatusCode == 422 && strings.Contains(msg, "already exists"):
-		return nil, ErrRepoExists
+		return ErrRepoExists
 	}
-	return nil, fmt.Errorf("github: %s %s: %d %s", method, path, resp.StatusCode, msg)
+	return fmt.Errorf("github: %s %s: %d %s", method, path, resp.StatusCode, msg)
 }
 
 func (c *Client) User(ctx context.Context) (User, error) {
