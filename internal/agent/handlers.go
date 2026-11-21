@@ -140,6 +140,109 @@ func (s *Server) appRoutes(r *whttp.Router) {
 	r.Get("/v1/apps/{name}/logs", s.handleAppLogs)
 	r.Delete("/v1/apps/{name}", s.handleDeleteApp)
 	r.Put("/v1/tunnel", s.handleSetTunnel)
+
+	r.Get("/v1/databases", s.handleListDatabases)
+	r.Post("/v1/databases", s.handleCreateDatabase)
+	r.Delete("/v1/databases/{name}", s.handleDeleteDatabase)
+	r.Post("/v1/databases/{name}/backups", s.handleBackupDatabase)
+	r.Get("/v1/databases/{name}/backups", s.handleListBackups)
+	r.Get("/v1/databases/{name}/backups/{file}", s.handleDownloadBackup)
+	r.Post("/v1/databases/{name}/restore", s.handleRestoreDatabase)
+}
+
+func databaseError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidDatabase):
+		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, ErrDatabaseNotFound), errors.Is(err, ErrBackupNotFound):
+		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrAppBusy):
+		whttp.ErrorJSON(w, http.StatusConflict, "a backup, restore or delete of this database is already running")
+	default:
+		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
+	list, err := s.apps.ListDatabases(r.Context())
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
+	var spec DatabaseSpec
+	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	d, err := s.apps.CreateDatabase(r.Context(), spec)
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusCreated, d)
+}
+
+func (s *Server) handleDeleteDatabase(w http.ResponseWriter, r *http.Request) {
+	if err := s.apps.DeleteDatabase(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
+		databaseError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleBackupDatabase(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Keep int `json:"keep"`
+	}
+	json.NewDecoder(r.Body).Decode(&in)
+	b, err := s.apps.BackupDatabase(r.Context(), r.PathValue("name"), in.Keep)
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusCreated, b)
+}
+
+func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
+	list, err := s.apps.ListBackups(r.Context(), r.PathValue("name"))
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	whttp.JSON(w, http.StatusOK, list)
+}
+
+func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
+	f, err := s.apps.OpenBackup(r.Context(), r.PathValue("name"), r.PathValue("file"))
+	if err != nil {
+		databaseError(w, err)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/gzip")
+	if st, err := f.Stat(); err == nil {
+		w.Header().Set("Content-Length", strconv.FormatInt(st.Size(), 10))
+	}
+	io.Copy(w, f)
+}
+
+func (s *Server) handleRestoreDatabase(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		File string `json:"file"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := s.apps.RestoreDatabase(r.Context(), r.PathValue("name"), in.File); err != nil {
+		databaseError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {

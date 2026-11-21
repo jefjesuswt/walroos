@@ -302,6 +302,18 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Bases de datos con backups (2026-11-21)
+
+Página **Databases** (y `internal/database`, migración 009): PostgreSQL 18/17/16, MySQL 8.4, MariaDB 11.8/11.4 y Redis 8/7 en un nodo `prod`, con imágenes oficiales de Docker Hub.
+- **En el nodo:** un Quadlet `walroos-db-<nombre>` en la red `walroos` (las apps del mismo nodo lo alcanzan por ese nombre), sin puertos en el host, con el guard de egress y `Memory=2g`. Datos en el volumen `walroos-db-<nombre>` (con etiqueta `walroos.db`). La contraseña la genera el hub (32 letras y dígitos), se guarda cifrada y llega al nodo en un env file `0600`, nunca en el unit ni en argv.
+- **Conexión:** `GET /api/databases/{name}` trae `url` con la contraseña (las listas no). **Link to app** (`POST .../link`) la pone en el env de una app como secreta (`DATABASE_URL`, o `REDIS_URL`); aplica en el próximo deploy. Solo apps del mismo nodo.
+- **Backups:** `pg_dump --clean --if-exists`, `mysqldump`/`mariadb-dump --single-transaction` o el RDB de Redis (`SAVE` + `dump.rdb`), comprimidos con gzip en `~/walroos-backups/<nombre>/` del nodo (fuera de `~/walroos-data`, así que ninguna app puede montarlos). Por defecto cada 24 h y se guardan 7; se cambia con `PUT .../schedule` (0 = apagado). El hub revisa cada minuto qué toca; un fallo cuenta como intento y se ve en la UI.
+- **Descargar y restaurar** desde la UI. Restaurar reemplaza los datos (confirmación). Redis: escribe el RDB y hace `SHUTDOWN NOSAVE`; systemd lo levanta y lo carga.
+- **Borrar** quita el unit; con *purge* también el volumen y los backups.
+- **MCP:** `list_databases`, `create_database`, `link_database`, `backup_database`, `list_database_backups`. Sin borrar ni restaurar: destruyen datos y van por la UI. `create_database` y `link_database` no devuelven la contraseña al modelo.
+- **Probado:** test del hub con un agente falso (crear, validación, nodo que falla, nodo caído, schedule, backups programados, descarga, restore, link, borrar) y podman real con systemd (`TestDatabasePodman`: los 5 motores, escribir, backup, cambiar, restore y comprobar, `keep`, nombres de archivo maliciosos, borrar con y sin purge). UI con una API falsa en móvil, claro, oscuro y Dracula. **Sin probar de punta a punta por la tailnet.**
+- Límites (`ponytail:`): backups solo en el disco del nodo (sin S3/R2: hay que descargarlos para tener copia fuera); sin MongoDB; sin subir un dump propio para restaurar; recrear una base con el mismo nombre sin purge recupera los datos pero con la contraseña vieja; mismo límite de memoria para todas.
+
 ## Apps fuera de la LAN (2026-11-19)
 
 Para el homelab: una app expuesta que cae no debe abrir la red de casa. Detalle en ARCHITECTURE.md, "Exponer apps desde un homelab".

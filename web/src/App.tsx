@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type User } from './api';
 import { AppDetail, AppsPage, DeploymentsPage } from './Apps';
+import { DatabaseDetail, DatabasesPage } from './Databases';
 import { NodesPage } from './Nodes';
 import { SettingsPage } from './Settings';
 import { WorkspacesPage } from './Workspaces';
@@ -12,6 +13,7 @@ const NAV = [
   ['workspaces', 'Workspaces', 'workspace', ''],
   ['apps', 'Apps', 'apps', ''],
   ['deployments', 'Deployments', 'deploy', ''],
+  ['databases', 'Databases', 'database', ''],
   ['nodes', 'Nodes', 'nodes', ''],
   ['integrations', 'Integrations', 'plug', 'M4'],
   ['settings', 'Settings', 'settings', ''],
@@ -42,6 +44,7 @@ export function App() {
   const [addNode, setAddNode] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [newApp, setNewApp] = useState(false);
+  const [newDatabase, setNewDatabase] = useState(false);
   const [sub, setSub] = useState(() => decodeURIComponent(routeParts()[1] ?? ''));
 
   useEffect(() => {
@@ -146,6 +149,7 @@ export function App() {
           <div className="tb-primary">
             {route === 'nodes' && <button className="btn btn-primary" onClick={() => setAddNode(true)}><Icon n="plus" /><span className="tb-label">Add node</span></button>}
             {route === 'apps' && !sub && <button className="btn btn-primary" onClick={() => setNewApp(true)}><Icon n="plus" /><span className="tb-label">New app</span></button>}
+            {route === 'databases' && !sub && <button className="btn btn-primary" onClick={() => setNewDatabase(true)}><Icon n="plus" /><span className="tb-label">New database</span></button>}
             {route === 'workspaces' && <button className="btn btn-primary" onClick={() => setNewWorkspace(true)}><Icon n="plus" /><span className="tb-label">New workspace</span></button>}
           </div>
         </header>
@@ -155,6 +159,7 @@ export function App() {
               : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
               : route === 'apps' ? (sub ? <AppDetail key={sub} name={sub} /> : <AppsPage newOpen={newApp} setNewOpen={setNewApp} />)
               : route === 'deployments' ? <DeploymentsPage />
+              : route === 'databases' ? (sub ? <DatabaseDetail key={sub} name={sub} /> : <DatabasesPage newOpen={newDatabase} setNewOpen={setNewDatabase} />)
               : route === 'settings' ? <SettingsPage />
               : nav ? <EmptyState icon={nav[2]} title={`${nav[1]} land in ${nav[3]}`} text="See ARCHITECTURE.md for the roadmap." />
               : <EmptyState icon="alert" title="Nothing here" text="That page doesn't exist." action={<a className="btn" href="#/nodes">Back to nodes</a>} />}

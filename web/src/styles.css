@@ -370,7 +370,9 @@ a.stat { transition: border-color var(--dur) var(--ease-out); }
 @container table (max-width: 1120px) { .tbl .hide-md { display: none; } }
 @container table (max-width: 1020px) { .tbl .hide-lg { display: none; } }
 @container table (max-width: 880px) { .tbl .hide-sm { display: none; } }
+.tbl .show-xs-inline { display: none; }
 @container table (max-width: 640px) {
+  .tbl .show-xs-inline { display: block; }
   .tbl thead, .tbl .hide-xs { display: none; }
   .tbl .show-xs { display: table-cell; width: 1%; }
   .tbl td.show-xs { padding-right: var(--sp1); }
