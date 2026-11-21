@@ -40,6 +40,7 @@ Tailscale saca su tráfico por fuera de cualquier VPN (`SO_MARK` / `SO_BINDTODEV
 
 - [ ] Nodo con tag (no usuario) → rechazado. Sin probar: hace falta un dispositivo con tag en la tailnet.
 - [x] **`walroos node install`** (2026-11-18): escribe `~/.config/systemd/user/walroos-node.service` (`Restart=on-failure`), lo activa y arranca, e intenta `loginctl enable-linger`. `loginctl` sale con 0 aunque polkit lo rechace (sin sesión activa, p. ej. `wsl -- …`), así que se relee `Linger` y, si no quedó, imprime el `sudo loginctl enable-linger <usuario>`. Probado en WSL Arch con systemd: servicio activo, heartbeats con telemetría de podman, `kill -9` → reiniciado a los 10 s.
+  - (2026-11-21) La unidad lleva `KillMode=process`. Un workspace que arranca el agente deja su `conmon` en el cgroup del servicio, y con el modo por defecto cada `systemctl --user restart walroos-node` lo mataba y paraba el workspace. Probado en real: workspace arrancado por el hub, reinicio del nodo, el contenedor sigue `Up`. Los nodos ya instalados lo toman con `walroos node install` y un reinicio.
 
 ## M1 — Workspaces ✅ (2026-11-17)
 

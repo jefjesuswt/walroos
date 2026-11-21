@@ -223,6 +223,10 @@ var installCmd = &cobra.Command{
 
 // unit is the systemd --user service for `node run`. on-failure restarts it after a crash or
 // after the hub rejects the node (exit 1): once you `node join` again, it comes back on its own.
+// KillMode=process: a workspace the agent starts (podman start/run) keeps its conmon in this
+// service's cgroup, and the default control-group mode killed it on every restart, stopping the
+// workspace. Only the agent itself is stopped now; containers and their conmon live on.
+// ponytail: a clone or build in flight also outlives a restart, unwatched (the agent forgets it).
 func unit(exe string) string {
 	return `[Unit]
 Description=walroos node agent
@@ -233,6 +237,7 @@ Wants=network-online.target
 ExecStart="` + exe + `" node run
 Restart=on-failure
 RestartSec=10
+KillMode=process
 
 [Install]
 WantedBy=default.target
