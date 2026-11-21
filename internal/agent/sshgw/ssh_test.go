@@ -1,6 +1,6 @@
 //go:build linux
 
-package agent
+package sshgw
 
 import (
 	"bytes"
@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	sshagent "golang.org/x/crypto/ssh/agent"
@@ -118,15 +119,15 @@ func newTestGateway(t *testing.T) *testGateway {
 		},
 		newSigner(t),
 	)
-	g.lookup = func(_ context.Context, name string) (Workspace, error) {
+	g.lookup = func(_ context.Context, name string) (agent.Workspace, error) {
 		// Host and container paths are the same here, so AgentDir is the host dir.
-		ws := Workspace{Name: name, State: "running", Folder: folder, AgentDir: tg.agentDir}
+		ws := agent.Workspace{Name: name, State: "running", Folder: folder, AgentDir: tg.agentDir}
 		if msg := tg.wsErr.Load().(string); msg != "" {
 			return ws, errors.New(msg)
 		}
 		return ws, nil
 	}
-	g.command = func(ctx context.Context, ws Workspace, _ bool, env, argv []string) *exec.Cmd {
+	g.command = func(ctx context.Context, ws agent.Workspace, _ bool, env, argv []string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 		cmd.Dir = ws.Folder
 		// Like a container: no host ssh-agent and no host dotfiles (one exporting SSH_AUTH_SOCK
@@ -137,7 +138,7 @@ func newTestGateway(t *testing.T) *testGateway {
 		return cmd
 	}
 	exe := self(t)
-	g.dial = func(ctx context.Context, _ Workspace, addr string) (*exec.Cmd, error) {
+	g.dial = func(ctx context.Context, _ agent.Workspace, addr string) (*exec.Cmd, error) {
 		cmd := exec.CommandContext(ctx, exe, "", addr)
 		cmd.Env = append(os.Environ(), "WALROOS_TEST_RELAY=1")
 		return cmd, nil

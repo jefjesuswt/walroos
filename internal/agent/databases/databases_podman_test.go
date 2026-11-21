@@ -1,6 +1,6 @@
 //go:build linux
 
-package agent
+package databases
 
 import (
 	"context"
@@ -12,6 +12,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
+	"github.com/jefjesuswt/walroos/internal/agent/quadlet"
 )
 
 // TestDatabasePodman runs each engine as a Quadlet on real podman and systemd --user: write a
@@ -56,17 +60,17 @@ func TestDatabasePodman(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.engine+"-"+c.version, func(t *testing.T) {
 			ctx := context.Background()
-			a := NewApps()
-			a.data = filepath.Join(t.TempDir(), "walroos-data") // backups land next to it, not in $HOME
+			a := New(quadlet.New())
+			a.q.Data = filepath.Join(t.TempDir(), "walroos-data") // backups land next to it, not in $HOME
 			name := fmt.Sprintf("t%s%s%d", c.engine[:2], strings.ReplaceAll(c.version, ".", ""), time.Now().UnixNano()%1e6)
 			t.Cleanup(func() { a.DeleteDatabase(context.Background(), name, true) })
 
-			spec := DatabaseSpec{Name: name, Engine: c.engine, Version: c.version, User: "app", DB: "app", Password: rand.Text()} // a throwaway per run, letters and digits
+			spec := agent.DatabaseSpec{Name: name, Engine: c.engine, Version: c.version, User: "app", DB: "app", Password: rand.Text()} // a throwaway per run, letters and digits
 			if _, err := a.CreateDatabase(ctx, spec); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := a.CreateDatabase(ctx, spec); !errors.Is(err, ErrInvalidDatabase) {
-				t.Errorf("second create: %v, want ErrInvalidDatabase", err)
+			if _, err := a.CreateDatabase(ctx, spec); !errors.Is(err, ErrInvalid) {
+				t.Errorf("second create: %v, want ErrInvalid", err)
 			}
 			d, e, err := a.database(ctx, name)
 			if err != nil {
@@ -77,7 +81,7 @@ func TestDatabasePodman(t *testing.T) {
 			}
 			sh := func(script string) string {
 				t.Helper()
-				out, err := podman(ctx, "exec", d.Container, "sh", "-c", script)
+				out, err := host.Podman(ctx, "exec", d.Container, "sh", "-c", script)
 				if err != nil {
 					t.Fatalf("%s: %v", script, err)
 				}
@@ -85,13 +89,13 @@ func TestDatabasePodman(t *testing.T) {
 			}
 			// The password is required: without it the client is refused.
 			if c.engine == "redis" {
-				if out, _ := podman(ctx, "exec", "-e", "REDISCLI_AUTH=", d.Container, "redis-cli", "GET", "k"); !strings.Contains(out, "NOAUTH") {
+				if out, _ := host.Podman(ctx, "exec", "-e", "REDISCLI_AUTH=", d.Container, "redis-cli", "GET", "k"); !strings.Contains(out, "NOAUTH") {
 					t.Errorf("redis without a password answered %q", out)
 				}
 			}
 			// The password never reaches the unit file.
-			unit, _ := os.ReadFile(filepath.Join(a.dir, d.Container+".container"))
-			if strings.Contains(string(unit), spec.Password) || !strings.Contains(string(unit), "Network="+AppNetwork) {
+			unit, _ := os.ReadFile(filepath.Join(a.q.Dir, d.Container+".container"))
+			if strings.Contains(string(unit), spec.Password) || !strings.Contains(string(unit), "Network="+agent.AppNetwork) {
 				t.Errorf("unit:\n%s", unit)
 			}
 
@@ -100,7 +104,7 @@ func TestDatabasePodman(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if b.Size == 0 || !backupRe.MatchString(b.File) {
+			if b.Size == 0 || !agent.ValidBackupFile(b.File) {
 				t.Errorf("backup = %+v", b)
 			}
 			sh(c.change)
@@ -128,8 +132,8 @@ func TestDatabasePodman(t *testing.T) {
 				t.Errorf("backups = %+v, want the 2 newest", list)
 			}
 			for _, bad := range []string{"../../etc/passwd", b.File, "x.sql.gz"} {
-				if err := a.RestoreDatabase(ctx, name, bad); !errors.Is(err, ErrBackupNotFound) {
-					t.Errorf("restore %q: %v, want ErrBackupNotFound", bad, err)
+				if err := a.RestoreDatabase(ctx, name, bad); !errors.Is(err, ErrNoBackup) {
+					t.Errorf("restore %q: %v, want ErrNoBackup", bad, err)
 				}
 			}
 
@@ -137,13 +141,13 @@ func TestDatabasePodman(t *testing.T) {
 			if err := a.DeleteDatabase(ctx, name, false); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := podman(ctx, "volume", "exists", d.Container); err != nil {
+			if _, err := host.Podman(ctx, "volume", "exists", d.Container); err != nil {
 				t.Error("delete without purge removed the data volume")
 			}
 			if err := a.DeleteDatabase(ctx, name, true); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := podman(ctx, "volume", "exists", d.Container); err == nil {
+			if _, err := host.Podman(ctx, "volume", "exists", d.Container); err == nil {
 				t.Error("purge left the data volume")
 			}
 			if _, err := os.Stat(a.backups(name)); !errors.Is(err, os.ErrNotExist) {
@@ -160,19 +164,19 @@ func TestProjectNetworkPodman(t *testing.T) {
 		t.Skip("set WALROOS_PODMAN_TEST=1")
 	}
 	ctx := context.Background()
-	a := NewApps()
-	a.data = filepath.Join(t.TempDir(), "walroos-data")
+	a := New(quadlet.New())
+	a.q.Data = filepath.Join(t.TempDir(), "walroos-data")
 	id := fmt.Sprint(time.Now().UnixNano() % 1e6)
 	pa, pb := "pa"+id, "pb"+id
 	t.Cleanup(func() {
-		for _, n := range []string{ProjectNetwork(pa), ProjectNetwork(pb)} {
-			podman(context.Background(), "network", "rm", "-f", n)
+		for _, n := range []string{agent.ProjectNetwork(pa), agent.ProjectNetwork(pb)} {
+			host.Podman(context.Background(), "network", "rm", "-f", n)
 		}
 	})
-	start := func(name, project string) Database {
+	start := func(name, project string) agent.Database {
 		t.Helper()
 		t.Cleanup(func() { a.DeleteDatabase(context.Background(), name, true) })
-		spec := DatabaseSpec{Name: name, Engine: "redis", Version: "8", User: "app", DB: "app", Password: rand.Text(), Network: ProjectNetwork(project)}
+		spec := agent.DatabaseSpec{Name: name, Engine: "redis", Version: "8", User: "app", DB: "app", Password: rand.Text(), Network: agent.ProjectNetwork(project)}
 		if _, err := a.CreateDatabase(ctx, spec); err != nil {
 			t.Fatal(err)
 		}
@@ -187,8 +191,8 @@ func TestProjectNetworkPodman(t *testing.T) {
 	}
 	one, two, other := start("a1"+id, pa), start("a2"+id, pa), start("b1"+id, pb)
 
-	ping := func(from Database, host string) string {
-		out, _ := podman(ctx, "exec", from.Container, "sh", "-c", `timeout 5 redis-cli -h "$1" -a x --no-auth-warning ping 2>&1 || true`, "sh", host)
+	ping := func(from agent.Database, target string) string {
+		out, _ := host.Podman(ctx, "exec", from.Container, "sh", "-c", `timeout 5 redis-cli -h "$1" -a x --no-auth-warning ping 2>&1 || true`, "sh", target)
 		return out
 	}
 	// Same project: by alias (the service name) and by container name. NOAUTH/WRONGPASS means it
@@ -202,7 +206,7 @@ func TestProjectNetworkPodman(t *testing.T) {
 	if got := ping(other, "a1"+id); strings.Contains(got, "WRONGPASS") || strings.Contains(got, "PONG") {
 		t.Errorf("another project resolved and reached a1: %q", got)
 	}
-	ip, err := podman(ctx, "inspect", "--format", `{{(index .NetworkSettings.Networks "`+ProjectNetwork(pa)+`").IPAddress}}`, one.Container)
+	ip, err := host.Podman(ctx, "inspect", "--format", `{{(index .NetworkSettings.Networks "`+agent.ProjectNetwork(pa)+`").IPAddress}}`, one.Container)
 	if err != nil || ip == "" {
 		t.Fatalf("ip of %s: %q %v", one.Container, ip, err)
 	}
@@ -210,8 +214,8 @@ func TestProjectNetworkPodman(t *testing.T) {
 		t.Errorf("another project reached %s by IP: %q", ip, got)
 	}
 	// The guard's rule names the project's bridge.
-	bridge, _ := podman(ctx, "network", "inspect", ProjectNetwork(pa), "--format", "{{.NetworkInterface}}")
-	rules, _ := os.ReadFile(filepath.Join(a.dir, guardFile))
+	bridge, _ := host.Podman(ctx, "network", "inspect", agent.ProjectNetwork(pa), "--format", "{{.NetworkInterface}}")
+	rules, _ := os.ReadFile(filepath.Join(a.q.Dir, quadlet.GuardFile))
 	if bridge == "" || !strings.Contains(string(rules), `"`+bridge+`"`) {
 		t.Errorf("guard rules don't cover %q:\n%s", bridge, rules)
 	}

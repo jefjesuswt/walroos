@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/server"
+	"github.com/jefjesuswt/walroos/internal/agent/sshgw"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/shared/ui"
 	"github.com/spf13/cobra"
@@ -108,13 +110,13 @@ func runAgent(ctx context.Context) error {
 
 // serveAgent starts the agent API and the registry on the tailnet, and SSH if enabled. Only
 // reachable over the tailnet (tsnet listener); anything not from the hub fails WhoIs.
-func serveAgent(ts *tsnet.Server, st state) (*agent.Server, func(), error) {
+func serveAgent(ts *tsnet.Server, st state) (*server.Server, func(), error) {
 	lc, err := ts.LocalClient()
 	if err != nil {
 		return nil, nil, ui.WrapError("tailscale local client: %w", err)
 	}
 	slog.Info("Node agent starting", "name", st.Name, "hub", st.Hub, "listen", listenAddr)
-	api := agent.NewServer(agent.Tailscale(lc), st.Token)
+	api := server.New(agent.Tailscale(lc), st.Token)
 	if exe, err := os.Executable(); err == nil {
 		api.SetRelay([]string{exe, "node", "relay"}) // app health checks run it in the app's netns
 	}
@@ -151,7 +153,7 @@ func serveAgent(ts *tsnet.Server, st state) (*agent.Server, func(), error) {
 
 // heartbeats reports telemetry every HeartbeatInterval and learns the hub's identity from the
 // answer. It stops when ctx ends, or when the hub no longer knows this node.
-func heartbeats(ctx context.Context, st state, api *agent.Server) error {
+func heartbeats(ctx context.Context, st state, api *server.Server) error {
 	ticker := time.NewTicker(fleet.HeartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -269,13 +271,13 @@ var relayCmd = &cobra.Command{
 	Use:    "relay ROOT HOST:PORT",
 	Hidden: true,
 	Args:   cobra.ExactArgs(2),
-	RunE:   func(cmd *cobra.Command, args []string) error { return agent.Relay(args[0], args[1]) },
+	RunE:   func(cmd *cobra.Command, args []string) error { return sshgw.Relay(args[0], args[1]) },
 }
 
 // startSSH serves the SSH gateway. Keys are checked with the hub; the host key lives next to
 // node.json so clients see the same one across restarts.
-func startSSH(ts *tsnet.Server, api *agent.Server, st state) (net.Listener, error) {
-	hostKey, err := agent.LoadOrCreateHostKey(filepath.Join(filepath.Dir(statePath()), "ssh_host_ed25519_key"))
+func startSSH(ts *tsnet.Server, api *server.Server, st state) (net.Listener, error) {
+	hostKey, err := sshgw.LoadOrCreateHostKey(filepath.Join(filepath.Dir(statePath()), "ssh_host_ed25519_key"))
 	if err != nil {
 		return nil, ui.WrapError("ssh host key: %w", err)
 	}

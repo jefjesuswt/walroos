@@ -1,4 +1,4 @@
-package agent
+package quadlet
 
 import (
 	"context"
@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
 )
 
 // Apps are reachable from the internet, so assume one gets compromised: it must not become a
@@ -26,7 +29,7 @@ import (
 // the netns was just rebuilt) the app is unguarded.
 //
 // ponytail: no per-app allowlist; add one when an app must reach a LAN service (a NAS database).
-const guardFile = "walroos-guard.nft"
+const GuardFile = "walroos-guard.nft"
 
 var guardBlocked = [...]string{
 	"10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10", // LAN, link-local (cloud metadata), CGNAT + tailnet
@@ -36,20 +39,20 @@ var guardBlocked = [...]string{
 var bridgeRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`) // goes into the nft file
 
 // guard writes the rule for the app networks and returns the unit line that applies it to container.
-func (a *Apps) guard(ctx context.Context, container string) (string, error) {
-	nets := []string{AppNetwork, EdgeNetwork}
+func (h *Host) Guard(ctx context.Context, container string) (string, error) {
+	nets := []string{agent.AppNetwork, EdgeNetwork}
 	for _, n := range nets {
-		if err := ensureNetwork(ctx, n); err != nil {
+		if err := host.EnsureNetwork(ctx, n); err != nil {
 			return "", err
 		}
 	}
 	// Every project's network too: a project's services get the same rule as the rest.
-	projects, err := podman(ctx, "network", "ls", "--filter", "label="+labelProject, "--format", "{{.Name}}")
+	projects, err := host.Podman(ctx, "network", "ls", "--filter", "label="+LabelProject, "--format", "{{.Name}}")
 	if err != nil {
 		return "", err
 	}
 	nets = append(nets, strings.Fields(projects)...)
-	out, err := podman(ctx, append(append([]string{"network", "inspect"}, nets...), "--format", "{{.NetworkInterface}}")...)
+	out, err := host.Podman(ctx, append(append([]string{"network", "inspect"}, nets...), "--format", "{{.NetworkInterface}}")...)
 	if err != nil {
 		return "", err
 	}
@@ -63,10 +66,10 @@ func (a *Apps) guard(ctx context.Context, container string) (string, error) {
 	if len(bridges) != len(nets) {
 		return "", fmt.Errorf("app network bridges: %q", out)
 	}
-	if err := os.MkdirAll(a.dir, 0o755); err != nil {
+	if err := os.MkdirAll(h.Dir, 0o755); err != nil {
 		return "", err
 	}
-	f := filepath.Join(a.dir, guardFile)
+	f := filepath.Join(h.Dir, GuardFile)
 	if err := os.WriteFile(f, []byte(guardRules(strings.Join(bridges, ", "))), 0o644); err != nil {
 		return "", err
 	}

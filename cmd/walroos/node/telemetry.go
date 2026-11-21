@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jefjesuswt/walroos/internal/agent"
+	podman "github.com/jefjesuswt/walroos/internal/agent/host"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/version"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -36,7 +36,7 @@ func collectTelemetry(ctx context.Context) fleet.Telemetry {
 		t.DiskUsedGB, t.DiskTotalGB = d.Used>>30, d.Total>>30
 	}
 
-	t.Podman = agent.PodmanVersion(ctx)
+	t.Podman = podman.PodmanVersion(ctx)
 	if out, err := exec.CommandContext(ctx, "podman", "ps", "-aq").Output(); err == nil {
 		t.Containers = len(strings.Fields(string(out)))
 	}

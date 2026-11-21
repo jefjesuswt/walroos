@@ -1,4 +1,4 @@
-package agent
+package workspaces
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/jefjesuswt/walroos/internal/agent/host"
 )
 
 // baseContainerfile is the walroos base image (Debian, git, curl, mise, sftp-server, user dev),
@@ -35,7 +37,7 @@ func ensureBaseImage(ctx context.Context) (string, error) {
 	defer baseMu.Unlock()
 
 	image := BaseImage()
-	if _, err := podman(ctx, "image", "exists", image); err == nil {
+	if _, err := host.Podman(ctx, "image", "exists", image); err == nil {
 		pruneOldBaseImages(ctx, image) // an old one may have been freed since (its workspace deleted)
 		return image, nil
 	}
@@ -48,7 +50,7 @@ func ensureBaseImage(ctx context.Context) (string, error) {
 	if err := os.WriteFile(filepath.Join(dir, "Containerfile"), baseContainerfile, 0o644); err != nil {
 		return "", err
 	}
-	if _, err := podman(ctx, "build", "-t", image, dir); err != nil {
+	if _, err := host.Podman(ctx, "build", "-t", image, dir); err != nil {
 		return "", fmt.Errorf("build base image: %w", err)
 	}
 	pruneOldBaseImages(ctx, image)
@@ -60,10 +62,10 @@ func ensureBaseImage(ctx context.Context) (string, error) {
 // the next time a workspace asks for the base image.
 func pruneOldBaseImages(ctx context.Context, keep string) {
 	repo := keep[:strings.LastIndex(keep, ":")]
-	out, _ := podman(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}", "--filter", "reference="+repo)
+	out, _ := host.Podman(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}", "--filter", "reference="+repo)
 	for _, img := range strings.Fields(out) {
 		if img != keep {
-			podman(ctx, "rmi", img)
+			host.Podman(ctx, "rmi", img)
 		}
 	}
 }

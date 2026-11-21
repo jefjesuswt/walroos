@@ -2,24 +2,18 @@ package agent
 
 import (
 	"cmp"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 )
-
-var ErrDetectClone = errors.New("can't clone the repo")
 
 // Tool is one thing a generated devcontainer provides. Source says where it comes from: "image"
 // (already in it, can't be turned off) or "postCreate" (Install runs after the container starts).
@@ -41,33 +35,6 @@ type Detection struct {
 	Tools        []Tool          `json:"tools"`
 	Devcontainer json.RawMessage `json:"devcontainer,omitempty"`
 	Notes        []string        `json:"notes,omitempty"`
-}
-
-// Detect shallow-clones the repo into a temp dir, scans it and removes the clone.
-func Detect(ctx context.Context, repoURL, branch string) (Detection, error) {
-	if repoURL == "" {
-		return Detection{}, fmt.Errorf("%w: repo_url is required", ErrDetectClone)
-	}
-	dir, err := os.MkdirTemp("", "walroos-detect-")
-	if err != nil {
-		return Detection{}, err
-	}
-	defer os.RemoveAll(dir)
-
-	ctx, cancel := context.WithTimeout(ctx, 25*time.Second) // the hub gives up on agents at 30s
-	defer cancel()
-	args := []string{"clone", "--depth", "1"}
-	if branch != "" {
-		args = append(args, "--branch", branch)
-	}
-	if _, err := gitClone(ctx, args, repoURL, dir); err != nil {
-		return Detection{}, fmt.Errorf("%w: %v", ErrDetectClone, err)
-	}
-	d := detectDir(dir)
-	if out, err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD").Output(); err == nil {
-		d.Branch = strings.TrimSpace(string(out))
-	}
-	return d, nil
 }
 
 // skipDirs are never scanned: dependencies and build output say nothing about the stack.
@@ -125,7 +92,7 @@ func (s scan) grep(re string, names ...string) string {
 // detectDir picks the stack from the files in dir and generates a devcontainer. Markers at the
 // root win (walroos: go.mod at the root, a bun app in web/); deeper ones are the fallback.
 // ponytail: one stack per repo; a second one only becomes a note.
-func detectDir(dir string) Detection {
+func DetectDir(dir string) Detection {
 	s := scan{dir: dir}
 	var deeper []string
 	fs.WalkDir(os.DirFS(dir), ".", func(p string, e fs.DirEntry, err error) error {
@@ -165,88 +132,109 @@ func detectDir(dir string) Detection {
 // pick matches stack markers, at the root only or anywhere.
 func pick(s scan, root bool) (Detection, gen) {
 	has := func(names ...string) string { return s.find(root, names...) }
-	jdkRe := `(?:VERSION_|JVM_|jvmToolchain\(|<maven\.compiler\.release>|<release>)(\d+)` // VERSION_17, JVM_17, jvmToolchain(17)
-
-	var d Detection
-	g := gen{}
-	switch {
-	case s.find(true, ".devcontainer.json") != "" || s.find(false, "devcontainer.json") == ".devcontainer/devcontainer.json":
-		d.Stack = "devcontainer"
-		d.Notes = append(d.Notes, "The repo has its own devcontainer.json; it's used as is.")
-
-	case s.find(false, "AndroidManifest.xml") != "" && has("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle") != "":
-		gradles := []string{"build.gradle.kts", "build.gradle"} // the app module's has compileSdk, the root one doesn't
-		jdk := cmp.Or(s.grep(jdkRe, gradles...), "17")
-		sdk := cmp.Or(s.grep(`compileSdk(?:Version)?\s*=?\s*(\d+)`, gradles...), "35")
-		buildTools := cmp.Or(s.grep(`buildToolsVersion\s*=?\s*"([\d.]+)"`, gradles...), sdk+".0.0")
-		platform := "android-" + sdk
-		if n, _ := strconv.Atoi(sdk); n >= 37 { // newer SDKs have minor versions: platforms;android-37.0
-			platform += ".0"
-		}
-		d.Stack, g = "android", stackGen("java", jdk)
-		g.env = map[string]string{"ANDROID_HOME": "/home/vscode/android-sdk", "ANDROID_SDK_ROOT": "/home/vscode/android-sdk"}
-		d.Tools = append(d.Tools, Tool{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"},
-			Tool{ID: "android-sdk", Label: "Android SDK", Version: sdk, Source: "postCreate", Install: androidSDK(platform, buildTools)})
-		d.Notes = append(d.Notes, fmt.Sprintf("compileSdk %s · build-tools %s", sdk, buildTools),
-			`If Gradle fails with "Temporary failure in name resolution", set JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true.`)
-
-	case has("global.json", "*.csproj", "*.sln", "*.slnx") != "":
-		v := match(s.read(has("global.json")), `"version"\s*:\s*"(\d+\.\d+)`)
-		v = cmp.Or(cmp.Or(v, s.grep(`<TargetFrameworks?>net(\d+\.\d+)`, "*.csproj")), "10.0")
-		d.Stack, g = "dotnet", stackGen("dotnet", v)
-		d.Tools = append(d.Tools, Tool{ID: "dotnet", Label: ".NET SDK", Version: v, Source: "image"})
-
-	case has("bun.lock", "bun.lockb", "package.json") != "":
-		node := cmp.Or(match(s.read(has(".nvmrc", ".node-version")), `v?(\d+)`), "22")
-		d.Stack, g = "node", stackGen("node", node)
-		d.Tools = append(d.Tools, Tool{ID: "node", Label: "Node.js", Version: node, Source: "image"})
-		deps := Tool{ID: "deps", Label: "Install dependencies", Source: "postCreate", Install: "npm install"}
-		switch {
-		case has("bun.lock", "bun.lockb") != "":
-			d.Stack, deps.Install = "bun", "bun install"
-			d.Tools = append(d.Tools, Tool{ID: "bun", Label: "Bun", Source: "postCreate", Install: "npm install -g bun"})
-		case has("pnpm-lock.yaml") != "":
-			deps.Install = "pnpm install"
-			d.Tools = append(d.Tools, Tool{ID: "pnpm", Label: "pnpm", Source: "postCreate", Install: "npm install -g pnpm"})
-		case has("yarn.lock") != "":
-			deps.Install = "yarn install"
-			d.Tools = append(d.Tools, Tool{ID: "yarn", Label: "Yarn", Source: "image"})
-		}
-		if sub := path.Dir(has("bun.lock", "bun.lockb", "package.json")); sub != "." { // install where the lockfile is
-			deps.Install = "cd " + sub + " && " + deps.Install
-		}
-		d.Tools = append(d.Tools, deps)
-
-	case has("go.mod") != "":
-		v := cmp.Or(match(s.read(has("go.mod")), `(?m)^go (\d+\.\d+)`), "1")
-		d.Stack, g = "go", stackGen("go", v)
-		d.Tools = append(d.Tools, Tool{ID: "go", Label: "Go", Version: v, Source: "image"})
-
-	case has("Cargo.toml") != "":
-		d.Stack, g = "rust", stackGen("rust", "1")
-		d.Tools = append(d.Tools, Tool{ID: "rust", Label: "Rust", Source: "image"})
-
-	case has("pyproject.toml", "requirements.txt") != "":
-		v := match(s.read(has(".python-version")), `(\d+\.\d+)`)
-		v = cmp.Or(cmp.Or(v, match(s.read(has("pyproject.toml")), `requires-python\s*=\s*"[>=~^]*(\d+\.\d+)`)), "3.13")
-		d.Stack, g = "python", stackGen("python", v)
-		d.Tools = append(d.Tools, Tool{ID: "python", Label: "Python", Version: v, Source: "image"})
-		if has("uv.lock") != "" {
-			d.Tools = append(d.Tools, Tool{ID: "uv", Label: "uv", Source: "postCreate", Install: "pipx install uv"},
-				Tool{ID: "deps", Label: "Install dependencies", Source: "postCreate", Install: "~/.local/bin/uv sync"})
-		}
-
-	case has("build.gradle.kts", "build.gradle", "pom.xml") != "":
-		jdk := cmp.Or(match(s.read(has("build.gradle.kts", "build.gradle", "pom.xml")), jdkRe), "17")
-		d.Stack, g = "java", stackGen("java", jdk)
-		d.Tools = append(d.Tools, Tool{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"})
-
-	default:
-		d.Stack = "none"
-		d.Tools = append(d.Tools, Tool{ID: "mise", Label: "mise", Source: "image"})
-		d.Notes = append(d.Notes, "No stack detected: the walroos base image has mise, install runtimes with `mise use`.")
+	if s.find(true, ".devcontainer.json") != "" || s.find(false, "devcontainer.json") == ".devcontainer/devcontainer.json" {
+		return Detection{Stack: "devcontainer", Notes: []string{"The repo has its own devcontainer.json; it's used as is."}}, gen{}
 	}
-	return d, g
+	for _, st := range stacks {
+		if st.match(s, has) {
+			return st.detect(s, has)
+		}
+	}
+	return Detection{Stack: "none", Tools: []Tool{{ID: "mise", Label: "mise", Source: "image"}},
+		Notes: []string{"No stack detected: the walroos base image has mise, install runtimes with `mise use`."}}, gen{}
+}
+
+type finder func(names ...string) string
+
+// stacks are tried in order: the first that matches the repo wins (an Android app has Gradle
+// files too, a .NET repo may ship a package.json for its frontend).
+var stacks = []struct {
+	match  func(s scan, has finder) bool
+	detect func(s scan, has finder) (Detection, gen)
+}{
+	{func(s scan, has finder) bool {
+		return s.find(false, "AndroidManifest.xml") != "" && has("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle") != ""
+	}, detectAndroid},
+	{func(_ scan, has finder) bool { return has("global.json", "*.csproj", "*.sln", "*.slnx") != "" }, detectDotnet},
+	{func(_ scan, has finder) bool { return has("bun.lock", "bun.lockb", "package.json") != "" }, detectNode},
+	{func(_ scan, has finder) bool { return has("go.mod") != "" }, detectGo},
+	{func(_ scan, has finder) bool { return has("Cargo.toml") != "" }, detectRust},
+	{func(_ scan, has finder) bool { return has("pyproject.toml", "requirements.txt") != "" }, detectPython},
+	{func(_ scan, has finder) bool { return has("build.gradle.kts", "build.gradle", "pom.xml") != "" }, detectJava},
+}
+
+const jdkRe = `(?:VERSION_|JVM_|jvmToolchain\(|<maven\.compiler\.release>|<release>)(\d+)` // VERSION_17, JVM_17, jvmToolchain(17)
+
+func detectAndroid(s scan, _ finder) (Detection, gen) {
+	gradles := []string{"build.gradle.kts", "build.gradle"} // the app module's has compileSdk, the root one doesn't
+	jdk := cmp.Or(s.grep(jdkRe, gradles...), "17")
+	sdk := cmp.Or(s.grep(`compileSdk(?:Version)?\s*=?\s*(\d+)`, gradles...), "35")
+	buildTools := cmp.Or(s.grep(`buildToolsVersion\s*=?\s*"([\d.]+)"`, gradles...), sdk+".0.0")
+	platform := "android-" + sdk
+	if n, _ := strconv.Atoi(sdk); n >= 37 { // newer SDKs have minor versions: platforms;android-37.0
+		platform += ".0"
+	}
+	g := stackGen("java", jdk)
+	g.env = map[string]string{"ANDROID_HOME": "/home/vscode/android-sdk", "ANDROID_SDK_ROOT": "/home/vscode/android-sdk"}
+	return Detection{Stack: "android",
+		Tools: []Tool{{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"},
+			{ID: "android-sdk", Label: "Android SDK", Version: sdk, Source: "postCreate", Install: androidSDK(platform, buildTools)}},
+		Notes: []string{fmt.Sprintf("compileSdk %s · build-tools %s", sdk, buildTools),
+			`If Gradle fails with "Temporary failure in name resolution", set JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true.`},
+	}, g
+}
+
+func detectDotnet(s scan, has finder) (Detection, gen) {
+	v := match(s.read(has("global.json")), `"version"\s*:\s*"(\d+\.\d+)`)
+	v = cmp.Or(cmp.Or(v, s.grep(`<TargetFrameworks?>net(\d+\.\d+)`, "*.csproj")), "10.0")
+	return Detection{Stack: "dotnet", Tools: []Tool{{ID: "dotnet", Label: ".NET SDK", Version: v, Source: "image"}}}, stackGen("dotnet", v)
+}
+
+func detectNode(s scan, has finder) (Detection, gen) {
+	node := cmp.Or(match(s.read(has(".nvmrc", ".node-version")), `v?(\d+)`), "22")
+	d := Detection{Stack: "node", Tools: []Tool{{ID: "node", Label: "Node.js", Version: node, Source: "image"}}}
+	deps := Tool{ID: "deps", Label: "Install dependencies", Source: "postCreate", Install: "npm install"}
+	switch {
+	case has("bun.lock", "bun.lockb") != "":
+		d.Stack, deps.Install = "bun", "bun install"
+		d.Tools = append(d.Tools, Tool{ID: "bun", Label: "Bun", Source: "postCreate", Install: "npm install -g bun"})
+	case has("pnpm-lock.yaml") != "":
+		deps.Install = "pnpm install"
+		d.Tools = append(d.Tools, Tool{ID: "pnpm", Label: "pnpm", Source: "postCreate", Install: "npm install -g pnpm"})
+	case has("yarn.lock") != "":
+		deps.Install = "yarn install"
+		d.Tools = append(d.Tools, Tool{ID: "yarn", Label: "Yarn", Source: "image"})
+	}
+	if sub := path.Dir(has("bun.lock", "bun.lockb", "package.json")); sub != "." { // install where the lockfile is
+		deps.Install = "cd " + sub + " && " + deps.Install
+	}
+	d.Tools = append(d.Tools, deps)
+	return d, stackGen("node", node)
+}
+
+func detectGo(s scan, has finder) (Detection, gen) {
+	v := cmp.Or(match(s.read(has("go.mod")), `(?m)^go (\d+\.\d+)`), "1")
+	return Detection{Stack: "go", Tools: []Tool{{ID: "go", Label: "Go", Version: v, Source: "image"}}}, stackGen("go", v)
+}
+
+func detectRust(scan, finder) (Detection, gen) {
+	return Detection{Stack: "rust", Tools: []Tool{{ID: "rust", Label: "Rust", Source: "image"}}}, stackGen("rust", "1")
+}
+
+func detectPython(s scan, has finder) (Detection, gen) {
+	v := match(s.read(has(".python-version")), `(\d+\.\d+)`)
+	v = cmp.Or(cmp.Or(v, match(s.read(has("pyproject.toml")), `requires-python\s*=\s*"[>=~^]*(\d+\.\d+)`)), "3.13")
+	d := Detection{Stack: "python", Tools: []Tool{{ID: "python", Label: "Python", Version: v, Source: "image"}}}
+	if has("uv.lock") != "" {
+		d.Tools = append(d.Tools, Tool{ID: "uv", Label: "uv", Source: "postCreate", Install: "pipx install uv"},
+			Tool{ID: "deps", Label: "Install dependencies", Source: "postCreate", Install: "~/.local/bin/uv sync"})
+	}
+	return d, stackGen("python", v)
+}
+
+func detectJava(s scan, has finder) (Detection, gen) {
+	jdk := cmp.Or(match(s.read(has("build.gradle.kts", "build.gradle", "pom.xml")), jdkRe), "17")
+	return Detection{Stack: "java", Tools: []Tool{{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"}}}, stackGen("java", jdk)
 }
 
 // stackImages is the devcontainers image of each stack, with %s for the version: detect fills in

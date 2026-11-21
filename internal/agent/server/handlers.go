@@ -1,4 +1,4 @@
-package agent
+package server
 
 import (
 	"bytes"
@@ -10,6 +10,10 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/apps"
+	"github.com/jefjesuswt/walroos/internal/agent/databases"
+	"github.com/jefjesuswt/walroos/internal/agent/workspaces"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -34,9 +38,9 @@ func (s *Server) handleDetect(w http.ResponseWriter, r *http.Request) {
 		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	d, err := Detect(r.Context(), body.RepoURL, body.Branch)
+	d, err := workspaces.Detect(r.Context(), body.RepoURL, body.Branch)
 	switch {
-	case errors.Is(err, ErrDetectClone):
+	case errors.Is(err, workspaces.ErrDetectClone):
 		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())
 	case err != nil:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
@@ -57,7 +61,7 @@ func (s *Server) handleListWorkspaces(w http.ResponseWriter, r *http.Request) {
 // handleCreateWorkspace answers 202 right away; creation (clone, build, run) continues in the background.
 func (s *Server) handleCreateWorkspace(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		WorkspaceSpec
+		agent.WorkspaceSpec
 		Env []string `json:"env"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -122,11 +126,11 @@ func (s *Server) workspaceOp(w http.ResponseWriter, r *http.Request, op func(ctx
 
 func workspaceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidWorkspace):
+	case errors.Is(err, workspaces.ErrInvalid):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrWorkspaceNotFound):
+	case errors.Is(err, workspaces.ErrNotFound):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrWorkspaceExists), errors.Is(err, ErrWorkspaceBusy):
+	case errors.Is(err, workspaces.ErrExists), errors.Is(err, workspaces.ErrBusy):
 		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
 	default:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
@@ -152,11 +156,11 @@ func (s *Server) appRoutes(r *whttp.Router) {
 
 func databaseError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidDatabase):
+	case errors.Is(err, databases.ErrInvalid):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrDatabaseNotFound), errors.Is(err, ErrBackupNotFound):
+	case errors.Is(err, databases.ErrNotFound), errors.Is(err, databases.ErrNoBackup):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrAppBusy):
+	case errors.Is(err, apps.ErrBusy):
 		whttp.ErrorJSON(w, http.StatusConflict, "a backup, restore or delete of this database is already running")
 	default:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
@@ -164,7 +168,7 @@ func databaseError(w http.ResponseWriter, err error) {
 }
 
 func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
-	list, err := s.apps.ListDatabases(r.Context())
+	list, err := s.dbs.ListDatabases(r.Context())
 	if err != nil {
 		databaseError(w, err)
 		return
@@ -173,12 +177,12 @@ func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
-	var spec DatabaseSpec
+	var spec agent.DatabaseSpec
 	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
 		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	d, err := s.apps.CreateDatabase(r.Context(), spec)
+	d, err := s.dbs.CreateDatabase(r.Context(), spec)
 	if err != nil {
 		databaseError(w, err)
 		return
@@ -187,7 +191,7 @@ func (s *Server) handleCreateDatabase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteDatabase(w http.ResponseWriter, r *http.Request) {
-	if err := s.apps.DeleteDatabase(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
+	if err := s.dbs.DeleteDatabase(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
 		databaseError(w, err)
 		return
 	}
@@ -199,7 +203,7 @@ func (s *Server) handleBackupDatabase(w http.ResponseWriter, r *http.Request) {
 		Keep int `json:"keep"`
 	}
 	json.NewDecoder(r.Body).Decode(&in)
-	b, err := s.apps.BackupDatabase(r.Context(), r.PathValue("name"), in.Keep)
+	b, err := s.dbs.BackupDatabase(r.Context(), r.PathValue("name"), in.Keep)
 	if err != nil {
 		databaseError(w, err)
 		return
@@ -208,7 +212,7 @@ func (s *Server) handleBackupDatabase(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
-	list, err := s.apps.ListBackups(r.Context(), r.PathValue("name"))
+	list, err := s.dbs.ListBackups(r.Context(), r.PathValue("name"))
 	if err != nil {
 		databaseError(w, err)
 		return
@@ -217,7 +221,7 @@ func (s *Server) handleListBackups(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
-	f, err := s.apps.OpenBackup(r.Context(), r.PathValue("name"), r.PathValue("file"))
+	f, err := s.dbs.OpenBackup(r.Context(), r.PathValue("name"), r.PathValue("file"))
 	if err != nil {
 		databaseError(w, err)
 		return
@@ -238,7 +242,7 @@ func (s *Server) handleRestoreDatabase(w http.ResponseWriter, r *http.Request) {
 		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if err := s.apps.RestoreDatabase(r.Context(), r.PathValue("name"), in.File); err != nil {
+	if err := s.dbs.RestoreDatabase(r.Context(), r.PathValue("name"), in.File); err != nil {
 		databaseError(w, err)
 		return
 	}
@@ -252,7 +256,7 @@ func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&in)
 	err := s.apps.SetTunnel(r.Context(), in.Token)
 	switch {
-	case errors.Is(err, ErrInvalidTunnel):
+	case errors.Is(err, apps.ErrInvalidTunnel):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
 	case err != nil:
 		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
@@ -261,19 +265,11 @@ func (s *Server) handleSetTunnel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// DeployLine is one line of a deploy's NDJSON answer: log output while it runs, then one
-// line with Release or Error.
-type DeployLine struct {
-	Log     string   `json:"log,omitempty"`
-	Release *Release `json:"release,omitempty"`
-	Error   string   `json:"error,omitempty"`
-}
-
 // handleStream streams a deploy or build as it happens. A build takes minutes; the hub stores
 // the lines as they come, so the UI shows a live log.
-func (s *Server) handleStream(op func(context.Context, AppSpec, io.Writer) (Release, error)) http.HandlerFunc {
+func (s *Server) handleStream(op func(context.Context, agent.AppSpec, io.Writer) (agent.Release, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var spec AppSpec
+		var spec agent.AppSpec
 		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
 			whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 			return
@@ -284,10 +280,10 @@ func (s *Server) handleStream(op func(context.Context, AppSpec, io.Writer) (Rele
 		rel, err := op(r.Context(), spec, lw)
 		lw.Flush()
 		if err != nil {
-			lw.send(DeployLine{Error: err.Error()})
+			lw.send(agent.DeployLine{Error: err.Error()})
 			return
 		}
-		lw.send(DeployLine{Release: &rel})
+		lw.send(agent.DeployLine{Release: &rel})
 	}
 }
 
@@ -303,7 +299,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
 	logs, err := s.apps.Logs(r.Context(), r.PathValue("name"), min(cmpInt(lines, 200), 5000))
-	if errors.Is(err, ErrAppNotFound) {
+	if errors.Is(err, apps.ErrNotFound) {
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
 		return
 	}
@@ -314,7 +310,7 @@ func (s *Server) handleAppLogs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 	if err := s.apps.Delete(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
 		code := http.StatusInternalServerError
-		if errors.Is(err, ErrAppBusy) {
+		if errors.Is(err, apps.ErrBusy) {
 			code = http.StatusConflict
 		}
 		whttp.ErrorJSON(w, code, err.Error())
@@ -350,7 +346,7 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 			}
 			i, skip = maxLine, 0
 		}
-		l.sendLocked(DeployLine{Log: string(l.buf[:i])})
+		l.sendLocked(agent.DeployLine{Log: string(l.buf[:i])})
 		l.buf = l.buf[i+skip:]
 	}
 }
@@ -362,18 +358,18 @@ func (l *lineWriter) Flush() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if len(l.buf) > 0 {
-		l.sendLocked(DeployLine{Log: string(l.buf)})
+		l.sendLocked(agent.DeployLine{Log: string(l.buf)})
 		l.buf = nil
 	}
 }
 
-func (l *lineWriter) send(d DeployLine) {
+func (l *lineWriter) send(d agent.DeployLine) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.sendLocked(d)
 }
 
-func (l *lineWriter) sendLocked(d DeployLine) {
+func (l *lineWriter) sendLocked(d agent.DeployLine) {
 	l.enc.Encode(d)
 	l.flush()
 }

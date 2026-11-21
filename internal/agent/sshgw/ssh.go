@@ -1,4 +1,6 @@
-package agent
+// Package sshgw is the node's SSH gateway (:2222): it checks keys with the hub and runs sessions,
+// SFTP and port forwards inside the workspace the user named.
+package sshgw
 
 // The SSH gateway: one SSH server per node, on the tailnet. The SSH user is the workspace name
 // and every session is a `podman exec` into that workspace's container, so images need no sshd.
@@ -28,12 +30,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
+	"github.com/jefjesuswt/walroos/internal/agent/workspaces"
+
 	"github.com/jefjesuswt/walroos/shared/names"
 	"golang.org/x/crypto/ssh"
 )
-
-// SSHPort is where node agents serve SSH for workspaces.
-const SSHPort = "2222"
 
 // authCacheTTL is how long a key the hub accepted keeps working without asking again, so a
 // burst of connections (VS Code opens several) doesn't hit the hub each time.
@@ -43,17 +46,18 @@ const authCacheTTL = time.Minute
 // returns the hub login that owns the key.
 type SSHAuthorize func(ctx context.Context, workspace, fingerprint string) (login string, err error)
 
+// SSHGateway serves SSH into this node's workspaces (see New).
 type SSHGateway struct {
-	identify  Identify
+	identify  agent.Identify
 	authorize SSHAuthorize
 	config    *ssh.ServerConfig
 
 	// How sessions reach workspaces. Podman in production; tests run commands on the host.
-	lookup  func(ctx context.Context, name string) (Workspace, error)                       // running workspace (starts it if stopped)
-	command func(ctx context.Context, ws Workspace, tty bool, env, argv []string) *exec.Cmd // process inside the workspace
-	sftp    func(ctx context.Context, ws Workspace) error                                   // makes SFTP available; nil in tests
-	dial    func(ctx context.Context, ws Workspace, addr string) (*exec.Cmd, error)         // Relay process in the workspace's network
-	hostDir func(name string) string                                                        // host side of ws.AgentDir
+	lookup  func(ctx context.Context, name string) (agent.Workspace, error)                       // running workspace (starts it if stopped)
+	command func(ctx context.Context, ws agent.Workspace, tty bool, env, argv []string) *exec.Cmd // process inside the workspace
+	sftp    func(ctx context.Context, ws agent.Workspace) error                                   // makes SFTP available; nil in tests
+	dial    func(ctx context.Context, ws agent.Workspace, addr string) (*exec.Cmd, error)         // Relay process in the workspace's network
+	hostDir func(name string) string                                                              // host side of ws.AgentDir
 
 	mu    sync.Mutex
 	cache map[string]cachedAuth
@@ -64,21 +68,21 @@ type cachedAuth struct {
 	until time.Time
 }
 
-// SSHGateway serves SSH into this node's workspaces. relay is the command that runs Relay
+// New is the SSH gateway into this node's workspaces. relay is the command that runs Relay
 // (`walroos node relay`); the gateway appends host:port.
-func (s *Server) SSHGateway(authorize SSHAuthorize, hostKey ssh.Signer, relay []string) *SSHGateway {
-	g := newSSHGateway(s.identify, authorize, hostKey)
-	g.lookup = s.ws.ready
+func New(identify agent.Identify, authorize SSHAuthorize, hostKey ssh.Signer, relay []string, ws *workspaces.Workspaces) *SSHGateway {
+	g := newSSHGateway(identify, authorize, hostKey)
+	g.lookup = ws.Ready
 	g.command = podmanExec
 	g.sftp = ensureSFTPHelper
-	g.dial = func(ctx context.Context, ws Workspace, addr string) (*exec.Cmd, error) {
+	g.dial = func(ctx context.Context, ws agent.Workspace, addr string) (*exec.Cmd, error) {
 		return podmanRelay(ctx, ws, relay, addr)
 	}
-	g.hostDir = agentDir
+	g.hostDir = workspaces.AgentDir
 	return g
 }
 
-func newSSHGateway(identify Identify, authorize SSHAuthorize, hostKey ssh.Signer) *SSHGateway {
+func newSSHGateway(identify agent.Identify, authorize SSHAuthorize, hostKey ssh.Signer) *SSHGateway {
 	g := &SSHGateway{identify: identify, authorize: authorize, cache: map[string]cachedAuth{}}
 	g.config = &ssh.ServerConfig{PublicKeyCallback: g.publicKey, ServerVersion: "SSH-2.0-walroos"}
 	g.config.AddHostKey(hostKey)
@@ -164,7 +168,7 @@ type sshConn struct {
 	name string
 
 	wsOnce sync.Once
-	ws     Workspace
+	ws     agent.Workspace
 	wsErr  error
 
 	agentOnce sync.Once
@@ -173,7 +177,7 @@ type sshConn struct {
 }
 
 // workspace finds the workspace once per connection, starting it if it was stopped.
-func (c *sshConn) workspace() (Workspace, error) {
+func (c *sshConn) workspace() (agent.Workspace, error) {
 	c.wsOnce.Do(func() { c.ws, c.wsErr = c.g.lookup(c.ctx, c.name) })
 	return c.ws, c.wsErr
 }
@@ -202,61 +206,80 @@ func (c *sshConn) session(nch ssh.NewChannel) {
 	// connection open) hangs up its process.
 	ctx, cancel := context.WithCancel(c.ctx)
 	defer cancel()
-
-	var (
-		env       []string
-		tty       *ptyRequest
-		ptmx      *os.File
-		wantAgent bool
-		started   bool
-	)
+	s := &session{c: c, ctx: ctx, ch: ch}
 	for req := range reqs {
-		ok := false
-		switch req.Type {
-		case "env":
-			var kv struct{ Name, Value string }
-			if ssh.Unmarshal(req.Payload, &kv) == nil && envNameRe.MatchString(kv.Name) {
-				env = append(env, kv.Name+"="+kv.Value)
-				ok = true
-			}
-		case "pty-req":
-			var p ptyRequest
-			if !started && ssh.Unmarshal(req.Payload, &p) == nil {
-				tty, ok = &p, true
-			}
-		case "window-change":
-			var wc struct{ Cols, Rows, Width, Height uint32 }
-			if ptmx != nil && ssh.Unmarshal(req.Payload, &wc) == nil {
-				ok = setWinsize(ptmx, wc.Cols, wc.Rows) == nil
-			}
-		case "auth-agent-req@openssh.com":
-			ws, err := c.workspace()
-			wantAgent = err == nil && ws.AgentDir != "" // workspaces created before the gateway have no socket dir
-			ok = wantAgent
-		case "shell", "exec", "subsystem":
-			argv, valid := sessionArgv(req)
-			if started || !valid {
-				break
-			}
-			started, ok = true, true
-			req.Reply(true, nil) // before the process can send exit-status
-			req.WantReply = false
-			if isSFTP(req.Type) && c.g.sftp != nil {
-				if ws, err := c.workspace(); err == nil {
-					if err := c.g.sftp(ctx, ws); err != nil {
-						slog.Warn("SSH: SFTP helper", "workspace", ws.Name, "err", err)
-					}
-				}
-			}
-			if ptmx, err = c.start(ctx, ch, tty, env, argv, wantAgent); err != nil {
-				fmt.Fprintf(ch.Stderr(), "walroos: %v\r\n", err)
-				sendExit(ch, 1)
-			}
-		}
+		ok := s.request(req)
 		if req.WantReply {
 			req.Reply(ok, nil)
 		}
 	}
+}
+
+// session is one channel's state while its requests come in: env and a terminal first, then
+// one shell, exec or subsystem.
+type session struct {
+	c         *sshConn
+	ctx       context.Context
+	ch        ssh.Channel
+	env       []string
+	tty       *ptyRequest
+	ptmx      *os.File
+	wantAgent bool
+	started   bool
+}
+
+// request handles one request and reports whether it was accepted.
+func (s *session) request(req *ssh.Request) bool {
+	switch req.Type {
+	case "env":
+		var kv struct{ Name, Value string }
+		if ssh.Unmarshal(req.Payload, &kv) == nil && envNameRe.MatchString(kv.Name) {
+			s.env = append(s.env, kv.Name+"="+kv.Value)
+			return true
+		}
+	case "pty-req":
+		var p ptyRequest
+		if !s.started && ssh.Unmarshal(req.Payload, &p) == nil {
+			s.tty = &p
+			return true
+		}
+	case "window-change":
+		var wc struct{ Cols, Rows, Width, Height uint32 }
+		if s.ptmx != nil && ssh.Unmarshal(req.Payload, &wc) == nil {
+			return setWinsize(s.ptmx, wc.Cols, wc.Rows) == nil
+		}
+	case "auth-agent-req@openssh.com":
+		ws, err := s.c.workspace()
+		s.wantAgent = err == nil && ws.AgentDir != "" // workspaces created before the gateway have no socket dir
+		return s.wantAgent
+	case "shell", "exec", "subsystem":
+		return s.run(req)
+	}
+	return false
+}
+
+// run starts the session's process: a shell, a command, or the SFTP server.
+func (s *session) run(req *ssh.Request) bool {
+	argv, valid := sessionArgv(req)
+	if s.started || !valid {
+		return false
+	}
+	s.started = true
+	req.Reply(true, nil) // before the process can send exit-status
+	req.WantReply = false
+	if isSFTP(req.Type) && s.c.g.sftp != nil {
+		if ws, err := s.c.workspace(); err == nil {
+			if err := s.c.g.sftp(s.ctx, ws); err != nil {
+				slog.Warn("SSH: SFTP helper", "workspace", ws.Name, "err", err)
+			}
+		}
+	}
+	var err error
+	if s.ptmx, err = s.c.start(s.ctx, s.ch, s.tty, s.env, argv, s.wantAgent); err != nil {
+		fmt.Fprintf(s.ch.Stderr(), "walroos: %v\r\n", err)
+		sendExit(s.ch, 1)
+	}
+	return true
 }
 
 // userShell finds the user's login shell in the container's passwd, like sshd would, and sets
@@ -286,11 +309,23 @@ func sessionArgv(req *ssh.Request) ([]string, bool) {
 
 // start runs argv in the workspace, wired to the channel, and sends exit-status when it ends.
 // With a pty it returns the terminal's master side for window-change.
-func (c *sshConn) start(ctx context.Context, ch ssh.Channel, tty *ptyRequest, env, argv []string, agent bool) (*os.File, error) {
+func (c *sshConn) start(ctx context.Context, ch ssh.Channel, tty *ptyRequest, env, argv []string, forwardAgent bool) (*os.File, error) {
 	ws, err := c.workspace()
 	if err != nil {
 		return nil, err
 	}
+	cmd := c.g.command(ctx, ws, tty != nil, c.sessionEnv(ws, tty, env, forwardAgent), argv)
+	// When the client goes away, hang up like a closed terminal would; kill if that's ignored.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGHUP) }
+	cmd.WaitDelay = 5 * time.Second
+	if tty != nil {
+		return runPTY(cmd, ch, tty)
+	}
+	return nil, runPipes(cmd, ch)
+}
+
+// sessionEnv adds what sshd would set: SSH_CONNECTION, TERM and the forwarded agent's socket.
+func (c *sshConn) sessionEnv(ws agent.Workspace, tty *ptyRequest, env []string, forwardAgent bool) []string {
 	local, ok1 := c.sc.LocalAddr().(*net.TCPAddr)
 	remote, ok2 := c.sc.RemoteAddr().(*net.TCPAddr)
 	if ok1 && ok2 {
@@ -299,38 +334,38 @@ func (c *sshConn) start(ctx context.Context, ch ssh.Channel, tty *ptyRequest, en
 	if tty != nil {
 		env = append(env, "TERM="+tty.Term)
 	}
-	if agent {
+	if forwardAgent {
 		if sock := c.agentSocket(ws); sock != "" {
 			env = append(env, "SSH_AUTH_SOCK="+sock)
 		}
 	}
+	return env
+}
 
-	cmd := c.g.command(ctx, ws, tty != nil, env, argv)
-	// When the client goes away, hang up like a closed terminal would; kill if that's ignored.
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGHUP) }
-	cmd.WaitDelay = 5 * time.Second
-
-	if tty != nil {
-		ptmx, err := startPTY(cmd, tty.Cols, tty.Rows)
-		if err != nil {
-			return nil, err
-		}
-		go func() {
-			go io.Copy(ptmx, ch)
-			io.Copy(ch, ptmx) // ends (EIO) once the process exits and the terminal closes
-			sendExit(ch, exitCode(cmd.Wait()))
-			ptmx.Close()
-		}()
-		return ptmx, nil
-	}
-
-	stdin, err := cmd.StdinPipe()
+// runPTY runs cmd on a new terminal wired to the channel; the terminal is returned for resizes.
+func runPTY(cmd *exec.Cmd, ch ssh.Channel, tty *ptyRequest) (*os.File, error) {
+	ptmx, err := startPTY(cmd, tty.Cols, tty.Rows)
 	if err != nil {
 		return nil, err
 	}
+	go func() {
+		go io.Copy(ptmx, ch)
+		io.Copy(ch, ptmx) // ends (EIO) once the process exits and the terminal closes
+		sendExit(ch, exitCode(cmd.Wait()))
+		ptmx.Close()
+	}()
+	return ptmx, nil
+}
+
+// runPipes runs cmd with its stdin, stdout and stderr on the channel.
+func runPipes(cmd *exec.Cmd, ch ssh.Channel) error {
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
 	cmd.Stdout, cmd.Stderr = ch, ch.Stderr()
 	if err := cmd.Start(); err != nil {
-		return nil, err
+		return err
 	}
 	// Not cmd.Stdin = ch: Wait would block until the client sends EOF, even after the process exited.
 	go func() {
@@ -338,7 +373,7 @@ func (c *sshConn) start(ctx context.Context, ch ssh.Channel, tty *ptyRequest, en
 		stdin.Close()
 	}()
 	go func() { sendExit(ch, exitCode(cmd.Wait())) }()
-	return nil, nil
+	return nil
 }
 
 func exitCode(err error) int {
@@ -371,34 +406,13 @@ func (c *sshConn) directTCPIP(nch ssh.NewChannel) {
 		nch.Reject(ssh.ConnectionFailed, "invalid forwarding request")
 		return
 	}
-	ws, err := c.workspace()
+	r, err := c.relayTo(net.JoinHostPort(d.Host, strconv.Itoa(int(d.Port))))
 	if err != nil {
 		nch.Reject(ssh.ConnectionFailed, err.Error())
 		return
 	}
-	cmd, err := c.g.dial(c.ctx, ws, net.JoinHostPort(d.Host, strconv.Itoa(int(d.Port))))
-	if err != nil {
-		nch.Reject(ssh.ConnectionFailed, err.Error())
-		return
-	}
-	stdin, _ := cmd.StdinPipe()
-	stdout, _ := cmd.StdoutPipe()
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
-		nch.Reject(ssh.ConnectionFailed, err.Error())
-		return
-	}
-	defer cmd.Wait()
-	defer cmd.Process.Kill()
-
-	// Relay writes one byte once it's connected: refuse the channel if it couldn't connect,
-	// so the client sees "connection refused" instead of an open channel that closes.
-	if _, err := io.ReadFull(stdout, make([]byte, 1)); err != nil {
-		cmd.Wait()
-		nch.Reject(ssh.ConnectionFailed, cmp.Or(strings.TrimSpace(stderr.String()), "connect failed"))
-		return
-	}
+	defer r.cmd.Wait()
+	defer r.cmd.Process.Kill()
 	ch, reqs, err := nch.Accept()
 	if err != nil {
 		return
@@ -406,18 +420,52 @@ func (c *sshConn) directTCPIP(nch ssh.NewChannel) {
 	defer ch.Close()
 	go ssh.DiscardRequests(reqs)
 	go func() {
-		io.Copy(stdin, ch)
-		stdin.Close()
+		io.Copy(r.stdin, ch)
+		r.stdin.Close()
 	}()
-	io.Copy(ch, stdout)
+	io.Copy(ch, r.stdout)
 	ch.CloseWrite()
+}
+
+// relay is a running Relay process connected to addr inside the workspace.
+type relay struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.Reader
+}
+
+// relayTo starts Relay in the workspace's network and waits until it's connected. Relay writes
+// one byte once it is: an error here means the client sees "connection refused" instead of an
+// open channel that closes.
+func (c *sshConn) relayTo(addr string) (relay, error) {
+	ws, err := c.workspace()
+	if err != nil {
+		return relay{}, err
+	}
+	cmd, err := c.g.dial(c.ctx, ws, addr)
+	if err != nil {
+		return relay{}, err
+	}
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return relay{}, err
+	}
+	if _, err := io.ReadFull(stdout, make([]byte, 1)); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return relay{}, errors.New(cmp.Or(strings.TrimSpace(stderr.String()), "connect failed"))
+	}
+	return relay{cmd, stdin, stdout}, nil
 }
 
 // agentSocket makes the client's forwarded ssh-agent (ssh -A) reachable inside the workspace:
 // a unix socket in the directory bind-mounted at ws.AgentDir. Each connection to it opens an
 // auth-agent channel back to the client, so `git push` in the workspace signs with the laptop's
 // keys and no key is ever copied to the node.
-func (c *sshConn) agentSocket(ws Workspace) string {
+func (c *sshConn) agentSocket(ws agent.Workspace) string {
 	c.agentOnce.Do(func() {
 		dir := c.g.hostDir(ws.Name)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -461,29 +509,7 @@ func (c *sshConn) agentSocket(ws Workspace) string {
 	return c.agentSock
 }
 
-// ready returns the workspace if it can take sessions, starting it if it was stopped.
-func (w *Workspaces) ready(ctx context.Context, name string) (Workspace, error) {
-	ws, err := w.Get(ctx, name)
-	if err != nil {
-		return ws, err
-	}
-	switch ws.State {
-	case "running":
-		return ws, nil
-	case "stopped":
-		if err := w.Start(ctx, name); err != nil {
-			return ws, fmt.Errorf("start workspace: %w", err)
-		}
-		ws.State = "running"
-		return ws, nil
-	case "failed":
-		return ws, fmt.Errorf("workspace %s failed: %s", name, ws.Error)
-	default:
-		return ws, fmt.Errorf("workspace %s is %s, try again in a moment", name, ws.State)
-	}
-}
-
-func podmanExec(ctx context.Context, ws Workspace, tty bool, env, argv []string) *exec.Cmd {
+func podmanExec(ctx context.Context, ws agent.Workspace, tty bool, env, argv []string) *exec.Cmd {
 	args := []string{"exec", "-i"}
 	if tty {
 		args = append(args, "-t")
@@ -499,8 +525,8 @@ func podmanExec(ctx context.Context, ws Workspace, tty bool, env, argv []string)
 // podmanRelay runs relay inside the workspace's network namespace. Rootless podman owns that
 // namespace from its user namespace, so nsenter has to run under `podman unshare`.
 // ponytail: two extra processes per forwarded connection; fine for dev ports and VS Code.
-func podmanRelay(ctx context.Context, ws Workspace, relay []string, addr string) (*exec.Cmd, error) {
-	pid, err := podman(ctx, "inspect", "--format", "{{.State.Pid}}", "ws-"+ws.Name)
+func podmanRelay(ctx context.Context, ws agent.Workspace, relay []string, addr string) (*exec.Cmd, error) {
+	pid, err := host.Podman(ctx, "inspect", "--format", "{{.State.Pid}}", "ws-"+ws.Name)
 	if err != nil || pid == "" || pid == "0" {
 		return nil, fmt.Errorf("workspace %s is not running", ws.Name)
 	}

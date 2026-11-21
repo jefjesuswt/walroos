@@ -1,4 +1,4 @@
-package agent
+package sshgw
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
 )
 
 // SFTP for scp, sftp and editors that upload over it (Zed). An image's own sftp-server wins; most
@@ -60,7 +63,7 @@ func selfHash() string {
 // ensureSFTPHelper copies the agent binary into the workspace container when its image has no
 // sftp-server and the current helper isn't there yet. Errors are for the log: the subsystem
 // script still explains what's missing to the client.
-func ensureSFTPHelper(ctx context.Context, ws Workspace) error {
+func ensureSFTPHelper(ctx context.Context, ws agent.Workspace) error {
 	hash := selfHash()
 	if hash == "" {
 		return fmt.Errorf("can't hash the agent binary")
@@ -70,7 +73,7 @@ func ensureSFTPHelper(ctx context.Context, ws Workspace) error {
 	defer sftpMu.Unlock()
 
 	check := `for p in ` + sftpPaths + ` "$1"; do [ -x "$p" ] && exit 0; done; exit 1`
-	if _, err := podman(ctx, "exec", ctr, "/bin/sh", "-c", check, "sh", helper); err == nil {
+	if _, err := host.Podman(ctx, "exec", ctr, "/bin/sh", "-c", check, "sh", helper); err == nil {
 		return nil // the image has one, or this version's helper is already there
 	}
 	exe, err := os.Executable()
@@ -78,14 +81,14 @@ func ensureSFTPHelper(ctx context.Context, ws Workspace) error {
 		return err
 	}
 	// As root: /usr/local/bin is root's. Old versions' copies go, so upgrades don't pile up.
-	if _, err := podman(ctx, "exec", "--user", "0", ctr, "/bin/sh", "-c",
+	if _, err := host.Podman(ctx, "exec", "--user", "0", ctr, "/bin/sh", "-c",
 		`rm -f `+sftpHelperGlob+`; mkdir -p /usr/local/bin`); err != nil {
 		return err
 	}
-	if _, err := podman(ctx, "cp", exe, ctr+":"+helper); err != nil {
+	if _, err := host.Podman(ctx, "cp", exe, ctr+":"+helper); err != nil {
 		return err
 	}
-	_, err = podman(ctx, "exec", "--user", "0", ctr, "chmod", "0755", helper)
+	_, err = host.Podman(ctx, "exec", "--user", "0", ctr, "chmod", "0755", helper)
 	return err
 }
 

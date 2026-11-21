@@ -1,4 +1,4 @@
-package agent_test
+package server_test
 
 import (
 	"context"
@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/server"
 )
 
 func TestAgentAuth(t *testing.T) {
 	const hub, nodeToken = "nHub", "wlr_node_secret"
 	caller := hub
-	api := agent.NewServer(func(context.Context, string) (string, error) {
+	api := server.New(func(context.Context, string) (string, error) {
 		if caller == "" {
 			return "", errors.New("not on the tailnet")
 		}

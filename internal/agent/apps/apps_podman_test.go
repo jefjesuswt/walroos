@@ -1,6 +1,6 @@
 //go:build linux
 
-package agent
+package apps
 
 import (
 	"context"
@@ -14,6 +14,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/quadlet"
+
+	"github.com/jefjesuswt/walroos/internal/agent/host"
 )
 
 // TestAppDeployPodman deploys a tiny app as a Quadlet, then a broken release (the old one must
@@ -29,7 +34,7 @@ func TestAppDeployPodman(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("WALROOS_TEST_RELAY", "1") // the relay command is this binary
 	healthTimeout = 15 * time.Second
-	a := NewApps()
+	a := New(quadlet.New())
 	a.relay = []string{os.Args[0]}
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
 	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
@@ -53,7 +58,7 @@ func TestAppDeployPodman(t *testing.T) {
 	good := commit(`["python3", "-m", "http.server", "8000"]`, "v1")
 
 	var log strings.Builder
-	spec := AppSpec{Name: name, ID: "a1", RepoURL: repo, Branch: "main", Port: 8000}
+	spec := agent.AppSpec{Name: name, ID: "a1", RepoURL: repo, Branch: "main", Port: 8000}
 	v1, err := a.Deploy(ctx, spec, &log)
 	if err != nil {
 		t.Fatalf("deploy v1: %v\n%s", err, log.String())
@@ -63,10 +68,10 @@ func TestAppDeployPodman(t *testing.T) {
 	}
 	assertLive(t, a, name, v1.Container)
 	if got := edgeGet(t, name); got != "v1" {
-		t.Fatalf("through %s: %q, want v1", EdgeNetwork, got)
+		t.Fatalf("through %s: %q, want v1", quadlet.EdgeNetwork, got)
 	}
 	// The alias is in the unit too, so it survives a restart (crash, reboot).
-	if err := run(ctx, nil, "systemctl", "--user", "restart", v1.Container+".service"); err != nil {
+	if err := host.Run(ctx, nil, "systemctl", "--user", "restart", v1.Container+".service"); err != nil {
 		t.Fatal(err)
 	}
 	if err := a.waitHealthy(ctx, v1.Container, 8000, "/", io.Discard); err != nil {
@@ -103,12 +108,12 @@ func TestAppDeployPodman(t *testing.T) {
 		t.Fatal(err)
 	}
 	log.Reset()
-	back, err := a.Deploy(ctx, AppSpec{Name: name, ID: "a5", Image: v1.Image, Port: 8000}, &log)
+	back, err := a.Deploy(ctx, agent.AppSpec{Name: name, ID: "a5", Image: v1.Image, Port: 8000}, &log)
 	if err != nil || back.Sha != v1.Image[strings.LastIndex(v1.Image, ":")+1:] || strings.Contains(log.String(), "building") {
 		t.Fatalf("rollback: %+v %v\n%s", back, err, log.String())
 	}
 	assertLive(t, a, name, back.Container)
-	if _, err := podman(ctx, "image", "exists", v3.Image); err != nil {
+	if _, err := host.Podman(ctx, "image", "exists", v3.Image); err != nil {
 		t.Errorf("v3's image was pruned too early: %v", err)
 	}
 
@@ -117,8 +122,8 @@ func TestAppDeployPodman(t *testing.T) {
 	}
 
 	// Bad specs never touch podman.
-	for _, bad := range []AppSpec{{Name: "Bad", ID: "x", RepoURL: repo, Port: 1}, {Name: name, ID: "../x", RepoURL: repo, Port: 1}, {Name: name, ID: "x", RepoURL: repo}} {
-		if _, err := a.Deploy(ctx, bad, io.Discard); err != ErrInvalidApp {
+	for _, bad := range []agent.AppSpec{{Name: "Bad", ID: "x", RepoURL: repo, Port: 1}, {Name: name, ID: "../x", RepoURL: repo, Port: 1}, {Name: name, ID: "x", RepoURL: repo}} {
+		if _, err := a.Deploy(ctx, bad, io.Discard); err != agent.ErrInvalidApp {
 			t.Errorf("%+v: %v", bad, err)
 		}
 	}
@@ -129,16 +134,16 @@ func TestAppDeployPodman(t *testing.T) {
 	cctx, cancel := context.WithCancel(ctx)
 	done := make(chan error)
 	go func() {
-		_, err := a.Deploy(cctx, AppSpec{Name: name, ID: "a6", RepoURL: repo, Branch: "main", Port: 8000}, io.Discard)
+		_, err := a.Deploy(cctx, agent.AppSpec{Name: name, ID: "a6", RepoURL: repo, Branch: "main", Port: 8000}, io.Discard)
 		done <- err
 	}()
 	for range 100 {
-		if _, err := podman(ctx, "container", "exists", name+"-a6"); err == nil {
+		if _, err := host.Podman(ctx, "container", "exists", name+"-a6"); err == nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if err := a.Delete(ctx, name, true); err != ErrAppBusy {
+	if err := a.Delete(ctx, name, true); err != ErrBusy {
 		t.Errorf("delete during deploy: %v", err)
 	}
 	cancel()
@@ -153,7 +158,7 @@ func TestAppDeployPodman(t *testing.T) {
 	if list, _ := a.List(ctx); len(appsNamed(list, name)) != 0 {
 		t.Errorf("after delete: %+v", list)
 	}
-	if out, _ := podman(ctx, "images", "-q", "--filter", "reference=localhost/walroos-app-"+name); out != "" {
+	if out, _ := host.Podman(ctx, "images", "-q", "--filter", "reference=localhost/walroos-app-"+name); out != "" {
 		t.Errorf("images left: %s", out)
 	}
 }
@@ -170,14 +175,14 @@ func assertLive(t *testing.T, a *Apps, app, container string) {
 		t.Fatalf("%s answers %d %v", container, code, err)
 	}
 	if got := edgeGet(t, app); got == "" {
-		t.Fatalf("%s doesn't answer as %s on %s", container, app, EdgeNetwork)
+		t.Fatalf("%s doesn't answer as %s on %s", container, app, quadlet.EdgeNetwork)
 	}
 }
 
-// edgeGet fetches / from the app's alias on EdgeNetwork, as cloudflared would.
+// edgeGet fetches / from the app's alias on quadlet.EdgeNetwork, as cloudflared would.
 func edgeGet(t *testing.T, app string) string {
 	t.Helper()
-	out, err := podman(context.Background(), "run", "--rm", "--network", EdgeNetwork, "docker.io/library/python:3-alpine",
+	out, err := host.Podman(context.Background(), "run", "--rm", "--network", quadlet.EdgeNetwork, "docker.io/library/python:3-alpine",
 		"wget", "-qO-", "-T", "5", "http://"+app+":8000/")
 	if err != nil {
 		t.Logf("edge get %s: %v", app, err)
@@ -190,7 +195,7 @@ func edgeGet(t *testing.T, app string) string {
 func assertGuarded(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
-	if out, err := podman(ctx, "unshare", "--rootless-netns", "nft", "list", "table", "inet", "walroos_guard"); err != nil || !strings.Contains(out, "reject") {
+	if out, err := host.Podman(ctx, "unshare", "--rootless-netns", "nft", "list", "table", "inet", "walroos_guard"); err != nil || !strings.Contains(out, "reject") {
 		t.Fatalf("guard table: %v\n%s", err, out)
 	}
 	var lan string
@@ -219,8 +224,8 @@ func assertGuarded(t *testing.T) {
 				c.Close()
 			}
 		}()
-		for _, n := range []string{AppNetwork, EdgeNetwork} {
-			out, err := podman(ctx, "run", "--rm", "--network", n, "docker.io/library/python:3-alpine",
+		for _, n := range []string{agent.AppNetwork, quadlet.EdgeNetwork} {
+			out, err := host.Podman(ctx, "run", "--rm", "--network", n, "docker.io/library/python:3-alpine",
 				"wget", "-qO-", "-T", "5", "http://"+ln.Addr().String()+"/")
 			if err == nil || strings.Contains(out, "lan") {
 				t.Errorf("a container on %s reached %s: %q", n, ln.Addr(), out)
@@ -228,19 +233,19 @@ func assertGuarded(t *testing.T) {
 		}
 	}
 	// Internet: only where the host has it (WSL's networks are --internal: no NAT there).
-	if _, err := podman(ctx, "run", "--rm", "--network", "pasta", "docker.io/library/python:3-alpine", "wget", "-qO/dev/null", "-T", "5", "https://www.cloudflare.com/cdn-cgi/trace"); err != nil {
+	if _, err := host.Podman(ctx, "run", "--rm", "--network", "pasta", "docker.io/library/python:3-alpine", "wget", "-qO/dev/null", "-T", "5", "https://www.cloudflare.com/cdn-cgi/trace"); err != nil {
 		t.Log("no internet; skipping the public half")
 		return
 	}
-	if out, err := podman(ctx, "network", "inspect", EdgeNetwork, "--format", "{{.Internal}}"); err == nil && out == "false" {
-		if out, err := podman(ctx, "run", "--rm", "--network", EdgeNetwork, "docker.io/library/python:3-alpine", "wget", "-qO-", "-T", "5", "https://www.cloudflare.com/cdn-cgi/trace"); err != nil {
-			t.Errorf("public egress from %s: %v %s", EdgeNetwork, err, out)
+	if out, err := host.Podman(ctx, "network", "inspect", quadlet.EdgeNetwork, "--format", "{{.Internal}}"); err == nil && out == "false" {
+		if out, err := host.Podman(ctx, "run", "--rm", "--network", quadlet.EdgeNetwork, "docker.io/library/python:3-alpine", "wget", "-qO-", "-T", "5", "https://www.cloudflare.com/cdn-cgi/trace"); err != nil {
+			t.Errorf("public egress from %s: %v %s", quadlet.EdgeNetwork, err, out)
 		}
 	}
 }
 
-func appsNamed(list []App, name string) []App {
-	var out []App
+func appsNamed(list []agent.App, name string) []agent.App {
+	var out []agent.App
 	for _, x := range list {
 		if x.Name == name {
 			out = append(out, x)
@@ -257,7 +262,7 @@ func TestAppBuildPullPodman(t *testing.T) {
 	}
 	ctx := context.Background()
 	t.Setenv("WALROOS_TEST_RELAY", "1")
-	a := NewApps()
+	a := New(quadlet.New())
 	a.relay = []string{os.Args[0]}
 	a.dial = (&net.Dialer{}).DialContext
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
@@ -270,25 +275,25 @@ func TestAppBuildPullPodman(t *testing.T) {
 	}
 
 	var log strings.Builder
-	spec := AppSpec{Name: name, ID: "b1", RepoURL: repo, Branch: "main", Port: 8000}
-	build := NewServer(nil, "build-node-token") // the build node: its registry password lives in its Apps
-	rel, err := build.apps.Build(ctx, spec, &log)
+	spec := agent.AppSpec{Name: name, ID: "b1", RepoURL: repo, Branch: "main", Port: 8000}
+	build := New(quadlet.New()) // the build node: its registry password lives in its Apps
+	rel, err := build.Build(ctx, spec, &log)
 	if err != nil {
 		t.Fatalf("build: %v\n%s", err, log.String())
 	}
-	if _, err := podman(ctx, "rmi", rel.Image); err != nil {
+	if _, err := host.Podman(ctx, "rmi", rel.Image); err != nil {
 		t.Fatal(err)
 	}
 
-	reg := httptest.NewServer(build.RegistryHandler())
+	reg := httptest.NewServer(build.RegistryHandler(agent.TokenHash("build-node-token")))
 	t.Cleanup(reg.Close)
 	spec.Pull, spec.Sha = strings.TrimPrefix(reg.URL, "http://"), rel.Sha
 
-	spec.PullToken = PullToken(TokenHash("build-node-token"), "other")
+	spec.PullToken = agent.PullToken(agent.TokenHash("build-node-token"), "other")
 	if _, err := a.Deploy(ctx, spec, &log); err == nil {
 		t.Fatal("pulled with another app's token")
 	}
-	spec.PullToken = PullToken(TokenHash("build-node-token"), name)
+	spec.PullToken = agent.PullToken(agent.TokenHash("build-node-token"), name)
 	got, err := a.Deploy(ctx, spec, &log)
 	if err != nil {
 		t.Fatalf("deploy: %v\n%s", err, log.String())
@@ -297,7 +302,7 @@ func TestAppBuildPullPodman(t *testing.T) {
 		t.Fatalf("release %+v, built %+v", got, rel)
 	}
 	assertLive(t, a, name, name+"-b1")
-	if out, _ := podman(ctx, "images", "--format", "{{.Repository}}", "--filter", "reference=*/walroos-app-"+name); strings.TrimSpace(out) != "localhost/walroos-app-"+name {
+	if out, _ := host.Podman(ctx, "images", "--format", "{{.Repository}}", "--filter", "reference=*/walroos-app-"+name); strings.TrimSpace(out) != "localhost/walroos-app-"+name {
 		t.Errorf("images left: %q", out) // no 127.0.0.1:<port>/... tags
 	}
 }
@@ -311,7 +316,7 @@ func TestAppSourcePodman(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("WALROOS_TEST_RELAY", "1")
 	healthTimeout = 30 * time.Second
-	a := NewApps()
+	a := New(quadlet.New())
 	a.relay = []string{os.Args[0]}
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
 	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
@@ -325,7 +330,7 @@ func TestAppSourcePodman(t *testing.T) {
 	}
 
 	var log strings.Builder
-	spec := AppSpec{Name: name, ID: "s1", Source: "docker.io/library/nginx:alpine", Port: 80}
+	spec := agent.AppSpec{Name: name, ID: "s1", Source: "docker.io/library/nginx:alpine", Port: 80}
 	v1, err := a.Deploy(ctx, spec, &log)
 	if err != nil {
 		t.Fatalf("deploy: %v\n%s", err, log.String())
@@ -340,7 +345,7 @@ func TestAppSourcePodman(t *testing.T) {
 	if err != nil || v2.Image != v1.Image {
 		t.Fatalf("redeploy: %+v %v", v2, err) // the tag didn't move: same image
 	}
-	back, err := a.Deploy(ctx, AppSpec{Name: name, ID: "s3", Image: v1.Image, Source: spec.Source, Port: 80}, &log)
+	back, err := a.Deploy(ctx, agent.AppSpec{Name: name, ID: "s3", Image: v1.Image, Source: spec.Source, Port: 80}, &log)
 	if err != nil || back.Sha != v1.Sha {
 		t.Fatalf("rollback: %+v %v\n%s", back, err, log.String())
 	}
@@ -357,23 +362,23 @@ func TestAppVolumesPodman(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("WALROOS_TEST_RELAY", "1")
 	healthTimeout = 20 * time.Second
-	a := NewApps()
+	a := New(quadlet.New())
 	a.relay = []string{os.Args[0]}
-	a.data = t.TempDir()
+	a.q.Data = t.TempDir()
 	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
 	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
 	exec1 := func(container, script string) string {
 		t.Helper()
-		out, err := podman(ctx, "exec", container, "sh", "-c", script)
+		out, err := host.Podman(ctx, "exec", container, "sh", "-c", script)
 		if err != nil {
 			t.Fatalf("exec %s %q: %v", container, script, err)
 		}
 		return out
 	}
 
-	os.MkdirAll(filepath.Join(a.data, "site"), 0o755)
-	os.WriteFile(filepath.Join(a.data, "site", "index.html"), []byte("from the host"), 0o644)
-	spec := AppSpec{Name: name, ID: "v1", Source: "docker.io/library/nginx:alpine", Port: 80, Volumes: []Volume{
+	os.MkdirAll(filepath.Join(a.q.Data, "site"), 0o755)
+	os.WriteFile(filepath.Join(a.q.Data, "site", "index.html"), []byte("from the host"), 0o644)
+	spec := agent.AppSpec{Name: name, ID: "v1", Source: "docker.io/library/nginx:alpine", Port: 80, Volumes: []agent.Volume{
 		{Name: "data", Target: "/data"},
 		{HostPath: "site", Target: "/usr/share/nginx/html", RO: true},
 	}}
@@ -385,7 +390,7 @@ func TestAppVolumesPodman(t *testing.T) {
 	if got := exec1(v1.Container, "cat /usr/share/nginx/html/index.html"); got != "from the host" {
 		t.Fatalf("bind: %q", got)
 	}
-	if _, err := podman(ctx, "exec", v1.Container, "touch", "/usr/share/nginx/html/x"); err == nil {
+	if _, err := host.Podman(ctx, "exec", v1.Container, "touch", "/usr/share/nginx/html/x"); err == nil {
 		t.Error("wrote to a read-only bind")
 	}
 	exec1(v1.Container, "echo kept > /data/f")
@@ -412,9 +417,9 @@ func TestAppVolumesPodman(t *testing.T) {
 	}
 
 	// A symlink in the data root can't lead a bind outside it.
-	os.Symlink("/etc", filepath.Join(a.data, "evil"))
+	os.Symlink("/etc", filepath.Join(a.q.Data, "evil"))
 	evil := spec
-	evil.ID, evil.Volumes = "v4", []Volume{{HostPath: "evil", Target: "/x"}}
+	evil.ID, evil.Volumes = "v4", []agent.Volume{{HostPath: "evil", Target: "/x"}}
 	if _, err := a.Deploy(ctx, evil, io.Discard); err == nil || !strings.Contains(err.Error(), "volume evil") {
 		t.Fatalf("bind through a symlink to /etc: %v", err)
 	}
@@ -426,16 +431,16 @@ func TestAppVolumesPodman(t *testing.T) {
 	if err := a.Delete(ctx, name, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := podman(ctx, "volume", "exists", vol); err != nil {
+	if _, err := host.Podman(ctx, "volume", "exists", vol); err != nil {
 		t.Fatal("delete without purge removed the volume")
 	}
 	if err := a.Delete(ctx, name, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := podman(ctx, "volume", "exists", vol); err == nil {
+	if _, err := host.Podman(ctx, "volume", "exists", vol); err == nil {
 		t.Fatal("purge left the volume")
 	}
-	if _, err := os.Stat(filepath.Join(a.data, "site", "index.html")); err != nil {
+	if _, err := os.Stat(filepath.Join(a.q.Data, "site", "index.html")); err != nil {
 		t.Fatal("purge touched the data root")
 	}
 }

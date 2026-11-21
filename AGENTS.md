@@ -12,8 +12,8 @@ cd web && bun install && bun run build && cd ..   # UI → internal/web/ui/dist 
 cd web && bun test                                 # UI unit tests (web/test/)
 CGO_ENABLED=0 go build -o bin/walroos ./cmd/walroos   # static: the SFTP helper also runs in musl images
 go test ./...
-WALROOS_PODMAN_TEST=1 go test ./internal/agent -v   # + workspace lifecycle on real rootless podman
-GOOS=linux CGO_ENABLED=0 go test -c ./internal/agent # SSH tests are linux-only: run the binary in WSL
+WALROOS_PODMAN_TEST=1 go test ./internal/agent/... # + workspaces, apps, databases, SSH on real rootless podman
+GOOS=linux CGO_ENABLED=0 go test -c ./internal/agent/sshgw # SSH tests are linux-only: run the binary in WSL
 go run ./cmd/walroos hub --dev                    # 127.0.0.1:8080, no Tailscale, user dev@localhost
 cd web && bun run dev                             # Vite :5173, proxies /api to :8080 (WALROOS_API=url for another hub)
 ```
@@ -26,7 +26,15 @@ Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (
 cmd/walroos/            cobra root; hub/ (control plane), node/ (agent: join, run, telemetry)
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql
 internal/auth/          Tailscale WhoIs, users and their roles (owner, deployer, developer), permissions
-internal/agent/         node agent: hub API (:7070), workspaces and apps (Quadlets) on podman, SSH gateway (:2222), build registry proxy (:5000)
+internal/agent/         the hub ↔ node contract: specs, results, validation, ports, the Client the hub calls nodes with
+  server/               the node's HTTP API for the hub (:7070), composing the packages below
+  workspaces/           dev workspaces on podman: clone, devcontainer, base image, rebuild
+  apps/                 app releases as Quadlets: build or pull, health check, swap; build registry (:5000); cloudflared
+  databases/            database Quadlets, backups and restore
+  sshgw/                SSH gateway into workspaces (:2222): sessions, SFTP, port forwards
+  quadlet/              unit directory, per-name locks, egress guard, project networks
+  host/                 the podman, systemctl, journalctl and git CLIs
+  agenttest/            helpers the agent's tests share
 internal/app/           apps: config, source, encrypted env (env.go), deployment queue and history (deploy.go), domains (ingress.go), templates
 internal/database/      database services (Postgres, MySQL, MariaDB, Redis, Valkey, MongoDB) and their backups
 internal/project/       projects: groups of apps and databases sharing a podman network; lookup/ resolves a name for app and database
