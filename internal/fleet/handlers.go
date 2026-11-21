@@ -2,7 +2,6 @@ package fleet
 
 import (
 	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -65,18 +64,7 @@ func (h *Handler) handleJoin(w http.ResponseWriter, req *http.Request) {
 	}
 
 	node, nodeToken, err := h.svc.Join(req.Context(), body.Token, body.Name, body.Roles)
-	switch {
-	case errors.Is(err, ErrInvalidName), errors.Is(err, ErrInvalidRoles):
-		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrInvalidJoinToken):
-		whttp.ErrorJSON(w, http.StatusUnauthorized, err.Error())
-	case errors.Is(err, ErrNodeNameAlreadyExists):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		whttp.JSON(w, http.StatusCreated, map[string]any{"node": node, "token": nodeToken})
-	}
+	whttp.Reply(w, http.StatusCreated, map[string]any{"node": node, "token": nodeToken}, err)
 }
 
 func (h *Handler) handleSetRoles(w http.ResponseWriter, req *http.Request) {
@@ -88,16 +76,7 @@ func (h *Handler) handleSetRoles(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	node, err := h.svc.SetRoles(req.Context(), req.PathValue("id"), body.Roles)
-	switch {
-	case errors.Is(err, ErrInvalidRoles):
-		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNodeNotFound):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		whttp.JSON(w, http.StatusOK, node)
-	}
+	whttp.Reply(w, http.StatusOK, node, err)
 }
 
 func (h *Handler) handleHeartbeat(w http.ResponseWriter, req *http.Request) {
@@ -115,60 +94,34 @@ func (h *Handler) handleHeartbeat(w http.ResponseWriter, req *http.Request) {
 
 	address, _, _ := net.SplitHostPort(req.RemoteAddr)
 	err := h.svc.Heartbeat(req.Context(), req.PathValue("id"), token, address, t)
-	switch {
-	case errors.Is(err, ErrUnauthorized):
-		whttp.ErrorJSON(w, http.StatusUnauthorized, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		whttp.JSON(w, http.StatusOK, map[string]string{"hub_id": h.hubID})
-	}
+	whttp.Reply(w, http.StatusOK, map[string]string{"hub_id": h.hubID}, err)
 }
 
 // handleAgentInfo calls the node's agent: proves the hub → node path works.
 func (h *Handler) handleAgentInfo(w http.ResponseWriter, req *http.Request) {
 	address, tokenHash, err := h.svc.AgentTarget(req.Context(), req.PathValue("id"))
-	switch {
-	case errors.Is(err, ErrNodeNotFound):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-		return
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	if err != nil {
+		whttp.WriteError(w, err)
 		return
 	}
-
 	info, err := h.agents.Info(req.Context(), address, tokenHash)
-	switch {
-	case errors.Is(err, agent.ErrNoAddress):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())
-	default:
-		whttp.JSON(w, http.StatusOK, info)
+	if err != nil && whttp.StatusOf(err) == http.StatusInternalServerError {
+		err = whttp.Upstream(err.Error()) // the node didn't answer: that's what this call checks
 	}
+	whttp.Reply(w, http.StatusOK, info, err)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, req *http.Request) {
 	nodes, err := h.svc.List(req.Context())
-	if err != nil {
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	whttp.JSON(w, http.StatusOK, nodes)
+	whttp.Reply(w, http.StatusOK, nodes, err)
 }
 
 func (h *Handler) handleRemove(w http.ResponseWriter, req *http.Request) {
-	err := h.svc.Remove(req.Context(), req.PathValue("id"))
-	switch {
-	case errors.Is(err, ErrNodeNotFound):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrNodeHasWorkspaces):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case err != nil:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	default:
-		w.WriteHeader(http.StatusNoContent)
+	if err := h.svc.Remove(req.Context(), req.PathValue("id")); err != nil {
+		whttp.WriteError(w, err)
+		return
 	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func bearerToken(req *http.Request) (string, bool) {

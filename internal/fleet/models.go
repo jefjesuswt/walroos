@@ -1,17 +1,18 @@
 package fleet
 
 import (
-	"errors"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNodeNotFound          = errors.New("node not found")
-	ErrNodeNameAlreadyExists = errors.New("node name already exists")
-	ErrInvalidJoinToken      = errors.New("join token is invalid, expired or already used")
-	ErrUnauthorized          = errors.New("invalid node token")
-	ErrInvalidName           = errors.New("node name must be a DNS label: lowercase letters, digits and '-', max 63 chars")
-	ErrInvalidRoles          = errors.New("roles must be one or more of: dev, build, prod")
+	ErrNodeNotFound          = whttp.NotFound("node not found")
+	ErrNodeNameAlreadyExists = whttp.Conflict("node name already exists")
+	ErrInvalidJoinToken      = whttp.Unauthorized("join token is invalid, expired or already used")
+	ErrUnauthorized          = whttp.Unauthorized("invalid node token")
+	ErrInvalidName           = whttp.Invalid("node name must be a DNS label: lowercase letters, digits and '-', max 63 chars")
+	ErrInvalidRoles          = whttp.Invalid("roles must be one or more of: dev, build, prod")
 )
 
 // Roles a node can take. dev runs workspaces, build runs image builds, prod runs apps.

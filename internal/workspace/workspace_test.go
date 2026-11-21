@@ -2,6 +2,7 @@ package workspace_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"net"
@@ -71,7 +72,7 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 			errJSON(422, "can't clone the repo: not found")
 			return
 		}
-		json(200, map[string]any{"stack": "go", "branch": cmpOr(body.Branch, "main"), "devcontainer": map[string]string{"image": "go"}})
+		json(200, map[string]any{"stack": "go", "branch": cmp.Or(body.Branch, "main"), "devcontainer": map[string]string{"image": "go"}})
 	case r.Method == "GET" && path == "":
 		list := []agent.Workspace{}
 		for _, ws := range f.ws {
@@ -468,13 +469,6 @@ func TestWorkspaceEnv(t *testing.T) {
 	if n != 0 {
 		t.Errorf("%d env rows left after delete", n)
 	}
-}
-
-func cmpOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }
 
 func TestWorkspaceDetect(t *testing.T) {

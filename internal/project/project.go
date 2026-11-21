@@ -9,21 +9,23 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/database"
+	"github.com/jefjesuswt/walroos/internal/project/lookup"
+	"github.com/jefjesuswt/walroos/shared/names"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNotFound = errors.New("project not found")
-	ErrExists   = errors.New("a project with that name already exists")
-	ErrInvalid  = errors.New("name must be a DNS label (lowercase letters, digits, '-'), description at most 500 characters")
-	ErrNotEmpty = errors.New("the project still has services: delete or move them first")
-	ErrDefault  = errors.New("the default project can't be deleted")
+	ErrNotFound = lookup.ErrNotFound
+	ErrExists   = whttp.Conflict("a project with that name already exists")
+	ErrInvalid  = whttp.Invalid("name must be a DNS label (lowercase letters, digits, '-'), description at most 500 characters")
+	ErrNotEmpty = whttp.Conflict("the project still has services: delete or move them first")
+	ErrDefault  = whttp.Invalid("the default project can't be deleted")
 )
 
 // Project is a folder of services. Apps and Databases are filled by Get and List.
@@ -52,11 +54,9 @@ func NewService(db *config.Database, apps *app.Service, dbs *database.Service) *
 	return &Service{db: db, apps: apps, dbs: dbs, now: time.Now}
 }
 
-var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
 func (s *Service) Create(ctx context.Context, in CreateInput) (Project, error) {
 	in.Description = strings.TrimSpace(in.Description)
-	if !nameRe.MatchString(in.Name) || len(in.Description) > 500 {
+	if !names.DNSLabel(in.Name) || len(in.Description) > 500 {
 		return Project{}, ErrInvalid
 	}
 	p := Project{ID: randomID(), Name: in.Name, Description: in.Description, CreatedAt: s.now().UTC(),

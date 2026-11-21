@@ -7,10 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/jefjesuswt/walroos/internal/agent"
-	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
-	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -45,25 +42,25 @@ func (h *Handler) handleEngines(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.List(r.Context())
-	reply(w, http.StatusOK, list, err)
+	whttp.Reply(w, http.StatusOK, list, err)
 }
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var in CreateInput
 	if decode(w, r, &in) {
 		d, err := h.svc.Create(r.Context(), in)
-		reply(w, http.StatusCreated, d, err)
+		whttp.Reply(w, http.StatusCreated, d, err)
 	}
 }
 
 func (h *Handler) handleGet(w http.ResponseWriter, r *http.Request) {
 	d, err := h.svc.Get(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusOK, d, err)
+	whttp.Reply(w, http.StatusOK, d, err)
 }
 
 func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err := h.svc.Delete(r.Context(), r.PathValue("name"), r.URL.Query().Get("purge") == "1"); err != nil {
-		errorJSON(w, err)
+		whttp.WriteError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -73,7 +70,7 @@ func (h *Handler) handleSchedule(w http.ResponseWriter, r *http.Request) {
 	var sc Schedule
 	if decode(w, r, &sc) {
 		d, err := h.svc.SetSchedule(r.Context(), r.PathValue("name"), sc)
-		reply(w, http.StatusOK, d, err)
+		whttp.Reply(w, http.StatusOK, d, err)
 	}
 }
 
@@ -84,30 +81,30 @@ func (h *Handler) handleLink(w http.ResponseWriter, r *http.Request) {
 		if vars == nil {
 			vars = []workspace.EnvVar{}
 		}
-		reply(w, http.StatusOK, vars, err)
+		whttp.Reply(w, http.StatusOK, vars, err)
 	}
 }
 
 func (h *Handler) handleBackups(w http.ResponseWriter, r *http.Request) {
 	list, err := h.svc.Backups(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusOK, list, err)
+	whttp.Reply(w, http.StatusOK, list, err)
 }
 
 func (h *Handler) handleBackup(w http.ResponseWriter, r *http.Request) {
 	b, err := h.svc.Backup(r.Context(), r.PathValue("name"))
-	reply(w, http.StatusCreated, b, err)
+	whttp.Reply(w, http.StatusCreated, b, err)
 }
 
 func (h *Handler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	file := r.PathValue("file")
 	body, size, err := h.svc.Download(r.Context(), r.PathValue("name"), file)
 	if err != nil {
-		errorJSON(w, err)
+		whttp.WriteError(w, err)
 		return
 	}
 	defer body.Close()
 	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+file+`"`) // file matched fileRe: no quotes
+	w.Header().Set("Content-Disposition", `attachment; filename="`+file+`"`) // file passed agent.ValidBackupFile: no quotes
 	if size > 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	}
@@ -120,7 +117,7 @@ func (h *Handler) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	if decode(w, r, &in) {
 		if err := h.svc.Restore(r.Context(), r.PathValue("name"), in.File); err != nil {
-			errorJSON(w, err)
+			whttp.WriteError(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -133,28 +130,4 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 		return false
 	}
 	return true
-}
-
-func reply[T any](w http.ResponseWriter, code int, v T, err error) {
-	if err != nil {
-		errorJSON(w, err)
-		return
-	}
-	whttp.JSON(w, code, v)
-}
-
-func errorJSON(w http.ResponseWriter, err error) {
-	var ae *agent.AgentError
-	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrSchedule), errors.Is(err, ErrEnvKey), errors.Is(err, ErrInvalidFile), errors.Is(err, ErrOtherNode), errors.Is(err, ErrOtherProj):
-		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrNoBackup), errors.Is(err, app.ErrNotFound), errors.Is(err, fleet.ErrNodeNotFound), errors.Is(err, app.ErrNoProject):
-		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrBusy):
-		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
-	case errors.As(err, &ae), errors.Is(err, agent.ErrNoAddress):
-		whttp.ErrorJSON(w, http.StatusBadGateway, err.Error())
-	default:
-		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
-	}
 }

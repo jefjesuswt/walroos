@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 var (
@@ -76,11 +79,9 @@ func NewWorkspaces() *Workspaces {
 	return &Workspaces{busy: map[string]string{}, failed: map[string]string{}}
 }
 
-var workspaceNameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
 // Create starts creating a workspace in the background; poll Get for the outcome.
 func (w *Workspaces) Create(ctx context.Context, spec WorkspaceSpec, env []string) (Workspace, error) {
-	if !workspaceNameRe.MatchString(spec.Name) || (spec.RepoURL == "") == (len(spec.Init) == 0) {
+	if !names.DNSLabel(spec.Name) || (spec.RepoURL == "") == (len(spec.Init) == 0) {
 		return Workspace{}, ErrInvalidWorkspace
 	}
 	for p := range spec.Init {
@@ -185,7 +186,7 @@ func create(ctx context.Context, spec WorkspaceSpec, env []string) error {
 		return err
 	}
 
-	folder := "/workspaces/" + repoName(cmpOr(spec.RepoURL, name)) // a new project's folder is its name
+	folder := "/workspaces/" + repoName(cmp.Or(spec.RepoURL, name)) // a new project's folder is its name
 	user := uid + ":" + gid
 	args := []string{"run", "-d", "--name", "ws-" + name, "--hostname", name, "--network", DevNetwork,
 		"--label", labelWorkspace + "=" + name, "--label", labelUser + "=" + user, "--label", labelFolder + "=" + folder,
@@ -251,7 +252,7 @@ func resolveImage(ctx context.Context, name, repo string, dc *devcontainer) (str
 		if err != nil {
 			return "", fmt.Errorf("build.dockerfile: %w", err)
 		}
-		buildCtx, err := inside(repo, filepath.Join(dc.dir, cmpOr(dc.Build.Context, ".")))
+		buildCtx, err := inside(repo, filepath.Join(dc.dir, cmp.Or(dc.Build.Context, ".")))
 		if err != nil {
 			return "", fmt.Errorf("build.context: %w", err)
 		}
@@ -330,7 +331,7 @@ func (w *Workspaces) list(ctx context.Context, name string) ([]Workspace, error)
 		Image  string
 		Labels map[string]string
 	}
-	if err := json.Unmarshal([]byte(cmpOr(out, "[]")), &containers); err != nil {
+	if err := json.Unmarshal([]byte(cmp.Or(out, "[]")), &containers); err != nil {
 		return nil, fmt.Errorf("podman ps: %w", err)
 	}
 
@@ -697,13 +698,6 @@ func inside(root, p string) (string, error) {
 		return "", fmt.Errorf("%s points outside the repo", name)
 	}
 	return real, nil
-}
-
-func cmpOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return s
 }
 
 func podman(ctx context.Context, args ...string) (string, error) {

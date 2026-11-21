@@ -14,15 +14,17 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 const API = "https://api.github.com"
 
 var (
-	ErrToken       = errors.New("GitHub rejected the token: it's wrong, expired or revoked")
-	ErrScope       = errors.New("the GitHub token can't create repos or push to them: a classic token needs the repo scope (public_repo for public repos only), a fine-grained one Administration and Contents: read and write")
-	ErrRepoExists  = errors.New("a repo with that name already exists on the GitHub account")
-	ErrUnavailable = errors.New("GitHub didn't answer")
+	ErrToken       = whttp.Invalid("GitHub rejected the token: it's wrong, expired or revoked")
+	ErrScope       = whttp.Invalid("the GitHub token can't create repos or push to them: a classic token needs the repo scope (public_repo for public repos only), a fine-grained one Administration and Contents: read and write")
+	ErrRepoExists  = whttp.Conflict("a repo with that name already exists on the GitHub account")
+	ErrUnavailable = whttp.Upstream("GitHub didn't answer")
 )
 
 type Client struct {

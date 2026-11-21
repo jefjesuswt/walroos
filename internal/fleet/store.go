@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 // ErrNodeHasWorkspaces: foreign keys keep what runs on a node from being orphaned.
-var ErrNodeHasWorkspaces = errors.New("the node still has workspaces, apps or databases; delete them first")
+var ErrNodeHasWorkspaces = whttp.Conflict("the node still has workspaces, apps or databases; delete them first")
 
 type Store struct {
 	db *config.Database

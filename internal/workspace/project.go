@@ -2,16 +2,16 @@ package workspace
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/github"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNoGitHub     = errors.New("GitHub isn't set up: add a token in Settings, or start the project as a local git repo")
-	ErrStackVersion = errors.New("unknown stack or version: pick one of GET /api/workspaces/stacks")
+	ErrNoGitHub     = whttp.Conflict("GitHub isn't set up: add a token in Settings, or start the project as a local git repo")
+	ErrStackVersion = whttp.Invalid("unknown stack or version: pick one of GET /api/workspaces/stacks")
 )
 
 const (

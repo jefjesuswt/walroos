@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -15,8 +14,10 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/project/lookup"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/workspace"
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 const backupTimeout = time.Hour
@@ -31,18 +32,14 @@ type Service struct {
 	now    func() time.Time
 }
 
+// placement: databases run on prod nodes, like apps (they share the project network).
+var placement = fleet.Placement{Role: "prod", NoNode: ErrNoNode, WrongRole: ErrNodeRole}
+
 func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box, apps *app.Service) *Service {
 	return &Service{store: store, nodes: nodes, agents: agents, box: box, apps: apps, now: time.Now}
 }
 
-var (
-	nameRe   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
-	// What the agent accepts (agent.DatabaseSpec.Valid), checked here to answer 400 instead of 502.
-	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
-	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`)
-	fileRe     = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb|archive)\.gz$`)
-)
+var ()
 
 // Engines lists what can be created, from the agent's table.
 func Engines() []agent.Engine { return agent.Engines }
@@ -51,17 +48,17 @@ func Engines() []agent.Engine { return agent.Engines }
 // never shown in lists; the connection URL carries it.
 func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) {
 	e, ok := engineOf(in.Engine)
-	if !nameRe.MatchString(in.Name) || in.Name == "engines" || !ok || !slices.Contains(e.Versions, in.Version) { // "engines" is a route
+	if !names.DNSLabel(in.Name) || in.Name == "engines" || !ok || !slices.Contains(e.Versions, in.Version) { // "engines" is a route
 		return Database{}, ErrInvalid
 	}
 	if _, err := s.store.Get(ctx, in.Name); err == nil {
 		return Database{}, ErrExists
 	}
-	projectID, err := app.ProjectID(ctx, s.store.db, in.Project)
+	projectID, err := lookup.ID(ctx, s.store.db, in.Project)
 	if err != nil {
 		return Database{}, err
 	}
-	node, err := s.pickNode(ctx, in.Node)
+	node, err := s.nodes.Pick(ctx, placement, in.Node, nil)
 	if err != nil {
 		return Database{}, err
 	}
@@ -85,7 +82,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 		password = in.Password
 	}
 	in.Description = strings.TrimSpace(in.Description)
-	if !identRe.MatchString(user) || !identRe.MatchString(dbName) || !passwordRe.MatchString(password) || len(in.Description) > 500 {
+	if !names.SQLIdent(user) || !names.SQLIdent(dbName) || !agent.ValidPassword(password) || len(in.Description) > 500 {
 		return Database{}, ErrInvalid
 	}
 	sealed, err := s.box.Seal(password)
@@ -120,29 +117,6 @@ func engineOf(id string) (agent.Engine, bool) {
 		}
 	}
 	return agent.Engine{}, false
-}
-
-// pickNode returns the requested prod node, or the first online one.
-func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
-	nodes, err := s.nodes.List(ctx)
-	if err != nil {
-		return fleet.Node{}, err
-	}
-	for _, n := range nodes {
-		if want != "" && (n.ID == want || n.Name == want) {
-			if !slices.Contains(n.Roles, "prod") {
-				return fleet.Node{}, ErrNodeRole
-			}
-			return n, nil
-		}
-		if want == "" && slices.Contains(n.Roles, "prod") && n.Status == "online" {
-			return n, nil
-		}
-	}
-	if want != "" {
-		return fleet.Node{}, fleet.ErrNodeNotFound
-	}
-	return fleet.Node{}, ErrNoNode
 }
 
 // withConn fills Host and Port, and the URL (with the password) when url is set.
@@ -288,7 +262,7 @@ func (s *Service) Backups(ctx context.Context, name string) ([]agent.Backup, err
 
 // Download streams one dump from the node.
 func (s *Service) Download(ctx context.Context, name, file string) (io.ReadCloser, int64, error) {
-	if !fileRe.MatchString(file) {
+	if !agent.ValidBackupFile(file) {
 		return nil, 0, ErrInvalidFile
 	}
 	d, err := s.store.Get(ctx, name)
@@ -306,7 +280,7 @@ func (s *Service) Download(ctx context.Context, name, file string) (io.ReadClose
 // Restore replaces the database's data with a dump. The caller confirmed it: it can't be undone,
 // short of restoring another dump.
 func (s *Service) Restore(ctx context.Context, name, file string) error {
-	if !fileRe.MatchString(file) {
+	if !agent.ValidBackupFile(file) {
 		return ErrInvalidFile
 	}
 	d, err := s.store.Get(ctx, name)
@@ -336,7 +310,7 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 			key = "DATABASE_URL"
 		}
 	}
-	if !envKeyRe.MatchString(key) {
+	if !names.EnvKey(key) {
 		return nil, ErrEnvKey
 	}
 	a, err := s.apps.Get(ctx, in.App)

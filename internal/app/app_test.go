@@ -388,7 +388,7 @@ func TestAppVolumes(t *testing.T) {
 	}
 	for _, bad := range [][]agent.Volume{
 		{{Name: "x", HostPath: "x", Target: "/x"}}, // both
-		{{Target: "/x"}},                           // neither
+		{{Target: "/x"}}, // neither
 		{{HostPath: "../home", Target: "/x"}},
 		{{HostPath: "a/../../b", Target: "/x"}},
 		{{HostPath: "/etc", Target: "/x"}}, // absolute: only under the data root

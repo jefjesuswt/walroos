@@ -3,6 +3,7 @@ package agent
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -18,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 var (
@@ -121,7 +124,7 @@ func (spec AppSpec) Valid() bool {
 	opt := func(re *regexp.Regexp, v string) bool { return v == "" || re.MatchString(v) }
 	ownImage := "localhost/walroos-app-" + spec.Name + ":"
 	tag, isOwn := strings.CutPrefix(spec.Image, ownImage)
-	return workspaceNameRe.MatchString(spec.Name) && deployIDRe.MatchString(spec.ID) && spec.Port >= 1 && spec.Port <= 65535 &&
+	return names.DNSLabel(spec.Name) && deployIDRe.MatchString(spec.ID) && spec.Port >= 1 && spec.Port <= 65535 &&
 		(spec.RepoURL != "" || spec.Image != "" || spec.Source != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
 		(spec.Source == "" || len(spec.Source) <= 255 && imageRe.MatchString(spec.Source) && spec.RepoURL == "" && spec.Pull == "") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
@@ -215,7 +218,7 @@ func (a *Apps) Deploy(ctx context.Context, spec AppSpec, log io.Writer) (Release
 	if err := a.start(ctx, spec, rel); err != nil {
 		return fail(err, "couldn't start "+rel.Container)
 	}
-	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmpOr(spec.HealthPath, "/"), log); err != nil {
+	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmp.Or(spec.HealthPath, "/"), log); err != nil {
 		fmt.Fprint(log, journal(bg, rel.Container, 20))
 		return fail(err, rel.Container+" never got healthy")
 	}
@@ -258,7 +261,7 @@ func build(ctx context.Context, spec AppSpec, log io.Writer) (sha, image string,
 		return "", "", fmt.Errorf("git rev-parse: %w", err)
 	}
 	sha = strings.TrimSpace(string(out))
-	dockerfile, err := inside(dir, filepath.Join(dir, cmpOr(spec.Dockerfile, "Dockerfile")))
+	dockerfile, err := inside(dir, filepath.Join(dir, cmp.Or(spec.Dockerfile, "Dockerfile")))
 	if err != nil {
 		return "", "", fmt.Errorf("dockerfile: %w", err)
 	}
@@ -341,7 +344,7 @@ Restart=always
 
 [Install]
 WantedBy=default.target
-`, spec.Name, rel.Container, rel.Sha, rel.Image, cmpOr(spec.Network, AppNetwork), labelApp, labelSha, envFile, guard, mounts)
+`, spec.Name, rel.Container, rel.Sha, rel.Image, cmp.Or(spec.Network, AppNetwork), labelApp, labelSha, envFile, guard, mounts)
 	if err := os.WriteFile(filepath.Join(a.dir, rel.Container+".container"), []byte(unit), 0o644); err != nil {
 		return err
 	}
@@ -619,7 +622,7 @@ func ProjectNetwork(project string) string {
 
 func validNetwork(n string) bool {
 	p, ok := strings.CutPrefix(n, "walroos-p-")
-	return n == "" || n == AppNetwork || ok && workspaceNameRe.MatchString(p)
+	return n == "" || n == AppNetwork || ok && names.DNSLabel(p)
 }
 
 // ensureServiceNetwork creates a project's network the first time: labeled (the egress guard

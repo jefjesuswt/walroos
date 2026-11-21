@@ -3,6 +3,7 @@
 package mcp
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -299,16 +300,9 @@ func addAppTools(s *sdk.Server, apps *app.Service) {
 	sdk.AddTool(s, &sdk.Tool{Name: "app_logs", Annotations: ro,
 		Description: "The running release's output (stdout and stderr) from the node's journal."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in logsIn) (*sdk.CallToolResult, any, error) {
-			logs, err := apps.Logs(ctx, in.Name, cmpOr(in.Lines, 200))
+			logs, err := apps.Logs(ctx, in.Name, cmp.Or(in.Lines, 200))
 			return nil, map[string]string{"logs": tail(logs)}, err
 		})
-}
-
-func cmpOr(n, fallback int) int {
-	if n <= 0 {
-		return fallback
-	}
-	return min(n, 2000)
 }
 
 // sshInfo matches what `walroos ssh-config` prints for one workspace.

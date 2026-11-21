@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -14,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 var (
@@ -176,15 +179,20 @@ type Backup struct {
 }
 
 var (
-	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`) // no quoting needed in an env file or a URL
 	backupRe   = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb|archive)\.gz$`)
 )
 
+// ValidPassword: what a database password may be (the hub checks a chosen one with it too).
+func ValidPassword(s string) bool { return passwordRe.MatchString(s) }
+
+// ValidBackupFile: the name of a dump file this agent writes, safe in a path and a header.
+func ValidBackupFile(s string) bool { return backupRe.MatchString(s) }
+
 func (spec DatabaseSpec) Valid() bool {
 	e, ok := engine(spec.Engine)
-	return ok && slices.Contains(e.Versions, spec.Version) && workspaceNameRe.MatchString(spec.Name) &&
-		identRe.MatchString(spec.User) && identRe.MatchString(spec.DB) && passwordRe.MatchString(spec.Password) && validNetwork(spec.Network)
+	return ok && slices.Contains(e.Versions, spec.Version) && names.DNSLabel(spec.Name) &&
+		names.SQLIdent(spec.User) && names.SQLIdent(spec.DB) && passwordRe.MatchString(spec.Password) && validNetwork(spec.Network)
 }
 
 // DatabaseContainer is the container (and host name) of a database: apps reach it on its project's network.
@@ -263,7 +271,7 @@ TimeoutStartSec=900
 
 [Install]
 WantedBy=default.target
-`, spec.Name, spec.Engine, spec.Version, image, c, cmpOr(spec.Network, AppNetwork), labelDB, envFile, e.data(spec.Version), execLine, guard)
+`, spec.Name, spec.Engine, spec.Version, image, c, cmp.Or(spec.Network, AppNetwork), labelDB, envFile, e.data(spec.Version), execLine, guard)
 	if err := os.WriteFile(filepath.Join(a.dir, c+".container"), []byte(unit), 0o644); err != nil {
 		return Database{}, err
 	}
@@ -321,7 +329,7 @@ func (a *Apps) database(ctx context.Context, name string) (Database, Engine, err
 // DeleteDatabase stops it and removes its unit. purge also removes its data volume and backups;
 // without it a database created again with the same name finds its data.
 func (a *Apps) DeleteDatabase(ctx context.Context, name string, purge bool) error {
-	if !workspaceNameRe.MatchString(name) {
+	if !names.DNSLabel(name) {
 		return ErrDatabaseNotFound
 	}
 	unlock, err := a.lock("db/" + name)

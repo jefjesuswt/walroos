@@ -6,6 +6,7 @@ package agent
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -27,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jefjesuswt/walroos/shared/names"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -129,7 +131,7 @@ func (g *SSHGateway) handle(nc net.Conn) {
 
 func (g *SSHGateway) publicKey(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	workspace, fp := meta.User(), ssh.FingerprintSHA256(key)
-	if !workspaceNameRe.MatchString(workspace) {
+	if !names.DNSLabel(workspace) {
 		return nil, errors.New("ssh user must be a workspace name")
 	}
 	k := workspace + " " + fp
@@ -394,7 +396,7 @@ func (c *sshConn) directTCPIP(nch ssh.NewChannel) {
 	// so the client sees "connection refused" instead of an open channel that closes.
 	if _, err := io.ReadFull(stdout, make([]byte, 1)); err != nil {
 		cmd.Wait()
-		nch.Reject(ssh.ConnectionFailed, cmpOr(strings.TrimSpace(stderr.String()), "connect failed"))
+		nch.Reject(ssh.ConnectionFailed, cmp.Or(strings.TrimSpace(stderr.String()), "connect failed"))
 		return
 	}
 	ch, reqs, err := nch.Accept()

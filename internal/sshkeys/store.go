@@ -11,14 +11,15 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/config"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrInvalidKey  = errors.New("public_key must be one OpenSSH public key line (ssh-ed25519 AAAA... comment)")
-	ErrInvalidName = errors.New("name must be 1-64 characters")
-	ErrKeyExists   = errors.New("this key, or a key with this name, is already added")
-	ErrKeyNotFound = errors.New("ssh key not found")
-	ErrDenied      = errors.New("key not allowed on this workspace")
+	ErrInvalidKey  = whttp.Invalid("public_key must be one OpenSSH public key line (ssh-ed25519 AAAA... comment)")
+	ErrInvalidName = whttp.Invalid("name must be 1-64 characters")
+	ErrKeyExists   = whttp.Conflict("this key, or a key with this name, is already added")
+	ErrKeyNotFound = whttp.NotFound("ssh key not found")
+	ErrDenied      = whttp.Forbidden("key not allowed on this workspace")
 )
 
 type Key struct {

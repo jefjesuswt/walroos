@@ -1,20 +1,22 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/project/lookup"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/workspace"
+	"github.com/jefjesuswt/walroos/shared/names"
 )
 
 const deployTimeout = 30 * time.Minute
@@ -31,28 +33,29 @@ type Service struct {
 	CloudflareAPI string // "" = Cloudflare's; tests point it at a fake
 }
 
+// placement: apps run on prod nodes.
+var placement = fleet.Placement{Role: "prod", NoNode: ErrNoNode, WrongRole: ErrNodeRole}
+
 func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box) *Service {
 	return &Service{store: store, nodes: nodes, agents: agents, box: box, kick: make(chan struct{}, 1), now: time.Now}
 }
 
-var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 	src := SourceInput{RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
 	in.Description = strings.TrimSpace(in.Description)
-	if !nameRe.MatchString(in.Name) || in.Name == "from-template" || len(in.Description) > 500 || src != (SourceInput{}) && !validSource(in.Name, src) {
+	if !names.DNSLabel(in.Name) || in.Name == "from-template" || len(in.Description) > 500 || src != (SourceInput{}) && !validSource(in.Name, src) {
 		return App{}, ErrInvalid
 	}
-	projectID, err := ProjectID(ctx, s.store.db, in.Project)
+	projectID, err := lookup.ID(ctx, s.store.db, in.Project)
 	if err != nil {
 		return App{}, err
 	}
-	node, err := s.pickNode(ctx, in.Node)
+	node, err := s.nodes.Pick(ctx, placement, in.Node, nil)
 	if err != nil {
 		return App{}, err
 	}
 	a := App{
-		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: cmpOr(in.Project, "default"), RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
+		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: cmp.Or(in.Project, "default"), RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
 		Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath, Description: in.Description, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
@@ -81,30 +84,6 @@ func (s *Service) SetSource(ctx context.Context, name string, in SourceInput) (A
 		return App{}, err
 	}
 	return s.Get(ctx, name)
-}
-
-// pickNode returns the requested node (name or id) if it has the prod role, else the first
-// online prod node. ponytail: no spreading across prod nodes; pass node when there are several.
-func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
-	nodes, err := s.nodes.List(ctx)
-	if err != nil {
-		return fleet.Node{}, err
-	}
-	for _, n := range nodes {
-		if want != "" && (n.ID == want || n.Name == want) {
-			if !slices.Contains(n.Roles, "prod") {
-				return fleet.Node{}, ErrNodeRole
-			}
-			return n, nil
-		}
-		if want == "" && slices.Contains(n.Roles, "prod") && n.Status == "online" {
-			return n, nil
-		}
-	}
-	if want != "" {
-		return fleet.Node{}, fleet.ErrNodeNotFound
-	}
-	return fleet.Node{}, ErrNoNode
 }
 
 func (s *Service) List(ctx context.Context) ([]App, error) {

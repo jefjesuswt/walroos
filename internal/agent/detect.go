@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -175,9 +176,9 @@ func pick(s scan, root bool) (Detection, gen) {
 
 	case s.find(false, "AndroidManifest.xml") != "" && has("build.gradle.kts", "build.gradle", "settings.gradle.kts", "settings.gradle") != "":
 		gradles := []string{"build.gradle.kts", "build.gradle"} // the app module's has compileSdk, the root one doesn't
-		jdk := cmpOr(s.grep(jdkRe, gradles...), "17")
-		sdk := cmpOr(s.grep(`compileSdk(?:Version)?\s*=?\s*(\d+)`, gradles...), "35")
-		buildTools := cmpOr(s.grep(`buildToolsVersion\s*=?\s*"([\d.]+)"`, gradles...), sdk+".0.0")
+		jdk := cmp.Or(s.grep(jdkRe, gradles...), "17")
+		sdk := cmp.Or(s.grep(`compileSdk(?:Version)?\s*=?\s*(\d+)`, gradles...), "35")
+		buildTools := cmp.Or(s.grep(`buildToolsVersion\s*=?\s*"([\d.]+)"`, gradles...), sdk+".0.0")
 		platform := "android-" + sdk
 		if n, _ := strconv.Atoi(sdk); n >= 37 { // newer SDKs have minor versions: platforms;android-37.0
 			platform += ".0"
@@ -191,12 +192,12 @@ func pick(s scan, root bool) (Detection, gen) {
 
 	case has("global.json", "*.csproj", "*.sln", "*.slnx") != "":
 		v := match(s.read(has("global.json")), `"version"\s*:\s*"(\d+\.\d+)`)
-		v = cmpOr(cmpOr(v, s.grep(`<TargetFrameworks?>net(\d+\.\d+)`, "*.csproj")), "10.0")
+		v = cmp.Or(cmp.Or(v, s.grep(`<TargetFrameworks?>net(\d+\.\d+)`, "*.csproj")), "10.0")
 		d.Stack, g = "dotnet", stackGen("dotnet", v)
 		d.Tools = append(d.Tools, Tool{ID: "dotnet", Label: ".NET SDK", Version: v, Source: "image"})
 
 	case has("bun.lock", "bun.lockb", "package.json") != "":
-		node := cmpOr(match(s.read(has(".nvmrc", ".node-version")), `v?(\d+)`), "22")
+		node := cmp.Or(match(s.read(has(".nvmrc", ".node-version")), `v?(\d+)`), "22")
 		d.Stack, g = "node", stackGen("node", node)
 		d.Tools = append(d.Tools, Tool{ID: "node", Label: "Node.js", Version: node, Source: "image"})
 		deps := Tool{ID: "deps", Label: "Install dependencies", Source: "postCreate", Install: "npm install"}
@@ -217,7 +218,7 @@ func pick(s scan, root bool) (Detection, gen) {
 		d.Tools = append(d.Tools, deps)
 
 	case has("go.mod") != "":
-		v := cmpOr(match(s.read(has("go.mod")), `(?m)^go (\d+\.\d+)`), "1")
+		v := cmp.Or(match(s.read(has("go.mod")), `(?m)^go (\d+\.\d+)`), "1")
 		d.Stack, g = "go", stackGen("go", v)
 		d.Tools = append(d.Tools, Tool{ID: "go", Label: "Go", Version: v, Source: "image"})
 
@@ -227,7 +228,7 @@ func pick(s scan, root bool) (Detection, gen) {
 
 	case has("pyproject.toml", "requirements.txt") != "":
 		v := match(s.read(has(".python-version")), `(\d+\.\d+)`)
-		v = cmpOr(cmpOr(v, match(s.read(has("pyproject.toml")), `requires-python\s*=\s*"[>=~^]*(\d+\.\d+)`)), "3.13")
+		v = cmp.Or(cmp.Or(v, match(s.read(has("pyproject.toml")), `requires-python\s*=\s*"[>=~^]*(\d+\.\d+)`)), "3.13")
 		d.Stack, g = "python", stackGen("python", v)
 		d.Tools = append(d.Tools, Tool{ID: "python", Label: "Python", Version: v, Source: "image"})
 		if has("uv.lock") != "" {
@@ -236,7 +237,7 @@ func pick(s scan, root bool) (Detection, gen) {
 		}
 
 	case has("build.gradle.kts", "build.gradle", "pom.xml") != "":
-		jdk := cmpOr(match(s.read(has("build.gradle.kts", "build.gradle", "pom.xml")), jdkRe), "17")
+		jdk := cmp.Or(match(s.read(has("build.gradle.kts", "build.gradle", "pom.xml")), jdkRe), "17")
 		d.Stack, g = "java", stackGen("java", jdk)
 		d.Tools = append(d.Tools, Tool{ID: "jdk", Label: "JDK", Version: jdk, Source: "image"})
 

@@ -10,13 +10,14 @@ import (
 	"strings"
 
 	"github.com/jefjesuswt/walroos/internal/cloudflare"
+	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
 var (
-	ErrNoCloudflare = errors.New("Cloudflare isn't set up: add an API token in Settings")
-	ErrDomain       = errors.New("domains must be hostnames like app.example.com")
-	ErrDomainTaken  = errors.New("that domain already routes to another app")
-	ErrNoZone       = errors.New("not in a zone this Cloudflare token can edit")
+	ErrNoCloudflare = whttp.Conflict("Cloudflare isn't set up: add an API token in Settings")
+	ErrDomain       = whttp.Invalid("domains must be hostnames like app.example.com")
+	ErrDomainTaken  = whttp.Conflict("that domain already routes to another app")
+	ErrNoZone       = whttp.Invalid("not in a zone this Cloudflare token can edit")
 )
 
 // CloudflareStatus is what the UI shows; the token itself never leaves the hub.
