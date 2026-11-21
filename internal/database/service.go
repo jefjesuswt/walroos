@@ -312,8 +312,9 @@ func (s *Service) Restore(ctx context.Context, name, file string) error {
 	return agentErr(s.agents.RestoreDatabase(ctx, address, tokenHash, d.Name, file))
 }
 
-// Link puts the connection URL in the app's environment (a secret variable). The app picks it
-// up on its next deploy; it must run on the database's node, the only place it can reach it.
+// Link puts a reference to the connection URL in the app's environment (DATABASE_URL =
+// ${{<db>.URL}}), expanded on each deploy. The app must be in the database's project and on its
+// node, the only place it can reach it.
 func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]workspace.EnvVar, error) {
 	d, err := s.store.Get(ctx, name)
 	if err != nil {
@@ -339,16 +340,13 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 	if a.NodeID != d.NodeID {
 		return nil, ErrOtherNode
 	}
-	d = s.withConn(d, true)
-	if d.URL == "" {
-		return nil, errors.New("can't open the database password: is secret.key the one this hub started with?")
-	}
 	vars, err := s.apps.Env(ctx, a.Name)
 	if err != nil {
 		return nil, err
 	}
 	vars = slices.DeleteFunc(vars, func(v workspace.EnvVar) bool { return v.Key == key })
-	vars = append(vars, workspace.EnvVar{Key: key, Value: d.URL, Secret: true})
+	// A reference, not the URL itself: it's expanded on each deploy, so it follows the database.
+	vars = append(vars, workspace.EnvVar{Key: key, Value: "${{" + d.Name + ".URL}}"})
 	if err := s.apps.SetEnv(ctx, a.Name, vars); err != nil {
 		return nil, err
 	}

@@ -27,6 +27,7 @@ type Service struct {
 	now    func() time.Time
 	// settings has the Cloudflare token domains need.
 	settings *settings.Service
+	resolve  Resolver // the project's references, for ${{...}} in env values
 }
 
 // placement: apps run on prod nodes.

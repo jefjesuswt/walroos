@@ -11,6 +11,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/envstore"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/settings"
@@ -272,51 +273,20 @@ func (s *Service) SetEnv(ctx context.Context, name string, vars []EnvVar) error 
 	if err != nil {
 		return err
 	}
-	sealed, err := SealEnv(s.box, vars)
+	sealed, err := envstore.Seal(s.box, vars)
 	if err != nil {
 		return err
 	}
-	return s.store.ReplaceEnv(ctx, w.ID, sealed)
-}
-
-// SealEnv validates variables (apps use it too) and encrypts their values.
-func SealEnv(box *secretbox.Box, vars []EnvVar) ([]EnvVar, error) {
-	if len(vars) > 64 {
-		return nil, fmt.Errorf("%w: at most 64 variables", ErrInvalid)
-	}
-	seen := map[string]bool{}
-	sealed := make([]EnvVar, 0, len(vars))
-	for _, v := range vars {
-		if !names.EnvKey(v.Key) || seen[v.Key] {
-			return nil, fmt.Errorf("%w: %q is not a valid or unique variable name (A-Z, 0-9, _)", ErrInvalid, v.Key)
-		}
-		if len(v.Value) > 32<<10 {
-			return nil, fmt.Errorf("%w: %s is too long", ErrInvalid, v.Key)
-		}
-		seen[v.Key] = true
-		enc, err := box.Seal(v.Value)
-		if err != nil {
-			return nil, err
-		}
-		sealed = append(sealed, EnvVar{Key: v.Key, Value: enc, Secret: v.Secret})
-	}
-	return sealed, nil
+	return envstore.Workspaces.Replace(ctx, s.store.db, w.ID, sealed)
 }
 
 // envList decrypts for the API and for passing KEY=VALUE to the agent.
 func (s *Service) envList(ctx context.Context, id string) ([]EnvVar, error) {
-	stored, err := s.store.Env(ctx, id)
+	stored, err := envstore.Workspaces.Read(ctx, s.store.db, id)
 	if err != nil {
 		return nil, err
 	}
-	for i := range stored {
-		if v, err := s.box.Open(stored[i].Value); err == nil {
-			stored[i].Value = v
-		} else {
-			stored[i].Value = "" // wrong key or corrupt: don't break the whole list
-		}
-	}
-	return stored, nil
+	return envstore.Open(s.box, stored), nil
 }
 
 func (s *Service) envForAgent(ctx context.Context, id string) ([]string, error) {

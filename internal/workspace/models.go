@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/envstore"
+
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -79,8 +81,5 @@ type DetectInput struct {
 
 // EnvVar is one environment variable of a workspace. Secret only affects how the UI shows it;
 // all values are encrypted at rest either way.
-type EnvVar struct {
-	Key    string `json:"key"`
-	Value  string `json:"value"`
-	Secret bool   `json:"secret"`
-}
+// EnvVar is a variable of a workspace (or an app, or a project): see internal/envstore.
+type EnvVar = envstore.Var

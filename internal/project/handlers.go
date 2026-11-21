@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/envstore"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -24,6 +25,32 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d := r.With(auth.Require(auth.PermApps))
 	d.Post("/api/projects", h.handleCreate)
 	d.Delete("/api/projects/{name}", h.handleDelete)
+	d.Get("/api/projects/{name}/env", h.handleGetEnv)
+	d.Put("/api/projects/{name}/env", h.handlePutEnv)
+	d.Get("/api/projects/{name}/refs", h.handleRefs)
+}
+
+func (h *Handler) handleGetEnv(w http.ResponseWriter, r *http.Request) {
+	vars, err := h.svc.Env(r.Context(), r.PathValue("name"))
+	whttp.Reply(w, http.StatusOK, vars, err)
+}
+
+func (h *Handler) handlePutEnv(w http.ResponseWriter, r *http.Request) {
+	var vars []envstore.Var
+	if err := json.NewDecoder(r.Body).Decode(&vars); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body: a list of {key, value, secret}")
+		return
+	}
+	if err := h.svc.SetEnv(r.Context(), r.PathValue("name"), vars); err != nil {
+		whttp.WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) handleRefs(w http.ResponseWriter, r *http.Request) {
+	refs, err := h.svc.Refs(r.Context(), r.PathValue("name"))
+	whttp.Reply(w, http.StatusOK, refs, err)
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {

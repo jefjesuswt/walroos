@@ -3,7 +3,7 @@ import { api, type App, type Project, type Template } from '../api';
 import { NewAppModal } from '../apps/dialogs';
 import { NewDatabaseModal } from '../databases/dialogs';
 import { appState, dbLabel, dbState, engineLogo, type State } from '../status';
-import { ago, BrandLogo, Confirm, EmptyState, Icon, Loading, LoadFailed, Mark, PageHeader, PopMenu, Select, useCan, usePoll, useToast, useTrail } from '../ui';
+import { ago, BrandLogo, Confirm, EmptyState, EnvModal, Icon, Loading, LoadFailed, Mark, PageHeader, PopMenu, Select, useCan, usePoll, useToast, useTrail } from '../ui';
 import { total } from './ProjectsPage';
 import { TemplateModal } from './TemplateModal';
 
@@ -20,6 +20,7 @@ export function ProjectPage({ name }: { name: string }) {
   const [creating, setCreating] = useState<Creating>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [removing, setRemoving] = useState(false);
+  const [variables, setVariables] = useState(false);
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<Kind>('all');
   useEffect(() => { api.templates().then(setTemplates, () => undefined); }, []);
@@ -47,6 +48,7 @@ export function ProjectPage({ name }: { name: string }) {
           {p.name !== 'default' && total(p) === 0 && (
             <button className="btn-icon" aria-label={`Delete project ${p.name}`} title="Delete project" onClick={() => setRemoving(true)}><Icon n="trash" /></button>
           )}
+          <button className="btn" onClick={() => setVariables(true)}><Icon n="settings" />Variables</button>
           <PopMenu label="Create service" open={menu} setOpen={setMenu} items={[
             { icon: 'apps', title: 'Application', text: 'From a Git repository or a Docker image.', onClick: () => setCreating('app') },
             { icon: 'database', title: 'Database', text: 'PostgreSQL, MySQL, MariaDB, MongoDB, Redis or Valkey.', onClick: () => setCreating('database') },
@@ -86,6 +88,12 @@ export function ProjectPage({ name }: { name: string }) {
       {creating === 'app' && <NewAppModal project={project} onClose={() => setCreating(null)} onCreated={created('apps')} />}
       {creating === 'template' && <TemplateModal templates={templates} project={project} onClose={() => setCreating(null)} onCreated={created('apps')} />}
       {creating === 'database' && <NewDatabaseModal project={project} onClose={() => setCreating(null)} onCreated={created('databases')} />}
+      {variables && (
+        <EnvModal title={`Variables · ${p.name}`} savedMsg="Shared variables saved: deploy the apps that use them"
+          sub="Shared by the project's services. An app uses one by writing ${{shared.KEY}} in its own variables; it's filled in on each deploy."
+          load={() => api.projectEnv(p.name)} save={vars => api.setProjectEnv(p.name, vars)}
+          onClose={() => setVariables(false)} onSaved={() => setVariables(false)} />
+      )}
       {removing && (
         <Confirm title={`Delete ${p.name}?`} confirmLabel="Delete project" danger onClose={() => setRemoving(false)} onConfirm={remove}>
           <p className="muted">The project is empty; this only removes it from the list.</p>

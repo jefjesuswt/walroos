@@ -16,6 +16,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/project/lookup"
+	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/shared/names"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -47,11 +48,17 @@ type Service struct {
 	db   *config.Database
 	apps *app.Service
 	dbs  *database.Service
+	box  *secretbox.Box // seals the shared variables
 	now  func() time.Time
 }
 
-func NewService(db *config.Database, apps *app.Service, dbs *database.Service) *Service {
-	return &Service{db: db, apps: apps, dbs: dbs, now: time.Now}
+func NewService(db *config.Database, apps *app.Service, dbs *database.Service, box *secretbox.Box) *Service {
+	return &Service{db: db, apps: apps, dbs: dbs, box: box, now: time.Now}
+}
+
+// id resolves a project's name.
+func (s *Service) id(ctx context.Context, name string) (string, error) {
+	return lookup.ID(ctx, s.db, name)
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (Project, error) {

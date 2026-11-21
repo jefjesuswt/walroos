@@ -92,7 +92,7 @@ export function LinkModal({ d, onClose }: { d: Database; onClose: () => void }) 
   };
   return (
     <Modal title={`Link ${d.name} to an app`} onClose={onClose}
-      sub="Adds the connection URL to the app's environment as a secret variable. It applies on the app's next deploy."
+      sub={`Adds a variable that references this database (\${{${d.name}.URL}}). It's filled in on each deploy of the app.`}
       foot={<Foot onCancel={onClose} onClick={submit} busy={busy} disabled={!app || !key} label="Link" busyLabel="Linking…" />}>
       {error && <ErrorAlert title="Couldn't link it" msg={error} />}
       <div className="form">

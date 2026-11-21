@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/settings"
 	"github.com/jefjesuswt/walroos/internal/workspace"
@@ -160,6 +161,7 @@ func newHub(t *testing.T) *hub {
 	nodes := fleet.NewService(fleet.NewStore(db))
 	apps := app.NewService(app.NewStore(db), nodes, agents, box, settings.NewService(db, box))
 	svc := database.NewService(database.NewStore(db), nodes, agents, box, apps)
+	apps.SetResolver(project.NewService(db, apps, svc, box).Vars) // links write ${{db.URL}}
 
 	r := whttp.NewRouter()
 	r.Group(func(r *whttp.Router) {
@@ -411,7 +413,7 @@ func TestLinkAndDelete(t *testing.T) {
 	for _, v := range vars {
 		byKey[v.Key] = v
 	}
-	if byKey["DATABASE_URL"].Value != d.URL || !byKey["DATABASE_URL"].Secret || byKey["KEEP"].Value != "1" || len(vars) != 2 {
+	if byKey["DATABASE_URL"].Value != "${{shop-db.URL}}" || byKey["KEEP"].Value != "1" || len(vars) != 2 {
 		t.Errorf("env after link = %+v", vars)
 	}
 	h.call(t, "POST", "/api/databases/cache/link", map[string]string{"app": "shop"}, &vars)

@@ -4,6 +4,7 @@ import { api, type App, type Deployment } from '../api';
 import { isDraft } from '../status';
 import { DangerZone, EnvEditor, Icon, Note, Section, usePoll } from '../ui';
 import { DeploymentsTable } from './DeploymentsTable';
+import { RefHints } from './RefHints';
 import { volumeLine } from './dialogs';
 
 export function EnvironmentTab({ app, canEdit }: { app: App; canEdit: boolean }) {
@@ -12,6 +13,7 @@ export function EnvironmentTab({ app, canEdit }: { app: App; canEdit: boolean })
     <Section id="env-h" title="Environment" form
       sub="Passed to the container as KEY=VALUE from a 0600 file on the node, never in the command line. Encrypted in the hub; they apply on the next deploy.">
       <EnvEditor load={() => api.appEnv(app.name)} save={vars => api.setAppEnv(app.name, vars)} savedMsg="Variables saved: deploy to apply them" />
+      <RefHints project={app.project} />
     </Section>
   );
 }

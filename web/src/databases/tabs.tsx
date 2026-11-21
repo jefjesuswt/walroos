@@ -19,7 +19,7 @@ export function ConnectionCard({ d }: { d: Database }) {
         {d.engine !== 'redis' && <><dt>User</dt><dd className="mono">{d.user}</dd><dt>Database</dt><dd className="mono">{d.db}</dd></>}
       </dl>
       {url && <CopyField value={url} masked={masked} label="connection URL" />}
-      <p className="help"><strong>Link to app</strong> puts this URL in an app's environment as a secret; it applies on the app's next deploy.</p>
+      <p className="help"><strong>Link to app</strong> adds <span className="mono">{`\${{${d.name}.URL}}`}</span> to an app's variables. Apps of the project can also reference <span className="mono">HOST</span>, <span className="mono">PORT</span>, <span className="mono">USER</span>, <span className="mono">PASSWORD</span> and <span className="mono">DATABASE</span>.</p>
     </Section>
   );
 }

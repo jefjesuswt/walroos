@@ -302,6 +302,16 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Proyectos (fase 2): servicios conectados ✅ (2026-11-21)
+
+Como Railway: las variables de una app referencian a otros servicios del proyecto en vez de copiar valores.
+- **Referencias** `${{servicio.CLAVE}}` (`shared/envref`): una base ofrece `URL`, `HOST`, `PORT`, `USER`, `PASSWORD`, `DATABASE`; una app `URL`, `HOST`, `PORT`. Se validan al guardar (servicio y clave existen en el proyecto; si no, 400 con la variable y lo que hay) y se expanden en cada deploy con lo que el proyecto tiene en ese momento: si el servicio cambia, el siguiente deploy lo sigue; si ya no existe, el deploy falla diciendo qué variable.
+- **Variables compartidas** por proyecto (`project_env`, migración 014, selladas): `GET/PUT /api/projects/{name}/env`, botón "Variables" en el proyecto. Una app las usa con `${{shared.CLAVE}}`: nada llega a una app que no lo pide.
+- **Link to app** escribe `DATABASE_URL=${{<db>.URL}}` en vez de la URL con la contraseña.
+- `GET /api/projects/{name}/refs`: lo que se puede referenciar (sin valores); la pestaña Environment de la app lo muestra y copia la referencia con un clic.
+- `internal/envstore` reúne el almacén de variables de workspaces, apps y proyectos (antes había dos copias, y esta fase traía la tercera).
+- Límites (`ponytail:`): sin referencias entre proyectos; sin herramienta MCP para variables; una referencia a la contraseña de una base la expone a la app que la pide (como copiarla, pero sin que quede escrita).
+
 ## M4 — Deploy en cada push o después del CI ✅ (2026-11-21)
 
 Cada app elige en su pestaña **Automation** cómo se despliega sola. Walroos no corre tests: la forja hace el CI y walroos despliega.
@@ -322,7 +332,7 @@ Como en Dokploy: un **proyecto** agrupa los servicios de un producto (apps y bas
 - **Probado:** test del hub (proyectos, servicios en su red, proyecto desconocido, link entre proyectos, borrar, roles), MCP, y podman real (`TestProjectNetworkPodman`: alias en el mismo proyecto, otro proyecto no llega ni por IP, el guard cubre el bridge nuevo; las apps siguen pasando con el alias y el `expose` reescrito). Migración probada sobre una copia de la `hub.db` real.
 - **UI al estilo Dokploy** (mismo PR): vista de proyecto con "Create service" como menú, buscador y filtro por tipo, tarjetas compactas con logo (Simple Icons, CC0) y punto de estado. Crear una app pide solo nombre y descripción (queda como borrador sin fuente, `PUT /api/apps/{name}/source` se la da y Deploy se habilita); crear una base muestra los motores como tiles con logo y luego nombre, versión, descripción, base, usuario y contraseña opcionales. Las páginas de app (General, Environment, Domains, Deployments, Logs, Advanced) y de base (General, Backups, Advanced) van en pestañas, con la ruta Projects / proyecto / servicio arriba. `#/apps` y `#/databases` llevan a Projects. Migración 012: `description` en apps y bases.
 - **Más servicios** (mismo PR): bases **MongoDB** (8, 7; `mongodump --archive`) y **Valkey** (8), probadas en podman real como las demás. **Templates**: catálogo de servicios comunes listos para correr desde una imagen publicada (nginx, Caddy, Adminer, pgAdmin, n8n, Uptime Kuma, Grafana, Prometheus, Gitea, Mailpit, Meilisearch, RabbitMQ, Vaultwarden, Excalidraw): `GET /api/templates`, `POST /api/apps/from-template` crea la app con imagen, puerto, health check, volúmenes y contraseñas generadas (cifradas) y la despliega. `TestTemplatesPodman` arranca cada imagen y espera su health check. El diálogo de base ya no obliga a hacer scroll (opciones en "More options") y el de templates desplaza solo la lista.
-- Límites (`ponytail:`): nombres de servicio globales (no se repite `api` en dos proyectos); templates de un solo contenedor sin comando propio (MinIO, Plausible y similares esperan a compose); un proyecto no reparte servicios entre nodos (la red es local); sin mover servicios entre proyectos; la red de un proyecto borrado se queda en el nodo. Siguiente fase: variables compartidas y referencias `${{db.URL}}`.
+- Límites (`ponytail:`): nombres de servicio globales (no se repite `api` en dos proyectos); templates de un solo contenedor sin comando propio (MinIO, Plausible y similares esperan a compose); un proyecto no reparte servicios entre nodos (la red es local); sin mover servicios entre proyectos; la red de un proyecto borrado se queda en el nodo. Fase 2 (servicios conectados) más abajo.
 
 ## Usuarios y roles (2026-11-21)
 

@@ -108,7 +108,7 @@ func newHub(t *testing.T, login string) (url string, created *agent.WorkspaceSpe
 	r.Group(func(r *whttp.Router) {
 		r.Use(auth.Middleware(auth.Static(login), users))
 		dbSvc := database.NewService(database.NewStore(db), nodes, agents, box, appSvc)
-		r.Post("/mcp", Handler(nodes, ws, appSvc, dbSvc, project.NewService(db, appSvc, dbSvc)).ServeHTTP)
+		r.Post("/mcp", Handler(nodes, ws, appSvc, dbSvc, project.NewService(db, appSvc, dbSvc, box)).ServeHTTP)
 	})
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

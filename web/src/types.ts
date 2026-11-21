@@ -168,6 +168,12 @@ export interface Hooks {
   error?: string;
 }
 
+// A service of the project (or "shared") and the variables ${{service.KEY}} can name.
+export interface Ref {
+  service: string;
+  keys: string[];
+}
+
 export interface App {
   id: string;
   name: string;

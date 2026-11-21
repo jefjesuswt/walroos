@@ -15,7 +15,6 @@ import (
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/cloudflare"
-	"github.com/jefjesuswt/walroos/internal/workspace"
 )
 
 type Store struct {
@@ -206,41 +205,6 @@ func (s *Store) failRunning(ctx context.Context, at time.Time) error {
 	_, err := s.db.Write.ExecContext(ctx,
 		`UPDATE deployments SET state = 'failed', error = 'the hub restarted during the deploy; the node may have finished it, check the app''s logs', finished_at = ? WHERE state = 'running'`, at)
 	return err
-}
-
-func (s *Store) Env(ctx context.Context, appID string) ([]workspace.EnvVar, error) {
-	rows, err := s.db.Read.QueryContext(ctx, `SELECT key, value, secret FROM app_env WHERE app_id = ? ORDER BY key`, appID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	list := []workspace.EnvVar{}
-	for rows.Next() {
-		var v workspace.EnvVar
-		if err := rows.Scan(&v.Key, &v.Value, &v.Secret); err != nil {
-			return nil, err
-		}
-		list = append(list, v)
-	}
-	return list, rows.Err()
-}
-
-func (s *Store) ReplaceEnv(ctx context.Context, appID string, vars []workspace.EnvVar) error {
-	tx, err := s.db.Write.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM app_env WHERE app_id = ?`, appID); err != nil {
-		return err
-	}
-	for _, v := range vars {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO app_env (app_id, key, value, secret) VALUES (?, ?, ?, ?)`,
-			appID, v.Key, v.Value, v.Secret); err != nil {
-			return fmt.Errorf("insert env: %w", err)
-		}
-	}
-	return tx.Commit()
 }
 
 func randomID() string {

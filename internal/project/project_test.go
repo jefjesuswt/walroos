@@ -102,7 +102,9 @@ func newHub(t *testing.T) (http.Handler, *fakeAgent) {
 		r.Use(auth.Middleware(func(req *http.Request) (string, error) { return req.Header.Get("X-Login"), nil }, users))
 		app.NewHandler(apps).Routes(r)
 		database.NewHandler(dbs).Routes(r)
-		project.NewHandler(project.NewService(db, apps, dbs)).Routes(r)
+		projects := project.NewService(db, apps, dbs, box)
+		apps.SetResolver(projects.Vars)
+		project.NewHandler(projects).Routes(r)
 	})
 	return r, fa
 }
@@ -229,5 +231,47 @@ func TestProjects(t *testing.T) {
 	call(t, h, "GET", "/api/projects", nil, &list)
 	if len(list) != 2 || list[0].Name != "shop" || list[1].Name != "default" {
 		t.Errorf("projects at the end: %+v (default goes last)", list)
+	}
+}
+
+func TestProjectVariables(t *testing.T) {
+	h, _ := newHub(t)
+	call(t, h, "POST", "/api/projects", map[string]string{"name": "shop"}, nil)
+	call(t, h, "POST", "/api/databases", map[string]string{"name": "shop-db", "engine": "postgres", "version": "17", "project": "shop"}, nil)
+	call(t, h, "POST", "/api/apps", map[string]any{"name": "shop-api", "repo_url": "https://github.com/me/api", "port": 3000, "project": "shop"}, nil)
+
+	// Shared variables: sealed like an app's, edited the same way.
+	if code, msg := call(t, h, "PUT", "/api/projects/shop/env", []map[string]any{{"key": "STRIPE_KEY", "value": "sk_test", "secret": true}}, nil); code != 204 {
+		t.Fatalf("set shared: %d %s", code, msg)
+	}
+	var env []map[string]any
+	if call(t, h, "GET", "/api/projects/shop/env", nil, &env); len(env) != 1 || env[0]["value"] != "sk_test" {
+		t.Errorf("shared = %v", env)
+	}
+	if code, _ := call(t, h, "PUT", "/api/projects/shop/env", []map[string]any{{"key": "bad key", "value": "x"}}, nil); code != 400 {
+		t.Errorf("bad shared name: %d", code)
+	}
+	if code, _ := callAs(t, h, "dev@github", "GET", "/api/projects/shop/env", nil, nil); code != 403 {
+		t.Errorf("a developer read shared variables: %d", code)
+	}
+
+	// What references can name: the project's services and its shared variables, no values.
+	var refs []project.Ref
+	call(t, h, "GET", "/api/projects/shop/refs", nil, &refs)
+	got := map[string]string{}
+	for _, r := range refs {
+		got[r.Service] = strings.Join(r.Keys, ",")
+	}
+	if got["shop-db"] != "DATABASE,HOST,PASSWORD,PORT,URL,USER" || got["shop-api"] != "HOST,PORT,URL" || got["shared"] != "STRIPE_KEY" || len(refs) != 3 {
+		t.Errorf("refs = %+v", refs)
+	}
+
+	// An app of the project uses them; one of another project can't.
+	ok := []map[string]any{{"key": "DATABASE_URL", "value": "${{shop-db.URL}}"}, {"key": "STRIPE", "value": "${{shared.STRIPE_KEY}}"}}
+	if code, msg := call(t, h, "PUT", "/api/apps/shop-api/env", ok, nil); code != 200 {
+		t.Errorf("references within the project: %d %s", code, msg)
+	}
+	if code, msg := call(t, h, "PUT", "/api/apps/legacy/env", ok[:1], nil); code != 400 || !strings.Contains(msg, "no service shop-db") {
+		t.Errorf("a reference across projects: %d %q", code, msg)
 	}
 }
