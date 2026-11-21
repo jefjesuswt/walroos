@@ -26,6 +26,9 @@ type network struct {
 	hosts    []string      // Host names we answer to, besides IPs (DNS rebinding)
 	agents   *agent.Client // calls nodes' agents over the same network
 	close    func()
+	// funnel publishes a listener on the internet (Tailscale Funnel) and says at what URL;
+	// nil in --dev.
+	funnel func() (net.Listener, string, error)
 }
 
 func listen(ctx context.Context) (network, error) {
@@ -68,6 +71,13 @@ func listenTailnet(ctx context.Context) (network, error) {
 		return network{}, err
 	}
 	nw.close = func() { ts.Close() }
+	nw.funnel = func() (net.Listener, string, error) {
+		ln, err := ts.ListenFunnel("tcp", ":443", tsnet.FunnelOnly()) // only the internet: the tailnet uses :80
+		if err != nil {
+			return nil, "", err
+		}
+		return ln, "https://" + nw.hosts[1], nil
+	}
 	return nw, nil
 }
 

@@ -302,6 +302,16 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## M4 — Deploy en cada push o después del CI ✅ (2026-11-21)
+
+Cada app elige en su pestaña **Automation** cómo se despliega sola. Walroos no corre tests: la forja hace el CI y walroos despliega.
+- **On push:** webhook firmado por app (`POST /hooks/{github,gitea,gitlab}/{app}`): GitHub con `X-Hub-Signature-256`, Gitea/Forgejo con `X-Gitea-Signature`, GitLab con `X-Gitlab-Token`. Despliega el commit si el push es a la rama de la app (o a la rama por defecto del repo). Ping, tags, otras ramas y ramas borradas responden 200 con el motivo, para que el log de entregas de la forja quede en verde.
+- **After CI:** `POST /hooks/deploy/{app}` con `Authorization: Bearer wlr_deploy_…` y `{"sha": "…"}` opcional. El token se muestra una vez y solo se guarda su sha256; reemplazarlo invalida el anterior. Una app de imagen ignora el `sha` y vuelve a tirar de su tag.
+- **Alcance:** el hub publica solo `/hooks/*` en internet con Tailscale Funnel (`ListenFunnel(":443", FunnelOnly())`), en `https://<hub>.<tailnet>.ts.net`. UI, API y MCP siguen solo en la tailnet. Si Funnel está apagado, `GET /api/hooks` dice por qué y la pestaña lo muestra. Una forja dentro de la tailnet llama a `http://walroos-hub/hooks/...`.
+- **Workflow listo:** la pestaña da un `.github/workflows/deploy.yml` con tests → deploy (y build + push a GHCR para apps de imagen).
+- Cualquier rechazo responde igual (401), así que desde fuera no se sabe qué apps existen. Migración 013: `trigger`, `webhook_secret` (sellado) y `deploy_token_hash` en `apps`.
+- Límites (`ponytail:`): sin herramienta MCP para cambiar el trigger; sin límite de frecuencia en `/hooks` (cada push encola un deploy, la cola es de uno); un deploy por push aunque llegue el mismo commit dos veces.
+
 ## Proyectos (fase 1, 2026-11-21)
 
 Como en Dokploy: un **proyecto** agrupa los servicios de un producto (apps y bases de datos). Página **Projects** (tarjetas con sus servicios y estado) y vista de proyecto con "Create service" → Application / Database. Apps y Databases salen del menú; sus páginas de detalle siguen y enlazan a su proyecto.
@@ -403,7 +413,6 @@ Pendiente (`ponytail:`):
 | Hito | Resumen |
 |---|---|
 | M3 Deploy | Probar M3.2 en un nodo Linux real (homelab). |
-| M4 CI/CD | Webhooks vía Funnel, `on_push` / `on_ci`, deploy tokens. |
 | M5 | Previews por PR, compose, features de devcontainer, Caddy. |
 
 ## Desarrollo remoto real: laptop → PC (2026-11-19)

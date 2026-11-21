@@ -40,6 +40,7 @@ internal/database/      database services (Postgres, MySQL, MariaDB, Redis, Valk
 internal/project/       projects: groups of apps and databases sharing a podman network; lookup/ resolves a name for app and database
 internal/workspace/     dev workspaces, stack detection, workspaces from scratch
 internal/settings/      the Cloudflare and GitHub tokens (sealed) and /api/settings; hands out clients
+internal/hooks/         public /hooks/*: push webhooks (GitHub, Gitea/Forgejo, GitLab) and CI deploys with a deploy token
 internal/cloudflare/    the bits of Cloudflare's API used: zones, remote-managed tunnels, CNAMEs
 internal/github/        the bits of GitHub's API used: who the token is, create a repo, first commit
 internal/fleet/         nodes: models, store, service, handlers, placement (Pick: which node runs a new thing)
@@ -83,6 +84,7 @@ These hold for every change. Review against them before opening a PR.
 - **Search first.** Before writing a helper, a component or a CSS rule, look for one that already does it, and reuse or extend it.
 - **Twice means shared.** When the same markup, logic or check would appear in a second place, make it a component or a function instead of copying it.
 - **Remove what you replace.** No dead code, no unused exports, no leftover CSS.
+- **Keep README.md current.** A change to how walroos is installed, set up or used (commands, flags, ports, requirements, a new flow in the UI) updates README.md in the same PR, with the steps a new user follows.
 
 ### UI (web/)
 - **Use the shared components** for every form row, field, select, page header, section (card), tabs, modal, menu and loading/error/empty state. They live in `web/src/ui/` (see its README.md). A page composes them; it doesn't rebuild them with raw markup. States and labels of resources come from `web/src/status.ts`.

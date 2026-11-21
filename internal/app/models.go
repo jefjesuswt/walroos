@@ -38,8 +38,10 @@ type App struct {
 	Dockerfile  string         `json:"dockerfile"`
 	Port        int            `json:"port"`
 	HealthPath  string         `json:"health_path"`
-	Domains     []string       `json:"domains"` // public hostnames, through the node's Cloudflare Tunnel
-	Volumes     []agent.Volume `json:"volumes"` // apply on the next deploy
+	Domains     []string       `json:"domains"`      // public hostnames, through the node's Cloudflare Tunnel
+	Volumes     []agent.Volume `json:"volumes"`      // apply on the next deploy
+	Trigger     string         `json:"trigger"`      // manual, on_push or on_ci (triggers.go)
+	DeployToken bool           `json:"deploy_token"` // whether CI has a deploy token; the token is shown once
 	CreatedAt   time.Time      `json:"created_at"`
 	Last        *Deployment    `json:"last_deployment,omitempty"`
 	Running     *agent.App     `json:"running,omitempty"` // the release on the node, as its agent reports it

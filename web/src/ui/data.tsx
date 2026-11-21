@@ -47,3 +47,24 @@ export function CopyBtn({ text, label = 'Copy' }: { text: string; label?: string
 export const Cmd = ({ text }: { text: string }) => (
   <div className="cmd"><span className="prompt" aria-hidden="true">$</span><code>{text}</code><CopyBtn text={text} label="Copy command" /></div>
 );
+
+// CopyField is a value to paste somewhere else (a URL, a secret) with a copy button. With masked,
+// the field shows masked until the eye reveals value; the copy button always copies value.
+export function CopyField({ value, label, masked }: { value: string; label: string; masked?: string }) {
+  const [reveal, setReveal] = useState(false);
+  const shown = masked === undefined || reveal ? value : masked;
+  return (
+    <div className="cmd">
+      <code className="od-truncate" title={shown === value ? value : undefined}>{shown}</code>
+      {masked !== undefined && (
+        <button className="btn-icon" aria-label={reveal ? `Hide ${label}` : `Show ${label}`} title={reveal ? 'Hide' : 'Show'} onClick={() => setReveal(!reveal)}><Icon n="eye" /></button>
+      )}
+      <CopyBtn text={value} label={`Copy ${label}`} />
+    </div>
+  );
+}
+
+// CodeBlock is a file or a snippet to copy whole (a CI workflow).
+export const CodeBlock = ({ code, label }: { code: string; label: string }) => (
+  <div className="code"><pre aria-label={label}>{code}</pre><CopyBtn text={code} label={`Copy ${label}`} /></div>
+);

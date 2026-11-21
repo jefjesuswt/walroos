@@ -2,14 +2,15 @@ import { useCallback, useState } from 'react';
 import { api, type App, type Deployment } from '../api';
 import { appState, isDraft, settling, short } from '../status';
 import { Alert, Badge, BrandLogo, Check, Confirm, Icon, Loading, LoadFailed, PageHeader, Tabs, useCan, usePoll, useToast, useTrail } from '../ui';
+import { AutomationTab } from './AutomationTab';
 import { DeploymentModal } from './DeploymentModal';
 import { DeployModal, DomainsModal, VolumesModal } from './dialogs';
 import { SourceCard } from './SourceCard';
 import { AdvancedTab, DeploymentsTab, DomainsTab, EnvironmentTab, LogsTab } from './tabs';
 
-type AppTab = 'general' | 'environment' | 'domains' | 'deployments' | 'logs' | 'advanced';
+type AppTab = 'general' | 'environment' | 'domains' | 'automation' | 'deployments' | 'logs' | 'advanced';
 const TABS: [AppTab, string][] = [['general', 'General'], ['environment', 'Environment'], ['domains', 'Domains'],
-  ['deployments', 'Deployments'], ['logs', 'Logs'], ['advanced', 'Advanced']];
+  ['automation', 'Automation'], ['deployments', 'Deployments'], ['logs', 'Logs'], ['advanced', 'Advanced']];
 
 type Dialog = null | 'deploy' | 'domains' | 'volumes' | 'delete';
 
@@ -59,6 +60,7 @@ export function AppPage({ name }: { name: string }) {
       {tab === 'general' && <SourceCard app={a} canEdit={canEdit} onSaved={x => { setA(x); toast(isDraft(a) ? 'Source set: deploy it when ready' : 'Source saved: it applies on the next deploy'); }} />}
       {tab === 'environment' && <EnvironmentTab app={a} canEdit={canEdit} />}
       {tab === 'domains' && <DomainsTab app={a} canEdit={canEdit} onEdit={() => setDialog('domains')} />}
+      {tab === 'automation' && <AutomationTab app={a} canEdit={canEdit} onChange={setA} />}
       {tab === 'deployments' && <DeploymentsTab app={a} deps={deps} onOpen={setOpen} />}
       {tab === 'logs' && <LogsTab app={a} />}
       {tab === 'advanced' && <AdvancedTab app={a} canEdit={canEdit} onEditVolumes={() => setDialog('volumes')} onDelete={() => setDialog('delete')} />}

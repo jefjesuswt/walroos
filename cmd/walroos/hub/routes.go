@@ -8,6 +8,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/hooks"
+
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
@@ -33,6 +35,7 @@ type services struct {
 	app       *app.Service
 	database  *database.Service
 	project   *project.Service
+	hooks     *hooks.Handler
 }
 
 // newServices builds the domains and starts the background workers (deploys, backups).
@@ -44,6 +47,7 @@ func newServices(ctx context.Context, db *config.Database, box *secretbox.Box, n
 	s.app = app.NewService(app.NewStore(db), s.fleet, nw.agents, box, s.settings)
 	s.database = database.NewService(database.NewStore(db), s.fleet, nw.agents, box, s.app)
 	s.project = project.NewService(db, s.app, s.database)
+	s.hooks = hooks.NewHandler(s.app)
 	go s.app.Run(ctx)
 	go s.database.Run(ctx)
 	return s
@@ -56,6 +60,7 @@ func routes(s services, users *auth.Store, nw network) http.Handler {
 	router.Use(withLogger, withRecoverer)
 	s.fleetH.NodeRoutes(router)
 	s.keys.NodeRoutes(router)
+	s.hooks.HookRoutes(router) // a forge inside the tailnet (Forgejo) calls them here
 	router.Group(func(r *whttp.Router) {
 		r.Use(auth.Middleware(nw.identify, users))
 		r.Get("/api/me", auth.HandleMe)
@@ -67,6 +72,7 @@ func routes(s services, users *auth.Store, nw network) http.Handler {
 		app.NewHandler(s.app).Routes(r)
 		database.NewHandler(s.database).Routes(r)
 		project.NewHandler(s.project).Routes(r)
+		s.hooks.UserRoutes(r)
 		mcpRoutes(r, s)
 	})
 	router.Get("/", web.Handler())
@@ -101,4 +107,29 @@ func withRecoverer(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, req)
 	})
+}
+
+// serveHooks publishes /hooks/* alone on the internet with Tailscale Funnel, so a forge outside
+// the tailnet (GitHub, GitLab.com) can reach them. The UI, the API and MCP are never there.
+func serveHooks(ctx context.Context, s services, nw network) {
+	if nw.funnel == nil {
+		s.hooks.SetStatus(hooks.Status{URL: nw.url, Error: "--dev: no Funnel, hooks only on " + nw.url})
+		return
+	}
+	ln, url, err := nw.funnel()
+	if err != nil {
+		slog.Warn("Webhooks not published: Funnel is off for this node", "err", err)
+		s.hooks.SetStatus(hooks.Status{Error: "Tailscale Funnel is off for the hub: turn on HTTPS in the admin console and give the hub the funnel attribute in the tailnet policy. " + err.Error()})
+		return
+	}
+	r := whttp.NewRouter()
+	s.hooks.HookRoutes(r)
+	srv := &http.Server{Handler: http.MaxBytesHandler(r, 1<<20), ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		srv.Close()
+	}()
+	s.hooks.SetStatus(hooks.Status{URL: url})
+	slog.Info("Webhooks published with Funnel", "url", url+"/hooks/")
+	srv.Serve(ln)
 }
