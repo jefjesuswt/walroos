@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -474,5 +475,42 @@ func TestAppDraftThenSource(t *testing.T) {
 	}
 	if code := h.call(t, "POST", "/api/apps", map[string]string{"name": "x", "description": strings.Repeat("a", 501)}, nil); code != 400 {
 		t.Errorf("long description: %d", code)
+	}
+}
+
+// A template fills in image, port, health path, volumes and generated secrets, then deploys.
+func TestAppFromTemplate(t *testing.T) {
+	h := newHub(t, "prod")
+	var list []app.Template
+	if h.call(t, "GET", "/api/templates", nil, &list); len(list) < 10 {
+		t.Fatalf("templates = %d", len(list))
+	}
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps/from-template", map[string]string{"template": "grafana", "name": "dash"}, &a); code != 201 {
+		t.Fatalf("from template: %d", code)
+	}
+	if a.Image != "docker.io/grafana/grafana:latest" || a.Port != 3000 || a.HealthPath != "/api/health" || len(a.Volumes) != 1 || a.Description == "" {
+		t.Errorf("app = %+v", a)
+	}
+	var env []workspace.EnvVar
+	h.call(t, "GET", "/api/apps/dash/env", nil, &env)
+	if len(env) != 1 || env[0].Key != "GF_SECURITY_ADMIN_PASSWORD" || len(env[0].Value) < 20 || !env[0].Secret {
+		t.Errorf("env = %+v", env)
+	}
+	var deps []app.Deployment
+	h.call(t, "GET", "/api/apps/dash/deployments", nil, &deps)
+	if len(deps) != 1 {
+		t.Fatalf("deployments = %+v, want the first one queued", deps)
+	}
+	h.wait(t, "dash", deps[0].ID)
+	if spec := h.agent.specs[0]; spec.Source != a.Image || spec.Volumes[0].Target != "/var/lib/grafana" || spec.Env[0] != "GF_SECURITY_ADMIN_PASSWORD="+env[0].Value {
+		t.Errorf("deployed spec = %+v", spec)
+	}
+	for body, want := range map[string]int{`{"template":"nope","name":"x"}`: 404, `{"template":"nginx","name":"Bad Name"}`: 400, `{"template":"nginx","name":"dash"}`: 409, `{"template":"nginx","name":"from-template"}`: 400} {
+		var m map[string]string
+		json.Unmarshal([]byte(body), &m)
+		if code := h.call(t, "POST", "/api/apps/from-template", m, nil); code != want {
+			t.Errorf("%s: %d, want %d", body, code, want)
+		}
 	}
 }

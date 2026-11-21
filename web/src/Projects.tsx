@@ -1,11 +1,11 @@
-import { useCallback, useState } from 'react';
-import { api, type App, type Database, type Project } from './api';
+import { useCallback, useEffect, useState } from 'react';
+import { api, type App, type Database, type Node, type Project, type Template } from './api';
 import { NewAppModal } from './Apps';
 import { NewDatabaseModal } from './Databases';
-import { BrandLogo, engineLogo } from './logos';
+import { BrandLogo, engineLogo, Mark } from './logos';
 import { ago, Confirm, EmptyState, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast, useTrail } from './ui';
 
-const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis' };
+const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis', valkey: 'Valkey', mongo: 'MongoDB' };
 
 // One state per service, the way its own page shows it.
 function appState(a: App): [string, string] {
@@ -110,7 +110,10 @@ export function ProjectDetail({ name }: { name: string }) {
   const [p, setP] = useState<Project | null>(null);
   const [error, setError] = useState('');
   const [menu, setMenu] = useState(false);
-  const [creating, setCreating] = useState<'app' | 'database' | null>(null);
+  const [creating, setCreating] = useState<'app' | 'database' | 'template' | null>(null);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  useEffect(() => { api.templates().then(setTemplates, () => undefined); }, []);
+  const fromTemplate = (a: App) => a.image ? templates.find(t => t.image === a.image) : undefined;
   const [removing, setRemoving] = useState(false);
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<Kind>('all');
@@ -151,7 +154,7 @@ export function ProjectDetail({ name }: { name: string }) {
                   <button role="menuitem" onClick={() => { setMenu(false); setCreating('app'); }}><Icon n="apps" /><span><strong>Application</strong><span className="help">From a Git repository or a Docker image.</span></span></button>
                   <button role="menuitem" onClick={() => { setMenu(false); setCreating('database'); }}><Icon n="database" /><span><strong>Database</strong><span className="help">PostgreSQL, MySQL, MariaDB or Redis.</span></span></button>
                   <button role="menuitem" disabled><Icon n="deploy" /><span><strong>Compose</strong><span className="help">Coming later.</span></span></button>
-                  <button role="menuitem" disabled><Icon n="overview" /><span><strong>Template</strong><span className="help">Coming later.</span></span></button>
+                  <button role="menuitem" onClick={() => { setMenu(false); setCreating('template'); }}><Icon n="overview" /><span><strong>Template</strong><span className="help">nginx, n8n, Grafana, Gitea… ready to run.</span></span></button>
                 </div>
               </>}
             </div>
@@ -178,7 +181,7 @@ export function ProjectDetail({ name }: { name: string }) {
             return (
               <a key={a.id} className="card svc-card" href={`#/apps/${a.name}`}>
                 <span className="svc-card-h"><span className="svc-name"><span className={`svc-dot ${s}`} title={appState(a)[1]} /><strong className="mono od-truncate">{a.name}</strong></span>
-                  <span className="svc-mark" aria-hidden="true">{a.repo_url || a.image ? <BrandLogo name={a.image ? 'docker' : 'git'} size={18} /> : <Icon n="apps" />}</span></span>
+                  <span className="svc-mark" aria-hidden="true">{fromTemplate(a) ? <Mark logo={fromTemplate(a)?.logo} size={18} /> : a.repo_url || a.image ? <BrandLogo name={a.image ? 'docker' : 'git'} size={18} /> : <Icon n="apps" />}</span></span>
                 <span className="cell-sub od-truncate">{a.description || (a.repo_url || a.image ? `${a.name}:${a.port}` : 'No source yet')}</span>
                 <span className="cell-sub muted">Created {ago(a.created_at)}</span>
               </a>
@@ -189,7 +192,7 @@ export function ProjectDetail({ name }: { name: string }) {
             return (
               <a key={d.id} className="card svc-card" href={`#/databases/${d.name}`}>
                 <span className="svc-card-h"><span className="svc-name"><span className={`svc-dot ${s}`} title={dbState(d)[1]} /><strong className="mono od-truncate">{d.name}</strong></span>
-                  <span className="svc-mark" aria-hidden="true"><BrandLogo name={engineLogo(d.engine)} size={18} /></span></span>
+                  <span className="svc-mark" aria-hidden="true"><Mark logo={engineLogo(d.engine)} icon="database" size={18} /></span></span>
                 <span className="cell-sub od-truncate">{d.description || `${engineLabel[d.engine] ?? d.engine} ${d.version}`}</span>
                 <span className="cell-sub muted">Created {ago(d.created_at)}</span>
               </a>
@@ -201,6 +204,7 @@ export function ProjectDetail({ name }: { name: string }) {
       </>}
 
       {creating === 'app' && <NewAppModal project={project} onClose={() => setCreating(null)} onCreated={a => { setCreating(null); location.hash = `#/apps/${a.name}`; }} />}
+      {creating === 'template' && <TemplateModal templates={templates} project={project} onClose={() => setCreating(null)} onCreated={a => { setCreating(null); location.hash = `#/apps/${a.name}`; }} />}
       {creating === 'database' && <NewDatabaseModal project={project} onClose={() => setCreating(null)} onCreated={d => { setCreating(null); location.hash = `#/databases/${d.name}`; }} />}
       {removing && (
         <Confirm title={`Delete ${p.name}?`} confirmLabel="Delete project" danger onClose={() => setRemoving(false)} onConfirm={remove}>
@@ -208,5 +212,73 @@ export function ProjectDetail({ name }: { name: string }) {
         </Confirm>
       )}
     </>
+  );
+}
+
+// TemplateModal: the catalog of ready-to-run services. Pick one, name it, and it deploys.
+function TemplateModal({ templates, project, onClose, onCreated }: { templates: Template[]; project: string; onClose: () => void; onCreated: (a: App) => void }) {
+  const toast = useToast();
+  const [q, setQ] = useState('');
+  const [cat, setCat] = useState('');
+  const [picked, setPicked] = useState<Template | null>(null);
+  const [name, setName] = useState('');
+  const [node, setNode] = useState('');
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.nodes().then(setNodes, () => undefined); }, []);
+  const cats = [...new Set(templates.map(t => t.category))];
+  const shown = templates.filter(t => (!cat || t.category === cat) &&
+    (!q || `${t.name} ${t.description} ${t.category}`.toLowerCase().includes(q.toLowerCase())));
+  const pick = (t: Template) => { setPicked(t); setName(t.id); };
+  const submit = () => {
+    if (!picked) return;
+    setBusy(true);
+    api.createFromTemplate({ template: picked.id, name, project, node }).then(a => { toast(`${a.name} is deploying`); onCreated(a); },
+      e => { setError(e.message); setBusy(false); });
+  };
+  return (
+    <Modal title="Templates" wide onClose={onClose} sub="Common services, ready to run. They get their volumes and generated passwords, and deploy right away."
+      foot={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || !picked || !name} onClick={submit}><Icon n="deploy" />{busy ? 'Creating…' : picked ? `Deploy ${picked.name}` : 'Deploy'}</button>
+      </>}>
+      {error && <ErrorAlert title="Couldn't create it" msg={error} />}
+      <div className="form">
+        <div className="toolbar">
+          <input className="input" type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search templates…" aria-label="Search templates" autoFocus />
+        </div>
+        <div className="chips" role="group" aria-label="Category">
+          <button aria-pressed={!cat} onClick={() => setCat('')}>All</button>
+          {cats.map(c => <button key={c} aria-pressed={cat === c} onClick={() => setCat(cat === c ? '' : c)}>{c}</button>)}
+        </div>
+        <div className="picker">
+          <div className="tile-pick templates" role="radiogroup" aria-label="Template">
+            {shown.map(t => (
+              <label key={t.id}>
+                <input type="radio" name="template" value={t.id} aria-label={t.name} checked={picked?.id === t.id} onChange={() => pick(t)} />
+                <Mark logo={t.logo} size={24} />
+                <span><strong>{t.name}</strong><span className="help" style={{ display: 'block' }}>{t.category}</span></span>
+                <span className="help">{t.description}</span>
+              </label>
+            ))}
+          </div>
+          {shown.length === 0 && <p className="muted">No template matches.</p>}
+        </div>
+        {picked && (
+          <div className="field-row">
+            <Field label="Name" hint={<>The project reaches it as <span className="mono">{name || 'name'}:{picked.port}</span>.</>}>
+              <input className="input mono" value={name} onChange={e => setName(e.target.value)} />
+            </Field>
+            <Field label="Node">
+              <select className="input" value={node} onChange={e => setNode(e.target.value)}>
+                <option value="">Auto (first online)</option>
+                {nodes.filter(n => n.roles.includes('prod')).map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}</option>)}
+              </select>
+            </Field>
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }

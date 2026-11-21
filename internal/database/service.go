@@ -41,7 +41,7 @@ var (
 	// What the agent accepts (agent.DatabaseSpec.Valid), checked here to answer 400 instead of 502.
 	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`)
-	fileRe     = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb)\.gz$`)
+	fileRe     = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb|archive)\.gz$`)
 )
 
 // Engines lists what can be created, from the agent's table.
@@ -156,9 +156,12 @@ func (s *Service) withConn(d Database, url bool) Database {
 	if err != nil {
 		return d // wrong key: no URL rather than a broken one
 	}
-	if d.Engine == "redis" {
+	switch d.Engine {
+	case "redis", "valkey":
 		d.URL = fmt.Sprintf("redis://:%s@%s:%d/0", pw, d.Host, d.Port)
-	} else {
+	case "mongo": // the user is root on admin, where it authenticates
+		d.URL = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin", d.User, pw, d.Host, d.Port, d.DB)
+	default:
 		d.URL = fmt.Sprintf("%s://%s:%s@%s:%d/%s", e.Scheme, d.User, pw, d.Host, d.Port, d.DB)
 	}
 	return d
@@ -328,9 +331,9 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 	}
 	key := in.Key
 	if key == "" {
-		key = "DATABASE_URL"
-		if d.Engine == "redis" {
-			key = "REDIS_URL"
+		key = map[string]string{"redis": "REDIS_URL", "valkey": "REDIS_URL", "mongo": "MONGODB_URI"}[d.Engine]
+		if key == "" {
+			key = "DATABASE_URL"
 		}
 	}
 	if !envKeyRe.MatchString(key) {

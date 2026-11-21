@@ -251,6 +251,18 @@ export interface Project {
   databases: Database[];
 }
 
+// A common service ready to run from a published image (GET /api/templates).
+export interface Template {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  logo?: string;
+  image: string;
+  port: number;
+  health_path: string;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -303,6 +315,8 @@ export const api = {
   appEnv: (name: string) => req<EnvVar[]>('GET', `/api/apps/${name}/env`),
   setAppEnv: (name: string, vars: EnvVar[]) => req<EnvVar[]>('PUT', `/api/apps/${name}/env`, vars),
   setDomains: (name: string, domains: string[]) => req<App>('PUT', `/api/apps/${name}/domains`, domains),
+  templates: () => req<Template[]>('GET', '/api/templates'),
+  createFromTemplate: (t: { template: string; name: string; project?: string; node?: string }) => req<App>('POST', '/api/apps/from-template', t),
   setAppSource: (name: string, src: { repo_url?: string; image?: string; branch?: string; dockerfile?: string; port: number; health_path?: string }) =>
     req<App>('PUT', `/api/apps/${name}/source`, src),
   setVolumes: (name: string, volumes: Volume[]) => req<App>('PUT', `/api/apps/${name}/volumes`, volumes),

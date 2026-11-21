@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type App, type Backup, type Database, type Engine, type Node } from './api';
-import { BrandLogo, engineLogo } from './logos';
+import { engineLogo, Mark } from './logos';
 import { ago, Badge, Confirm, CopyBtn, EmptyState, ErrorAlert, Field, Icon, Modal, ProjectField, Tabs, usePoll, useToast, useTrail } from './ui';
 
-const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis' };
+const engineLabel: Record<string, string> = { postgres: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB', redis: 'Redis', valkey: 'Valkey', mongo: 'MongoDB' };
 const label = (d: Database) => `${engineLabel[d.engine] ?? d.engine} ${d.version}`;
 
 // What the database is doing: the node's systemd state, or why we don't know it.
@@ -56,21 +56,17 @@ export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose
       </>}>
       {error && <ErrorAlert title="Couldn't create it" msg={error} />}
       <div className="form">
-        <div className="field">
-          <span className="label muted" id="engine-h">Select a database</span>
-          <div className="tile-pick" role="radiogroup" aria-labelledby="engine-h">
-            {engines.map(e => (
-              <label key={e.id}>
-                <input type="radio" name="engine" value={e.id} aria-label={e.label} checked={f.engine === e.id} onChange={() => pick(e.id)} />
-                <BrandLogo name={engineLogo(e.id)} size={32} />
-                <span>{e.label}</span>
-              </label>
-            ))}
-          </div>
+        <div className="tile-pick tile-pick-sm" role="radiogroup" aria-label="Engine">
+          {engines.map(e => (
+            <label key={e.id}>
+              <input type="radio" name="engine" value={e.id} aria-label={e.label} checked={f.engine === e.id} onChange={() => pick(e.id)} />
+              <Mark logo={engineLogo(e.id)} icon="database" size={26} />
+              <span>{e.label}</span>
+            </label>
+          ))}
         </div>
-        <div className="form-section">Fill the next fields</div>
         <div className="field-row">
-          <Field label="Name" hint={<>Other services of the project reach it as <span className="mono">{f.name || 'name'}:{engine?.port ?? 5432}</span>.</>}>
+          <Field label="Name" hint={<>The project reaches it as <span className="mono">{f.name || 'name'}:{engine?.port ?? 5432}</span>.</>}>
             <input className="input mono" value={f.name} onChange={set('name')} placeholder="shop-db" autoFocus />
           </Field>
           <Field label="Version">
@@ -79,31 +75,36 @@ export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose
             </select>
           </Field>
         </div>
-        <Field label={<>Description <span className="muted">(optional)</span></>}>
-          <input className="input" value={f.description} onChange={set('description')} placeholder="Orders and customers" />
-        </Field>
-        {f.engine !== 'redis' && (
-          <div className="field-row">
-            <Field label={<>Database name <span className="muted">(optional)</span></>}>
-              <input className="input mono" value={f.db} onChange={set('db')} placeholder={ident} />
+        <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
+        <details className="disclosure">
+          <summary>More options: description, credentials, node</summary>
+          <div className="form">
+            <Field label="Description">
+              <input className="input" value={f.description} onChange={set('description')} placeholder="Orders and customers" />
             </Field>
-            <Field label={<>Database user <span className="muted">(optional)</span></>}>
-              <input className="input mono" value={f.user} onChange={set('user')} placeholder={ident} />
-            </Field>
+            {!['redis', 'valkey'].includes(f.engine) && (
+              <div className="field-row">
+                <Field label="Database name">
+                  <input className="input mono" value={f.db} onChange={set('db')} placeholder={ident} />
+                </Field>
+                <Field label="User">
+                  <input className="input mono" value={f.user} onChange={set('user')} placeholder={ident} />
+                </Field>
+              </div>
+            )}
+            <div className="field-row">
+              <Field label="Password" hint="Empty generates one. Yours: 16+ letters and digits.">
+                <input className="input mono" type="password" autoComplete="new-password" value={f.password} onChange={set('password')} placeholder="generated" />
+              </Field>
+              <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role.</span> : undefined}>
+                <select className="input" value={f.node} onChange={set('node')}>
+                  <option value="">Auto (first online)</option>
+                  {prod.map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}{n.status !== 'online' ? ` (${n.status})` : ''}</option>)}
+                </select>
+              </Field>
+            </div>
           </div>
-        )}
-        <Field label={<>Password <span className="muted">(optional)</span></>} hint="Empty generates 32 letters and digits. Yours: 16 or more letters and digits.">
-          <input className="input mono" type="password" autoComplete="new-password" value={f.password} onChange={set('password')} placeholder="generated" />
-        </Field>
-        <div className="field-row">
-          <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
-          <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role.</span> : undefined}>
-            <select className="input" value={f.node} onChange={set('node')}>
-              <option value="">Auto (first online)</option>
-              {prod.map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}{n.status !== 'online' ? ` (${n.status})` : ''}</option>)}
-            </select>
-          </Field>
-        </div>
+        </details>
       </div>
     </Modal>
   );
@@ -154,7 +155,7 @@ export function DatabaseDetail({ name }: { name: string }) {
     <>
       <div className="page-head">
         <div className="ph-text">
-          <div className="title-row"><span className="svc-logo" aria-hidden="true"><BrandLogo name={engineLogo(d.engine)} /></span><h1 className="mono">{d.name}</h1><Badge s={s} label={l} /></div>
+          <div className="title-row"><span className="svc-logo" aria-hidden="true"><Mark logo={engineLogo(d.engine)} icon="database" /></span><h1 className="mono">{d.name}</h1><Badge s={s} label={l} /></div>
           <div className="ph-meta">
             {d.description && <span>{d.description}</span>}
             <span>{label(d)}</span>

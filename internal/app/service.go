@@ -40,7 +40,7 @@ var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 	src := SourceInput{RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
 	in.Description = strings.TrimSpace(in.Description)
-	if !nameRe.MatchString(in.Name) || len(in.Description) > 500 || src != (SourceInput{}) && !validSource(in.Name, src) {
+	if !nameRe.MatchString(in.Name) || in.Name == "from-template" || len(in.Description) > 500 || src != (SourceInput{}) && !validSource(in.Name, src) {
 		return App{}, ErrInvalid
 	}
 	projectID, err := ProjectID(ctx, s.store.db, in.Project)
