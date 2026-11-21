@@ -17,6 +17,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/mcp"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
@@ -142,9 +143,9 @@ and --owner with your tailnet login so you can use the UI.
 		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 			// A new key can't open the old values: deploys would run without their secrets.
 			var sealed int
-			db.Read.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM workspace_env) + (SELECT count(*) FROM app_env)`).Scan(&sealed)
+			db.Read.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM workspace_env) + (SELECT count(*) FROM app_env) + (SELECT count(*) FROM databases)`).Scan(&sealed)
 			if sealed > 0 {
-				return ui.WrapError("%s is missing but the database has %d encrypted variables: restore the key next to hub.db", keyPath, sealed)
+				return ui.WrapError("%s is missing but the database has %d encrypted values: restore the key next to hub.db", keyPath, sealed)
 			}
 		}
 		box, err := secretbox.LoadOrCreate(keyPath)
@@ -155,6 +156,8 @@ and --owner with your tailnet login so you can use the UI.
 		wsHandler := workspace.NewHandler(wsSvc)
 		appSvc := app.NewService(app.NewStore(db), fleetSvc, agents, box)
 		go appSvc.Run(ctx)
+		dbSvc := database.NewService(database.NewStore(db), fleetSvc, agents, box, appSvc)
+		go dbSvc.Run(ctx)
 
 		router := whttp.NewRouter()
 		router.Use(withLogger, withRecoverer)
@@ -167,7 +170,8 @@ and --owner with your tailnet login so you can use the UI.
 			keysHandler.UserRoutes(r)
 			wsHandler.Routes(r)
 			app.NewHandler(appSvc).Routes(r)
-			mcpHandler := mcp.Handler(fleetSvc, wsSvc, appSvc).ServeHTTP
+			database.NewHandler(dbSvc).Routes(r)
+			mcpHandler := mcp.Handler(fleetSvc, wsSvc, appSvc, dbSvc).ServeHTTP
 			r.Post("/mcp", mcpHandler)
 			r.Get("/mcp", mcpHandler) // 405 from the SDK (stateless), not the SPA's index.html
 			r.Delete("/mcp", mcpHandler)

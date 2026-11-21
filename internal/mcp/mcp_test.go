@@ -17,6 +17,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/workspace"
@@ -93,11 +94,12 @@ func newHub(t *testing.T, login string) (url string, created *agent.WorkspaceSpe
 	}
 	nodes := fleet.NewService(fleet.NewStore(db))
 	ws := workspace.NewService(workspace.NewStore(db), nodes, agents, box)
+	appSvc := app.NewService(app.NewStore(db), nodes, agents, box)
 
 	r := whttp.NewRouter()
 	r.Group(func(r *whttp.Router) {
 		r.Use(auth.Middleware(auth.Static(login), users))
-		r.Post("/mcp", Handler(nodes, ws, app.NewService(app.NewStore(db), nodes, agents, box)).ServeHTTP)
+		r.Post("/mcp", Handler(nodes, ws, appSvc, database.NewService(database.NewStore(db), nodes, agents, box, appSvc)).ServeHTTP)
 	})
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

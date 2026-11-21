@@ -190,6 +190,42 @@ export interface NewApp {
   node?: string;
 }
 
+// A database engine (GET /api/databases/engines). Versions are image tags, newest first.
+export interface Engine {
+  id: string;
+  label: string;
+  versions: string[];
+  port: number;
+  scheme: string;
+}
+
+export interface Database {
+  id: string;
+  name: string;
+  node_id: string;
+  node_name: string;
+  engine: string;
+  version: string;
+  user: string;
+  db: string;
+  host: string; // container name on the node's walroos network
+  port: number;
+  url?: string; // with the password; only from GET /api/databases/{name}
+  backup_every_hours: number; // 0 = off
+  backup_keep: number;
+  last_backup_at?: string;
+  last_backup_error?: string;
+  created_at: string;
+  state?: string; // systemd ActiveState on the node; 'missing' if the node doesn't have it
+  node_down?: boolean;
+}
+
+export interface Backup {
+  file: string;
+  size: number;
+  created_at: string;
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -247,6 +283,19 @@ export const api = {
   github: () => req<GitHub>('GET', '/api/settings/github'),
   setGitHub: (token: string) => req<GitHub>('PUT', '/api/settings/github', { token }),
   removeGitHub: () => req<void>('DELETE', '/api/settings/github'),
+
+  engines: () => req<Engine[]>('GET', '/api/databases/engines'),
+  databases: () => req<Database[]>('GET', '/api/databases'),
+  database: (name: string) => req<Database>('GET', `/api/databases/${name}`),
+  createDatabase: (d: { name: string; engine: string; version: string; node?: string }) => req<Database>('POST', '/api/databases', d),
+  deleteDatabase: (name: string, purge = false) => req<void>('DELETE', `/api/databases/${name}${purge ? '?purge=1' : ''}`),
+  setSchedule: (name: string, backup_every_hours: number, backup_keep: number) =>
+    req<Database>('PUT', `/api/databases/${name}/schedule`, { backup_every_hours, backup_keep }),
+  linkDatabase: (name: string, app: string, key: string) => req<EnvVar[]>('POST', `/api/databases/${name}/link`, { app, key }),
+  backups: (name: string) => req<Backup[]>('GET', `/api/databases/${name}/backups`),
+  backupNow: (name: string) => req<Backup>('POST', `/api/databases/${name}/backups`),
+  restore: (name: string, file: string) => req<void>('POST', `/api/databases/${name}/restore`, { file }),
+  backupURL: (name: string, file: string) => `/api/databases/${name}/backups/${encodeURIComponent(file)}`,
 
   sshKeys: () => req<SSHKey[]>('GET', '/api/ssh-keys'),
   addSSHKey: (name: string, public_key: string) => req<SSHKey>('POST', '/api/ssh-keys', { name, public_key }),

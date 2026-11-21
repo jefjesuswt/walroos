@@ -12,8 +12,8 @@ import (
 	"github.com/jefjesuswt/walroos/config"
 )
 
-// ErrNodeHasWorkspaces: foreign keys keep a node's workspaces from being orphaned.
-var ErrNodeHasWorkspaces = errors.New("the node still has workspaces; delete them first")
+// ErrNodeHasWorkspaces: foreign keys keep what runs on a node from being orphaned.
+var ErrNodeHasWorkspaces = errors.New("the node still has workspaces, apps or databases; delete them first")
 
 type Store struct {
 	db *config.Database

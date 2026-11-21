@@ -24,6 +24,9 @@ const P: Record<string, string> = {
   rollback: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
   globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  database: '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v13c0 1.7 3.6 3 8 3s8-1.3 8-3v-13M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
+  download: '<path d="M12 4v12M7 11l5 5 5-5M4 20h16"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   more: '<circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/>',
 };
 
@@ -35,7 +38,7 @@ export const Logo = () => <img src="/favicon.svg" alt="" width={24} height={24} 
 
 const ST: Record<string, string> = {
   online: 'ok', running: 'ok', succeeded: 'ok', active: 'ok', pending: 'busy', creating: 'busy', deleting: 'busy', deploying: 'busy', activating: 'busy',
-  offline: 'bad', failed: 'bad', stopped: 'idle', queued: 'idle',
+  offline: 'bad', failed: 'bad', missing: 'bad', stopped: 'idle', queued: 'idle', inactive: 'idle',
 };
 export const Badge = ({ s, label = s }: { s: string; label?: string }) => (
   <span className={`badge s-${ST[s] || 'idle'}`}><span className="dot" aria-hidden="true" />{label}</span>
