@@ -38,7 +38,10 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 var (
 	nameRe   = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	envKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
-	fileRe   = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb)\.gz$`)
+	// What the agent accepts (agent.DatabaseSpec.Valid), checked here to answer 400 instead of 502.
+	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
+	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`)
+	fileRe     = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb|archive)\.gz$`)
 )
 
 // Engines lists what can be created, from the agent's table.
@@ -54,6 +57,10 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 	if _, err := s.store.Get(ctx, in.Name); err == nil {
 		return Database{}, ErrExists
 	}
+	projectID, err := app.ProjectID(ctx, s.store.db, in.Project)
+	if err != nil {
+		return Database{}, err
+	}
 	node, err := s.pickNode(ctx, in.Node)
 	if err != nil {
 		return Database{}, err
@@ -67,19 +74,37 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Database, error) 
 		ident = "db_" + ident // SQL identifiers can't start with a digit
 	}
 	password := rand.Text() + rand.Text()[:6] // 32 base32 characters: letters and digits only
+	user, dbName := ident, ident
+	if in.User != "" {
+		user = in.User
+	}
+	if in.DB != "" {
+		dbName = in.DB
+	}
+	if in.Password != "" {
+		password = in.Password
+	}
+	in.Description = strings.TrimSpace(in.Description)
+	if !identRe.MatchString(user) || !identRe.MatchString(dbName) || !passwordRe.MatchString(password) || len(in.Description) > 500 {
+		return Database{}, ErrInvalid
+	}
 	sealed, err := s.box.Seal(password)
 	if err != nil {
 		return Database{}, err
 	}
-	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, Engine: e.ID, Version: in.Version,
-		User: ident, DB: ident, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
+	project := in.Project
+	if project == "" {
+		project = "default"
+	}
+	d := Database{ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: project, Engine: e.ID, Version: in.Version,
+		User: user, DB: dbName, Description: in.Description, BackupEveryHours: 24, BackupKeep: 7, CreatedAt: s.now().UTC(), password: sealed}
 	// Row first: if the node fails, the row goes; the other way round a failed insert would
 	// leave a database running that the hub doesn't know.
 	if err := s.store.Insert(ctx, d); err != nil {
 		return Database{}, err
 	}
 	live, err := s.agents.CreateDatabase(ctx, address, tokenHash, agent.DatabaseSpec{
-		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password})
+		Name: d.Name, Engine: d.Engine, Version: d.Version, User: d.User, DB: d.DB, Password: password, Network: agent.ProjectNetwork(project)})
 	if err != nil {
 		s.store.Delete(ctx, d.ID)
 		return Database{}, agentErr(err)
@@ -131,9 +156,12 @@ func (s *Service) withConn(d Database, url bool) Database {
 	if err != nil {
 		return d // wrong key: no URL rather than a broken one
 	}
-	if d.Engine == "redis" {
+	switch d.Engine {
+	case "redis", "valkey":
 		d.URL = fmt.Sprintf("redis://:%s@%s:%d/0", pw, d.Host, d.Port)
-	} else {
+	case "mongo": // the user is root on admin, where it authenticates
+		d.URL = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin", d.User, pw, d.Host, d.Port, d.DB)
+	default:
 		d.URL = fmt.Sprintf("%s://%s:%s@%s:%d/%s", e.Scheme, d.User, pw, d.Host, d.Port, d.DB)
 	}
 	return d
@@ -303,9 +331,9 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 	}
 	key := in.Key
 	if key == "" {
-		key = "DATABASE_URL"
-		if d.Engine == "redis" {
-			key = "REDIS_URL"
+		key = map[string]string{"redis": "REDIS_URL", "valkey": "REDIS_URL", "mongo": "MONGODB_URI"}[d.Engine]
+		if key == "" {
+			key = "DATABASE_URL"
 		}
 	}
 	if !envKeyRe.MatchString(key) {
@@ -314,6 +342,9 @@ func (s *Service) Link(ctx context.Context, name string, in LinkInput) ([]worksp
 	a, err := s.apps.Get(ctx, in.App)
 	if err != nil {
 		return nil, err
+	}
+	if a.ProjectID != d.ProjectID {
+		return nil, ErrOtherProj
 	}
 	if a.NodeID != d.NodeID {
 		return nil, ErrOtherNode

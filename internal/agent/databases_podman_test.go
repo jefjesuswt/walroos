@@ -38,6 +38,12 @@ func TestDatabasePodman(t *testing.T) {
 			`MYSQL_PWD="$MARIADB_PASSWORD" mariadb -h 127.0.0.1 -u "$MARIADB_USER" "$MARIADB_DATABASE" -e "CREATE TABLE t (v text); INSERT INTO t VALUES ('before');"`,
 			`MYSQL_PWD="$MARIADB_PASSWORD" mariadb -h 127.0.0.1 -u "$MARIADB_USER" "$MARIADB_DATABASE" -e "UPDATE t SET v = 'after';"`,
 			`MYSQL_PWD="$MARIADB_PASSWORD" mariadb -h 127.0.0.1 -u "$MARIADB_USER" "$MARIADB_DATABASE" -N -e "SELECT v FROM t"`, "before"},
+		{"valkey", "8",
+			`valkey-cli SET k before >/dev/null`, `valkey-cli SET k after >/dev/null`, `valkey-cli GET k`, "before"},
+		{"mongo", "8",
+			`mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$MONGO_INITDB_DATABASE" --eval 'db.t.insertOne({v: "before"})' >/dev/null`,
+			`mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$MONGO_INITDB_DATABASE" --eval 'db.t.updateOne({}, {$set: {v: "after"}}); db.extra.insertOne({x: 1})' >/dev/null`,
+			`mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$MONGO_INITDB_DATABASE" --eval 'print(db.t.findOne().v)'`, "before"},
 		{"mysql", "8.4",
 			`MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -e "CREATE TABLE t (v text); INSERT INTO t VALUES ('before');"`,
 			`MYSQL_PWD="$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$MYSQL_USER" "$MYSQL_DATABASE" -e "UPDATE t SET v = 'after';"`,
@@ -144,5 +150,69 @@ func TestDatabasePodman(t *testing.T) {
 				t.Errorf("purge left the backups: %v", err)
 			}
 		})
+	}
+}
+
+// TestProjectNetworkPodman: services of one project reach each other by name on its network;
+// another project's can't reach them (isolate=strict); the egress guard covers the new bridge.
+func TestProjectNetworkPodman(t *testing.T) {
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1")
+	}
+	ctx := context.Background()
+	a := NewApps()
+	a.data = filepath.Join(t.TempDir(), "walroos-data")
+	id := fmt.Sprint(time.Now().UnixNano() % 1e6)
+	pa, pb := "pa"+id, "pb"+id
+	t.Cleanup(func() {
+		for _, n := range []string{ProjectNetwork(pa), ProjectNetwork(pb)} {
+			podman(context.Background(), "network", "rm", "-f", n)
+		}
+	})
+	start := func(name, project string) Database {
+		t.Helper()
+		t.Cleanup(func() { a.DeleteDatabase(context.Background(), name, true) })
+		spec := DatabaseSpec{Name: name, Engine: "redis", Version: "8", User: "app", DB: "app", Password: rand.Text(), Network: ProjectNetwork(project)}
+		if _, err := a.CreateDatabase(ctx, spec); err != nil {
+			t.Fatal(err)
+		}
+		d, e, err := a.database(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := waitReady(ctx, d, e, 3*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	one, two, other := start("a1"+id, pa), start("a2"+id, pa), start("b1"+id, pb)
+
+	ping := func(from Database, host string) string {
+		out, _ := podman(ctx, "exec", from.Container, "sh", "-c", `timeout 5 redis-cli -h "$1" -a x --no-auth-warning ping 2>&1 || true`, "sh", host)
+		return out
+	}
+	// Same project: by alias (the service name) and by container name. NOAUTH/WRONGPASS means it
+	// connected: the password is two's, not one's.
+	for _, host := range []string{"a2" + id, two.Container} {
+		if got := ping(one, host); !strings.Contains(got, "WRONGPASS") && !strings.Contains(got, "NOAUTH") && !strings.Contains(got, "PONG") {
+			t.Errorf("same project, %s: %q, want it to connect", host, got)
+		}
+	}
+	// Another project: no name, and no route by IP either.
+	if got := ping(other, "a1"+id); strings.Contains(got, "WRONGPASS") || strings.Contains(got, "PONG") {
+		t.Errorf("another project resolved and reached a1: %q", got)
+	}
+	ip, err := podman(ctx, "inspect", "--format", `{{(index .NetworkSettings.Networks "`+ProjectNetwork(pa)+`").IPAddress}}`, one.Container)
+	if err != nil || ip == "" {
+		t.Fatalf("ip of %s: %q %v", one.Container, ip, err)
+	}
+	if got := ping(other, ip); strings.Contains(got, "WRONGPASS") || strings.Contains(got, "PONG") || strings.Contains(got, "NOAUTH") {
+		t.Errorf("another project reached %s by IP: %q", ip, got)
+	}
+	// The guard's rule names the project's bridge.
+	bridge, _ := podman(ctx, "network", "inspect", ProjectNetwork(pa), "--format", "{{.NetworkInterface}}")
+	rules, _ := os.ReadFile(filepath.Join(a.dir, guardFile))
+	if bridge == "" || !strings.Contains(string(rules), `"`+bridge+`"`) {
+		t.Errorf("guard rules don't cover %q:\n%s", bridge, rules)
 	}
 }

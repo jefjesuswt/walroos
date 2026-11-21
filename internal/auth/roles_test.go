@@ -119,8 +119,8 @@ func TestRoles(t *testing.T) {
 		{"GET", "/api/deployments", nil, D, V},
 		{"GET", "/api/ssh-keys", nil, D, V},
 		{"GET", "/api/settings/github", nil, D, V},
-		{"GET", "/api/projects/stacks", nil, D, V},
-		{"POST", "/api/projects", map[string]any{"name": "p", "stack": "go", "version": "1.26"}, D, V},
+		{"GET", "/api/workspaces/stacks", nil, D, V},
+		{"POST", "/api/workspaces/from-scratch", map[string]any{"name": "p", "stack": "go", "version": "1.26"}, D, V},
 		// Apps: deployers and the owner
 		{"POST", "/api/apps", map[string]any{"name": "x", "repo_url": "https://github.com/me/x", "port": 80}, D, !V},
 		{"GET", "/api/apps/shop/env", nil, D, !V},
@@ -144,7 +144,7 @@ func TestRoles(t *testing.T) {
 		{"PUT", "/api/settings/cloudflare", map[string]string{"token": "x"}, !D, !V},
 		{"PUT", "/api/settings/github", map[string]string{"token": "x"}, !D, !V},
 		{"DELETE", "/api/settings/github", nil, !D, !V},
-		{"POST", "/api/projects", map[string]any{"name": "p", "stack": "go", "version": "1.26", "github": true}, !D, !V},
+		{"POST", "/api/workspaces/from-scratch", map[string]any{"name": "p", "stack": "go", "version": "1.26", "github": true}, !D, !V},
 		{"GET", "/api/users", nil, !D, !V},
 		// Someone else's workspace: owner only; your own: you
 		{"POST", "/api/workspaces/theirs/stop", nil, !D, !V},

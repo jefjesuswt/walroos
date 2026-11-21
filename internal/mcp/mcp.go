@@ -14,6 +14,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/version"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,10 +22,10 @@ import (
 
 // Handler serves /mcp. Mount it behind user auth: it trusts auth.FromContext for the owner.
 // Stateless: every request gets a server bound to the caller, no sessions to keep.
-func Handler(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service) http.Handler {
+func Handler(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, projects *project.Service) http.Handler {
 	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
 		u, _ := auth.FromContext(r.Context())
-		return newServer(nodes, ws, apps, dbs, u)
+		return newServer(nodes, ws, apps, dbs, projects, u)
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 }
 
@@ -68,7 +69,7 @@ func projectStacks() string {
 
 // newServer offers u only the tools u's role may use: a tool the model never sees is one it
 // can't be talked into calling. Calls that depend on what they touch check it themselves.
-func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, u auth.User) *sdk.Server {
+func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, projects *project.Service, u auth.User) *sdk.Server {
 	login := u.Login
 	s := sdk.NewServer(&sdk.Implementation{Name: "walroos", Version: version.Version}, nil)
 	ro := &sdk.ToolAnnotations{ReadOnlyHint: true}
@@ -112,7 +113,7 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, d
 			return nil, w, err
 		})
 
-	sdk.AddTool(s, &sdk.Tool{Name: "create_project",
+	sdk.AddTool(s, &sdk.Tool{Name: "create_workspace_from_scratch",
 		Description: "Start a new project that has no repo yet: a workspace whose repo has a .devcontainer/devcontainer.json for the stack and version, " +
 			"and a README. With github=true the hub creates the repo on GitHub and commits them (needs a token in Settings); " +
 			"else the node runs git init and stages them, and the user adds origin later. Stacks and versions: " + projectStacks() + ". " +
@@ -166,6 +167,7 @@ func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, d
 			return nil, sshInfo(w), nil
 		})
 
+	addProjectTools(s, projects, u.Can(auth.PermApps))
 	addAppTools(s, apps)
 	if !u.Can(auth.PermApps) { // reading apps and logs stays
 		s.RemoveTools("create_app", "deploy_app", "rollback_app", "set_app_domains", "set_app_volumes")
@@ -199,6 +201,7 @@ type createAppIn struct {
 	Dockerfile string `json:"dockerfile,omitempty" jsonschema:"path of the Dockerfile in the repo; Dockerfile if empty"`
 	HealthPath string `json:"health_path,omitempty" jsonschema:"URL path that must answer 2xx/3xx within 90 s; / if empty"`
 	Node       string `json:"node,omitempty" jsonschema:"node name or ID with the prod role; empty picks the first online one"`
+	Project    string `json:"project,omitempty" jsonschema:"project the app goes in (see list_projects); empty is the default project"`
 }
 
 type deployIn struct {
@@ -252,7 +255,7 @@ func addAppTools(s *sdk.Server, apps *app.Service) {
 		Description: "Create an app from a git repo with a Dockerfile, or from a published image, on a node with the prod role. Nothing runs until deploy_app."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in createAppIn) (*sdk.CallToolResult, any, error) {
 			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile,
-				Port: in.Port, HealthPath: in.HealthPath, Node: in.Node})
+				Port: in.Port, HealthPath: in.HealthPath, Node: in.Node, Project: in.Project})
 			return nil, a, err
 		})
 
@@ -341,6 +344,7 @@ type createDatabaseIn struct {
 	Engine  string `json:"engine" jsonschema:"one of the engines in the tool description"`
 	Version string `json:"version" jsonschema:"one of that engine's versions in the tool description"`
 	Node    string `json:"node,omitempty" jsonschema:"prod node name or ID; empty picks an online one"`
+	Project string `json:"project,omitempty" jsonschema:"project the database goes in (see list_projects); empty is the default project"`
 }
 
 type linkDatabaseIn struct {
@@ -373,7 +377,7 @@ func addDatabaseTools(s *sdk.Server, dbs *database.Service) {
 		Description: "Create a database service on a prod node, with a generated password and daily backups (7 kept). Engines and versions: " +
 			databaseEngines() + ". Apps on the same node reach it by its host name; link_database puts its URL in an app's env."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in createDatabaseIn) (*sdk.CallToolResult, any, error) {
-			d, err := dbs.Create(ctx, database.CreateInput{Name: in.Name, Engine: in.Engine, Version: in.Version, Node: in.Node})
+			d, err := dbs.Create(ctx, database.CreateInput{Name: in.Name, Engine: in.Engine, Version: in.Version, Node: in.Node, Project: in.Project})
 			d.URL = "" // the password stays out of the model's context
 			return nil, d, err
 		})
@@ -401,5 +405,41 @@ func addDatabaseTools(s *sdk.Server, dbs *database.Service) {
 		func(ctx context.Context, _ *sdk.CallToolRequest, in databaseIn) (*sdk.CallToolResult, any, error) {
 			list, err := dbs.Backups(ctx, in.Name)
 			return nil, map[string]any{"backups": orEmpty(list)}, err
+		})
+}
+
+type projectNameIn struct {
+	Name string `json:"name" jsonschema:"project name"`
+}
+
+type createProjectIn struct {
+	Name        string `json:"name" jsonschema:"DNS label: lowercase letters, digits and '-'"`
+	Description string `json:"description,omitempty" jsonschema:"what the project is, shown in the UI"`
+}
+
+// addProjectTools: projects group apps and databases; services of one project reach each other by
+// name on its own network. No delete_project: it lives in the UI.
+func addProjectTools(s *sdk.Server, projects *project.Service, canCreate bool) {
+	ro := &sdk.ToolAnnotations{ReadOnlyHint: true}
+	sdk.AddTool(s, &sdk.Tool{Name: "list_projects", Annotations: ro,
+		Description: "List projects with their services (apps and databases) and each one's state. Services of a project share a network on their node and reach each other by service name."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, _ struct{}) (*sdk.CallToolResult, any, error) {
+			list, err := projects.List(ctx)
+			return nil, map[string]any{"projects": orEmpty(list)}, err
+		})
+	sdk.AddTool(s, &sdk.Tool{Name: "get_project", Annotations: ro,
+		Description: "Get one project with its apps and databases."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in projectNameIn) (*sdk.CallToolResult, any, error) {
+			p, err := projects.Get(ctx, in.Name)
+			return nil, p, err
+		})
+	if !canCreate {
+		return
+	}
+	sdk.AddTool(s, &sdk.Tool{Name: "create_project",
+		Description: "Create an empty project. Then create_app and create_database with project set put services in it; they reach each other by name (an app named api is http://api:<port> to the others)."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in createProjectIn) (*sdk.CallToolResult, any, error) {
+			p, err := projects.Create(ctx, project.CreateInput{Name: in.Name, Description: in.Description})
+			return nil, p, err
 		})
 }

@@ -45,7 +45,7 @@ type Engine struct {
 	ext     string // backup file extension, before .gz
 }
 
-// Engines are pulled from Docker Hub's official images. ponytail: no MongoDB yet.
+// Engines are pulled from Docker Hub's official images.
 var Engines = []Engine{
 	{
 		ID: "postgres", Label: "PostgreSQL", Versions: []string{"18", "17", "16"}, Port: 5432, Scheme: "postgres",
@@ -107,6 +107,36 @@ var Engines = []Engine{
 		reload: `redis-cli SHUTDOWN NOSAVE`,
 		ext:    "rdb",
 	},
+	{
+		ID: "valkey", Label: "Valkey", Versions: []string{"8"}, Port: 6379, Scheme: "redis",
+		image: "docker.io/valkey/valkey:%s",
+		data:  func(string) string { return "/data" },
+		env: func(_, _, pw string) []string {
+			return []string{"REDIS_PASSWORD=" + pw, "REDISCLI_AUTH=" + pw, "VALKEYCLI_AUTH=" + pw}
+		},
+		// Redis's open-source fork, same files and commands.
+		exec:    `/bin/sh -c 'exec valkey-server --save 300 1 --appendonly no --requirepass "$$REDIS_PASSWORD"'`,
+		ready:   `valkey-cli ping | grep -q PONG`,
+		dump:    `valkey-cli SAVE >/dev/null && cat /data/dump.rdb`,
+		restore: `cat > /data/dump.rdb.new && mv /data/dump.rdb.new /data/dump.rdb`,
+		// SHUTDOWN NOSAVE leaves the file alone; systemd starts redis again and it loads it.
+		reload: `valkey-cli SHUTDOWN NOSAVE`,
+		ext:    "rdb",
+	},
+	{
+		ID: "mongo", Label: "MongoDB", Versions: []string{"8", "7"}, Port: 27017, Scheme: "mongodb",
+		image: "docker.io/library/mongo:%s",
+		data:  func(string) string { return "/data/db" },
+		// The user is root on the admin database, like the image's entrypoint makes it.
+		env: func(user, db, pw string) []string {
+			return []string{"MONGO_INITDB_ROOT_USERNAME=" + user, "MONGO_INITDB_ROOT_PASSWORD=" + pw, "MONGO_INITDB_DATABASE=" + db}
+		},
+		// ponytail: mongosh and the tools take the password as an argument (inside the container).
+		ready:   `mongosh --quiet --host 127.0.0.1 -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'db.runCommand({ping: 1}).ok' | grep -q 1`,
+		dump:    `mongodump --quiet --archive -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --db "$MONGO_INITDB_DATABASE"`,
+		restore: `mongorestore --quiet --archive --drop -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin`,
+		ext:     "archive",
+	},
 }
 
 func engine(id string) (Engine, bool) {
@@ -126,6 +156,7 @@ type DatabaseSpec struct {
 	User     string `json:"user"`
 	DB       string `json:"db"`
 	Password string `json:"password"`
+	Network  string `json:"network,omitempty"` // the project's network (ProjectNetwork); "" = AppNetwork
 }
 
 // Database is a database's state on this node.
@@ -147,16 +178,16 @@ type Backup struct {
 var (
 	identRe    = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}$`)
 	passwordRe = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`) // no quoting needed in an env file or a URL
-	backupRe   = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb)\.gz$`)
+	backupRe   = regexp.MustCompile(`^[a-z0-9-]+-\d{8}T\d{6}Z\.(sql|rdb|archive)\.gz$`)
 )
 
 func (spec DatabaseSpec) Valid() bool {
 	e, ok := engine(spec.Engine)
 	return ok && slices.Contains(e.Versions, spec.Version) && workspaceNameRe.MatchString(spec.Name) &&
-		identRe.MatchString(spec.User) && identRe.MatchString(spec.DB) && passwordRe.MatchString(spec.Password)
+		identRe.MatchString(spec.User) && identRe.MatchString(spec.DB) && passwordRe.MatchString(spec.Password) && validNetwork(spec.Network)
 }
 
-// DatabaseContainer is the container (and host name) of a database: apps reach it on AppNetwork.
+// DatabaseContainer is the container (and host name) of a database: apps reach it on its project's network.
 func DatabaseContainer(name string) string { return "walroos-db-" + name }
 
 // backups is where dumps go: outside the data root, so no app volume can mount them.
@@ -181,7 +212,7 @@ func (a *Apps) CreateDatabase(ctx context.Context, spec DatabaseSpec) (Database,
 	if _, err := os.Stat(filepath.Join(a.dir, c+".container")); err == nil {
 		return Database{}, fmt.Errorf("%w: %s already exists on this node", ErrInvalidDatabase, c)
 	}
-	if err := ensureNetwork(ctx, AppNetwork); err != nil {
+	if err := ensureServiceNetwork(ctx, spec.Network); err != nil {
 		return Database{}, err
 	}
 	if err := ensureVolume(ctx, c, labelDB, spec.Name); err != nil {
@@ -210,7 +241,7 @@ Description=walroos database %[1]s (%[2]s %[3]s)
 [Container]
 Image=%[4]s
 ContainerName=%[5]s
-Network=%[6]s
+Network=%[6]s:alias=%[1]s
 Label=%[7]s=%[1]s
 Label=walroos.engine=%[2]s
 Label=walroos.version=%[3]s
@@ -232,7 +263,7 @@ TimeoutStartSec=900
 
 [Install]
 WantedBy=default.target
-`, spec.Name, spec.Engine, spec.Version, image, c, AppNetwork, labelDB, envFile, e.data(spec.Version), execLine, guard)
+`, spec.Name, spec.Engine, spec.Version, image, c, cmpOr(spec.Network, AppNetwork), labelDB, envFile, e.data(spec.Version), execLine, guard)
 	if err := os.WriteFile(filepath.Join(a.dir, c+".container"), []byte(unit), 0o644); err != nil {
 		return Database{}, err
 	}

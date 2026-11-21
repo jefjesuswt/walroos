@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type App, type Cloudflare, type Deployment, type Node, type Volume } from './api';
-import { ago, Badge, Confirm, EmptyState, EnvModal, ErrorAlert, Field, Icon, Modal, useCan, usePoll, useToast } from './ui';
+import { BrandLogo } from './logos';
+import { ago, Badge, Confirm, EmptyState, EnvEditor, ErrorAlert, Field, Icon, Modal, ProjectField, Tabs, useCan, usePoll, useToast, useTrail } from './ui';
 
 // What the app is doing, from the node's live release first: a deployment's state is only
 // what the hub saw (it can say failed for a deploy the node finished after a hub restart).
@@ -23,73 +24,21 @@ function duration(d: Deployment): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
 }
 
-// github.com/me/app(.git) → me/app
-const repoLabel = (url: string) => url.replace(/\.git$/, '').match(/(?:[:/])([^/]+\/[^/]+)$/)?.[1] ?? url;
-const source = (a: App) => a.image || `${repoLabel(a.repo_url)}${a.branch ? ` · ${a.branch}` : ''}`;
-
-/* ---------- list ---------- */
-export function AppsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNewOpen: (v: boolean) => void }) {
-  const { can } = useCan();
-  const [list, setList] = useState<App[] | null>(null);
-  const [error, setError] = useState('');
-  const load = useCallback(() => { api.apps().then(a => { setList(a); setError(''); }, e => setError(e.message)); }, []);
-  usePoll(load, list?.some(a => settling(a.last_deployment)) ? 2000 : 8000);
-
-  return (
-    <>
-      <h1 className="sr-only">Apps</h1>
-      {list && list.length > 0 && (
-        <div className="page-head page-bar">
-          <p className="muted page-sub">{list.filter(a => appState(a)[0] === 'running').length} running · {list.length} total</p><span />
-        </div>
-      )}
-      {error && !list ? (
-        <div className="state state-err" role="alert">
-          <Icon n="alert" cls="ic-lg" /><h3>Couldn't load apps</h3><p className="muted">{error}</p>
-          <button className="btn" onClick={load}><Icon n="refresh" />Retry</button>
-        </div>
-      ) : !list ? (
-        <div className="skel-list" aria-busy="true" aria-label="Loading">
-          {[0, 1].map(i => <div key={i} className="skel-row"><i className="skel w30" /><i className="skel w50" /><i className="skel w15" /></div>)}
-        </div>
-      ) : list.length === 0 ? (
-        <EmptyState icon="apps" title="No apps yet"
-          text="An app is a Git repo with a Dockerfile, or a published image, run on a node with the prod role. New releases replace the old one only once they answer."
-          action={can('apps') ? <button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="plus" />New app</button> : undefined} />
-      ) : (
-        <div className="grid-cards">
-          {list.map(a => {
-            const [s, label] = appState(a), d = a.last_deployment;
-            return (
-              <article key={a.id} className="card app-card" onClick={() => { location.hash = `#/apps/${a.name}`; }}>
-                <div className="ac-head"><a className="cell-title mono" href={`#/apps/${a.name}`}>{a.name}</a><Badge s={s} label={label} /></div>
-                <span className="cell-sub mono od-truncate" title={a.image || a.repo_url}>{source(a)}</span>
-                <div className="od-cluster"><span className="chip"><Icon n="nodes" /><span className="mono">{a.node_name}</span></span><span className="chip mono">:{a.port}</span></div>
-                {d && (
-                  <div className="ac-last">
-                    <div className="od-row"><Badge s={d.state} /><span className="sha">{short(d.sha) || '—'}</span><span className="od-fill" /><span className="muted od-nowrap" style={{ fontSize: 'var(--fs-xs)' }}>{ago(d.created_at)}</span></div>
-                    {d.state === 'failed' && d.error && <span className="od-truncate err-line" style={{ fontSize: 'var(--fs-sm)' }} title={d.error}>{d.error}</span>}
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </div>
-      )}
-      {newOpen && <NewAppModal onClose={() => setNewOpen(false)} onCreated={a => { setNewOpen(false); location.hash = `#/apps/${a.name}`; }} />}
-    </>
-  );
-}
 
 /* ---------- one app ---------- */
+export type AppTab = 'general' | 'environment' | 'domains' | 'deployments' | 'logs' | 'advanced';
+const TABS: [AppTab, string][] = [['general', 'General'], ['environment', 'Environment'], ['domains', 'Domains'],
+  ['deployments', 'Deployments'], ['logs', 'Logs'], ['advanced', 'Advanced']];
+const draft = (a: App) => !a.repo_url && !a.image;
+
 export function AppDetail({ name }: { name: string }) {
   const { can } = useCan();
   const toast = useToast();
   const [a, setA] = useState<App | null>(null);
   const [deps, setDeps] = useState<Deployment[]>([]);
   const [error, setError] = useState('');
+  const [tab, setTab] = useState<AppTab>('general');
   const [deploying, setDeploying] = useState(false);
-  const [editingEnv, setEditingEnv] = useState(false);
   const [editingDomains, setEditingDomains] = useState(false);
   const [editingVolumes, setEditingVolumes] = useState(false);
   const [purge, setPurge] = useState(false);
@@ -101,17 +50,18 @@ export function AppDetail({ name }: { name: string }) {
     api.deployments(name).then(setDeps, () => undefined);
   }, [name]);
   usePoll(load, settling(deps[0]) ? 2000 : 8000);
+  useTrail(a ? [{ label: 'Projects', href: '#/projects' }, { label: a.project, href: `#/projects/${a.project}` }] : null);
 
   if (error && !a) {
     return <EmptyState icon="alert" title={error === 'app not found' ? 'No such app' : "Couldn't load the app"} text={error}
-      action={<a className="btn" href="#/apps">Back to apps</a>} />;
+      action={<a className="btn" href="#/projects">Back to projects</a>} />;
   }
   if (!a) return <div className="skel-list" aria-busy="true" aria-label="Loading"><div className="skel-row"><i className="skel w30" /><i className="skel w50" /></div></div>;
 
-  const [s, label] = appState(a);
+  const [s, label] = draft(a) ? ['stopped', 'no source yet'] : appState(a);
   const canEdit = can('apps');
   const remove = () => api.deleteApp(a.name, purge).then(
-    () => { toast(`${a.name} deleted`); location.hash = '#/apps'; },
+    () => { toast(`${a.name} deleted`); location.hash = `#/projects/${a.project}`; },
     e => { setRemoving(false); toast(e.message, 'bad'); },
   );
 
@@ -119,17 +69,15 @@ export function AppDetail({ name }: { name: string }) {
     <>
       <div className="page-head">
         <div className="ph-text">
-          <div className="title-row"><h1 className="mono">{a.name}</h1><Badge s={s} label={label} /></div>
+          <div className="title-row"><span className="svc-logo" aria-hidden="true">{draft(a) ? <Icon n="apps" /> : <BrandLogo name={a.image ? 'docker' : 'git'} />}</span><h1 className="mono">{a.name}</h1><Badge s={s} label={label} /></div>
           <div className="ph-meta">
+            {a.description && <span>{a.description}</span>}
             <span><Icon n="nodes" /><span className="mono">{a.node_name}</span></span>
-            <span className="mono od-truncate" title={a.image || a.repo_url}>{source(a)}</span>
             {a.running && <span>live <span className="sha">{short(a.running.sha)}</span></span>}
           </div>
         </div>
         {canEdit && <div className="ph-actions">
-          <button className="btn btn-primary" disabled={a.node_down} onClick={() => setDeploying(true)}><Icon n="deploy" />Deploy</button>
-          <button className="btn" onClick={() => setEditingEnv(true)}><Icon n="settings" />Environment</button>
-          <button className="btn-icon" aria-label={`Delete ${a.name}`} title="Delete" onClick={() => setRemoving(true)}><Icon n="trash" /></button>
+          <button className="btn btn-primary" disabled={a.node_down || draft(a)} title={draft(a) ? 'Set its source first' : undefined} onClick={() => setDeploying(true)}><Icon n="deploy" />Deploy</button>
         </div>}
       </div>
 
@@ -139,90 +87,99 @@ export function AppDetail({ name }: { name: string }) {
         </div>
       )}
 
-      <section className="section" aria-labelledby="deps-h">
-        <div className="section-head"><h2 id="deps-h">Deployments</h2></div>
-        {deps.length === 0 ? (
-          <div className="card card-pad muted">Nothing deployed yet. <strong>Deploy</strong> {a.image ? 'pulls the image' : 'builds the branch head'} on {a.node_name}.</div>
-        ) : (
-          <div className="table-wrap">
-            <table className="tbl">
-              <thead><tr><th>State</th><th>{a.image ? 'Image' : 'Commit'}</th><th className="hide-sm">Duration</th><th className="hide-xs">When</th></tr></thead>
-              <tbody>
-                {deps.map(d => (
-                  <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => setOpen(d.id)}>
-                    <td><Badge s={d.state} /></td>
-                    <td><div className="cell-stack">
-                      <span className="od-row">
-                        <button className="sha link-btn" aria-label={`Log of deployment ${d.id}`}>{short(d.sha) || (a.image ? 'pull' : 'branch head')}</button>
-                        {isCurrent(a, d) && <span className="tag-current">current</span>}
-                      </span>
-                      {d.state === 'failed' && d.error && <span className="cell-sub od-truncate err-line" style={{ maxWidth: 'min(360px, 40vw)' }} title={d.error}>{d.error}</span>}
-                    </div></td>
-                    <td className="hide-sm mono">{settling(d) ? '…' : duration(d)}</td>
-                    <td className="hide-xs muted od-nowrap">{ago(d.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <Tabs tabs={TABS} value={tab} onChange={setTab} />
+
+      {tab === 'general' && <SourceCard app={a} canEdit={canEdit} onSaved={x => { setA(x); toast(draft(a) ? 'Source set: deploy it when ready' : 'Source saved: it applies on the next deploy'); }} />}
+
+      {tab === 'environment' && (canEdit ? (
+        <section className="card" aria-labelledby="env-h">
+          <div className="card-head"><div><h2 id="env-h">Environment</h2>
+            <p className="muted">Passed to the container as KEY=VALUE from a 0600 file on the node, never in the command line. Encrypted in the hub; they apply on the next deploy.</p></div></div>
+          <div className="card-body form"><EnvEditor load={() => api.appEnv(a.name)} save={vars => api.setAppEnv(a.name, vars)} savedMsg="Variables saved: deploy to apply them" /></div>
+        </section>
+      ) : <div className="card card-pad muted">Your role can't see this app's variables: they may hold secrets.</div>)}
+
+      {tab === 'domains' && (
+        <section className="card" aria-labelledby="domains-h">
+          <div className="card-head">
+            <div><h2 id="domains-h">Domains</h2><p className="muted">Public, with TLS, through {a.node_name}'s Cloudflare Tunnel. No ports open on the node.</p></div>
+            {canEdit && <button className="btn" onClick={() => setEditingDomains(true)}><Icon n="globe" />Edit</button>}
           </div>
-        )}
-      </section>
-
-      <section className="card" aria-labelledby="domains-h">
-        <div className="card-head">
-          <div><h2 id="domains-h">Domains</h2><p className="muted">Public, with TLS, through {a.node_name}'s Cloudflare Tunnel. No ports open on the node.</p></div>
-          {canEdit && <button className="btn" onClick={() => setEditingDomains(true)}><Icon n="globe" />Edit</button>}
-        </div>
-        <div className="card-body">
-          {a.domains.length === 0 ? <p className="muted">None yet: the app is only reachable inside the node.</p> : (
-            <ul className="domain-list">
-              {a.domains.map(d => <li key={d}><a className="mono" href={`https://${d}`} target="_blank" rel="noreferrer">{d}</a></li>)}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      <section className="card" aria-labelledby="volumes-h">
-        <div className="card-head">
-          <div><h2 id="volumes-h">Volumes</h2><p className="muted">Data that outlives releases. With any, a deploy stops the running release before starting the new one.</p></div>
-          {canEdit && <button className="btn" onClick={() => setEditingVolumes(true)}><Icon n="settings" />Edit</button>}
-        </div>
-        <div className="card-body">
-          {a.volumes.length === 0 ? <p className="muted">None: every deploy starts from the image's files.</p> : (
-            <ul className="domain-list">
-              {a.volumes.map(v => <li key={v.target} className="mono od-truncate">{volumeLine(v)}</li>)}
-            </ul>
-          )}
-        </div>
-      </section>
-
-      <RuntimeLogs app={a} />
-
-      <section className="card" aria-labelledby="build-h">
-        <div className="card-head"><div><h2 id="build-h">{a.image ? 'Source' : 'Build'}</h2><p className="muted">Recreate the app to change these.</p></div></div>
-        <div className="card-body">
-          <dl className="kv">
-            {a.image ? <><dt>Published image</dt><dd className="mono">{a.image}</dd></> : <>
-              <dt>Repository</dt><dd className="mono">{a.repo_url}</dd>
-              <dt>Branch</dt><dd className="mono">{a.branch || 'default branch'}</dd>
-              <dt>Dockerfile</dt><dd className="mono">{a.dockerfile || 'Dockerfile'}</dd>
-            </>}
-            <dt>Port</dt><dd className="mono">{a.port}</dd>
-            <dt>Health check</dt><dd className="mono">GET {a.health_path || '/'} → 2xx/3xx within 90 s</dd>
-            <dt>Container</dt><dd className="mono">{a.running?.container ?? '—'}</dd>
-            <dt>Image</dt><dd className="mono">{a.running?.image ?? '—'}</dd>
-          </dl>
-        </div>
-      </section>
-
-      {deploying && <DeployModal app={a} onClose={() => setDeploying(false)} onQueued={d => { setDeploying(false); load(); setOpen(d.id); }} />}
-      {open && <DeploymentModal key={open} app={a} id={open} onClose={() => setOpen(null)} onRollback={d => { load(); setOpen(d.id); }} />}
-      {editingEnv && (
-        <EnvModal title={`Environment · ${a.name}`} savedMsg="Variables saved: deploy to apply them"
-          sub="Passed to the container as KEY=VALUE from a 0600 file on the node, never in the command line. Encrypted in the hub; they apply on the next deploy."
-          load={() => api.appEnv(a.name)} save={vars => api.setAppEnv(a.name, vars)}
-          onClose={() => setEditingEnv(false)} onSaved={() => setEditingEnv(false)} />
+          <div className="card-body">
+            {a.domains.length === 0 ? <p className="muted">None yet: the app is only reachable inside its project, as <span className="mono">{a.name}:{a.port || 'port'}</span>.</p> : (
+              <ul className="domain-list">
+                {a.domains.map(d => <li key={d}><a className="mono" href={`https://${d}`} target="_blank" rel="noreferrer">{d}</a></li>)}
+              </ul>
+            )}
+          </div>
+        </section>
       )}
+
+      {tab === 'deployments' && (deps.length === 0 ? (
+        <div className="card card-pad muted">{draft(a) ? 'Set a source in General, then Deploy.' : <>Nothing deployed yet. <strong>Deploy</strong> {a.image ? 'pulls the image' : 'builds the branch head'} on {a.node_name}.</>}</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="tbl">
+            <thead><tr><th>State</th><th className="col-grow">{a.image ? 'Image' : 'Commit'}</th><th className="hide-sm">Duration</th><th className="hide-xs">When</th></tr></thead>
+            <tbody>
+              {deps.map(d => (
+                <tr key={d.id} style={{ cursor: 'pointer' }} onClick={() => setOpen(d.id)}>
+                  <td><Badge s={d.state} /></td>
+                  <td className="col-grow"><div className="cell-stack">
+                    <span className="od-row">
+                      <button className="sha link-btn" aria-label={`Log of deployment ${d.id}`}>{short(d.sha) || (a.image ? 'pull' : 'branch head')}</button>
+                      {isCurrent(a, d) && <span className="tag-current">current</span>}
+                    </span>
+                    {d.state === 'failed' && d.error && <span className="cell-sub err-line" title={d.error}>{d.error}</span>}
+                  </div></td>
+                  <td className="hide-sm mono">{settling(d) ? '…' : duration(d)}</td>
+                  <td className="hide-xs muted od-nowrap">{ago(d.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+
+      {tab === 'logs' && <RuntimeLogs app={a} />}
+
+      {tab === 'advanced' && <>
+        <section className="card" aria-labelledby="volumes-h">
+          <div className="card-head">
+            <div><h2 id="volumes-h">Volumes</h2><p className="muted">Data that outlives releases. With any, a deploy stops the running release before starting the new one.</p></div>
+            {canEdit && <button className="btn" onClick={() => setEditingVolumes(true)}><Icon n="settings" />Edit</button>}
+          </div>
+          <div className="card-body">
+            {a.volumes.length === 0 ? <p className="muted">None: every deploy starts from the image's files.</p> : (
+              <ul className="domain-list">
+                {a.volumes.map(v => <li key={v.target} className="mono od-truncate">{volumeLine(v)}</li>)}
+              </ul>
+            )}
+          </div>
+        </section>
+        <section className="card" aria-labelledby="run-h">
+          <div className="card-head"><div><h2 id="run-h">Runtime</h2><p className="muted">What runs on {a.node_name} now.</p></div></div>
+          <div className="card-body">
+            <dl className="kv">
+              <dt>Container</dt><dd className="mono">{a.running?.container ?? '—'}</dd>
+              <dt>Image</dt><dd className="mono">{a.running?.image ?? '—'}</dd>
+              <dt>In the project</dt><dd className="mono">{a.name}:{a.port || '—'}</dd>
+              <dt>Limits</dt><dd>2 GB of memory, 2048 processes</dd>
+            </dl>
+          </div>
+        </section>
+        {canEdit && (
+          <section className="card danger-zone" aria-labelledby="danger-h">
+            <div className="card-head">
+              <div><h2 id="danger-h">Delete app</h2><p className="muted">Stops it on {a.node_name} and removes its images, environment and deployment history.</p></div>
+              <button className="btn btn-danger" onClick={() => setRemoving(true)}><Icon n="trash" />Delete</button>
+            </div>
+          </section>
+        )}
+      </>}
+
+      {deploying && <DeployModal app={a} onClose={() => setDeploying(false)} onQueued={d => { setDeploying(false); load(); setTab('deployments'); setOpen(d.id); }} />}
+      {open && <DeploymentModal key={open} app={a} id={open} onClose={() => setOpen(null)} onRollback={d => { load(); setOpen(d.id); }} />}
       {editingVolumes && <VolumesModal app={a} onClose={() => setEditingVolumes(false)} onSaved={() => { setEditingVolumes(false); load(); }} />}
       {editingDomains && <DomainsModal app={a} onClose={() => setEditingDomains(false)} onSaved={() => { setEditingDomains(false); load(); }} />}
       {removing && (
@@ -237,6 +194,91 @@ export function AppDetail({ name }: { name: string }) {
         </Confirm>
       )}
     </>
+  );
+}
+
+// SourceCard is the General tab: where the app comes from (a repo or a published image) and how
+// it's checked. A draft shows the form right away; otherwise a summary with Edit.
+function SourceCard({ app, canEdit, onSaved }: { app: App; canEdit: boolean; onSaved: (a: App) => void }) {
+  const [editing, setEditing] = useState(draft(app));
+  const [fromImage, setFromImage] = useState(!!app.image);
+  const [f, setF] = useState({ repo_url: app.repo_url, image: app.image, branch: app.branch, dockerfile: app.dockerfile,
+    port: app.port ? String(app.port) : '', health_path: app.health_path });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
+  const save = () => {
+    setBusy(true);
+    const src = fromImage ? { image: f.image.trim(), port: Number(f.port), health_path: f.health_path }
+      : { repo_url: f.repo_url.trim(), branch: f.branch, dockerfile: f.dockerfile, port: Number(f.port), health_path: f.health_path };
+    api.setAppSource(app.name, src).then(a => { setBusy(false); setError(''); setEditing(false); onSaved(a); }, e => { setError(e.message); setBusy(false); });
+  };
+
+  if (!editing) {
+    return (
+      <section className="card" aria-labelledby="src-h">
+        <div className="card-head">
+          <div><h2 id="src-h">{app.image ? 'Published image' : 'Repository'}</h2><p className="muted">{app.image ? 'Pulled again on each deploy; a rollback runs the exact image it got then.' : 'Cloned and built from its Dockerfile on each deploy.'}</p></div>
+          {canEdit && <button className="btn" onClick={() => setEditing(true)}><Icon n="settings" />Edit</button>}
+        </div>
+        <div className="card-body">
+          <dl className="kv">
+            {app.image ? <><dt>Image</dt><dd className="mono">{app.image}</dd></> : <>
+              <dt>Repository</dt><dd className="mono">{app.repo_url}</dd>
+              <dt>Branch</dt><dd className="mono">{app.branch || 'default branch'}</dd>
+              <dt>Dockerfile</dt><dd className="mono">{app.dockerfile || 'Dockerfile'}</dd>
+            </>}
+            <dt>Port</dt><dd className="mono">{app.port}</dd>
+            <dt>Health check</dt><dd className="mono">GET {app.health_path || '/'} → 2xx/3xx within 90 s</dd>
+          </dl>
+        </div>
+      </section>
+    );
+  }
+  return (
+    <section className="card" aria-labelledby="src-h">
+      <div className="card-head"><div><h2 id="src-h">Source</h2><p className="muted">Where the app comes from. It applies on the next deploy.</p></div></div>
+      <div className="card-body">
+        {error && <ErrorAlert title="Couldn't save it" msg={error} />}
+        {!canEdit ? <p className="muted">No source yet. Someone who can deploy apps sets it.</p> : (
+          <div className="form">
+            <div className="seg" role="group" aria-label="Source">
+              <button aria-pressed={!fromImage} onClick={() => setFromImage(false)}>{!fromImage && <Icon n="check" />}<BrandLogo name="git" size={16} />Git repository</button>
+              <button aria-pressed={fromImage} onClick={() => setFromImage(true)}>{fromImage && <Icon n="check" />}<BrandLogo name="docker" size={16} />Docker image</button>
+            </div>
+            {fromImage ? (
+              <Field label="Image" hint="Fully qualified, with its registry.">
+                <input key="image" className="input mono" value={f.image} onChange={set('image')} placeholder="ghcr.io/owner/app:latest" autoFocus />
+              </Field>
+            ) : <>
+              <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH key can read.">
+                <input key="repo" className="input mono" value={f.repo_url} onChange={set('repo_url')} placeholder="https://github.com/me/app.git" autoFocus />
+              </Field>
+              <div className="field-row">
+                <Field label={<>Branch <span className="muted">(optional)</span></>}>
+                  <input className="input mono" value={f.branch} onChange={set('branch')} placeholder="default branch" />
+                </Field>
+                <Field label={<>Dockerfile <span className="muted">(optional)</span></>}>
+                  <input className="input mono" value={f.dockerfile} onChange={set('dockerfile')} placeholder="Dockerfile" />
+                </Field>
+              </div>
+            </>}
+            <div className="field-row">
+              <Field label="Port" hint="What the container listens on.">
+                <input className="input mono" value={f.port} onChange={set('port')} placeholder="3000" inputMode="numeric" />
+              </Field>
+              <Field label={<>Health check path <span className="muted">(optional)</span></>} hint="Must answer 2xx or 3xx within 90 s.">
+                <input className="input mono" value={f.health_path} onChange={set('health_path')} placeholder="/" />
+              </Field>
+            </div>
+            <div className="od-row" style={{ gap: 'var(--sp2)' }}>
+              <button className="btn btn-primary" disabled={busy || !(fromImage ? f.image : f.repo_url) || !Number(f.port)} onClick={save}><Icon n="check" />{busy ? 'Saving…' : 'Save'}</button>
+              {!draft(app) && <button className="btn" onClick={() => setEditing(false)}>Cancel</button>}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -447,88 +489,42 @@ function DeployModal({ app, onClose, onQueued }: { app: App; onClose: () => void
   );
 }
 
-function NewAppModal({ onClose, onCreated }: { onClose: () => void; onCreated: (a: App) => void }) {
+export function NewAppModal({ onClose, onCreated, project = '' }: { onClose: () => void; onCreated: (a: App) => void; project?: string }) {
   const toast = useToast();
   const [nodes, setNodes] = useState<Node[]>([]);
-  const [f, setF] = useState({ name: '', repo_url: '', image: '', branch: '', dockerfile: '', port: '', health_path: '', node: '' });
-  const [fromImage, setFromImage] = useState(false);
+  const [f, setF] = useState({ name: '', description: '', node: '', project });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { api.nodes().then(setNodes, () => undefined); }, []);
   const prod = nodes.filter(n => n.roles.includes('prod'));
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF(x => ({ ...x, [k]: e.target.value }));
-  const port = Number(f.port);
-  const src = fromImage ? f.image : f.repo_url;
-
-  const submit = (deploy: boolean) => {
+  const submit = () => {
     setBusy(true);
-    api.createApp(fromImage ? { name: f.name, image: f.image.trim(), port, health_path: f.health_path, node: f.node } : { ...f, image: '', port })
-      .then(async a => {
-        if (deploy) await api.deployApp(a.name).catch(e => toast(e.message, 'bad'));
-        toast(deploy ? `${a.name} created, deploying` : `${a.name} created`);
-        onCreated(a);
-      }, e => { setError(e.message); setBusy(false); });
+    api.createApp({ name: f.name, description: f.description, node: f.node, project: f.project, port: 0 })
+      .then(a => { toast(`${a.name} created: set its source`); onCreated(a); }, e => { setError(e.message); setBusy(false); });
   };
-
   return (
-    <Modal title="New app" wide onClose={onClose}
-      sub={`${fromImage ? 'Pulled on a node with the prod role, again on each deploy' : 'Cloned on a node with the prod role and built from its Dockerfile'}. It joins the walroos network and publishes no host ports.`}
+    <Modal title="Create application" onClose={onClose} sub="Give it a name. Its source (a Git repository or a Docker image) goes in its General tab."
       foot={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn" disabled={busy || !f.name || !src || !port} onClick={() => submit(false)}>Create</button>
-        <button className="btn btn-primary" disabled={busy || !f.name || !src || !port || prod.every(n => n.status !== 'online')} onClick={() => submit(true)}>
-          <Icon n="deploy" />{busy ? 'Creating…' : 'Create and deploy'}
-        </button>
+        <button className="btn btn-primary" disabled={busy || !f.name} onClick={submit}>{busy ? 'Creating…' : 'Create'}</button>
       </>}>
       {error && <ErrorAlert title="Couldn't create it" msg={error} />}
       <div className="form">
-        <div className="seg" role="group" aria-label="Source">
-          <button aria-pressed={!fromImage} onClick={() => setFromImage(false)}>{!fromImage && <Icon n="check" />}Repository</button>
-          <button aria-pressed={fromImage} onClick={() => setFromImage(true)}>{fromImage && <Icon n="check" />}Published image</button>
-        </div>
-        {fromImage ? (
-          <Field label="Image" hint="Fully qualified, with its registry. The node pulls it on each deploy; a rollback runs the exact image it got then.">
-            <input key="image" className="input mono" value={f.image} onChange={set('image')} placeholder="ghcr.io/owner/app:latest" autoFocus />
-          </Field>
-        ) : (
-          <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read.">
-            <input key="repo" className="input mono" value={f.repo_url} onChange={set('repo_url')} placeholder="https://github.com/me/app.git" autoFocus />
-          </Field>
-        )}
-        <div className="field-row">
-          <Field label="Name" hint="DNS label; containers are named after it.">
-            <input className="input mono" value={f.name} onChange={set('name')} placeholder="my-app"
-              onFocus={() => !f.name && src && setF(x => ({ ...x, name: suggestName(fromImage ? x.image.replace(/[:@][^/]*$/, '') : x.repo_url) }))} />
-          </Field>
-          <Field label="Port" hint="What the container listens on.">
-            <input className="input mono" value={f.port} onChange={set('port')} placeholder="3000" inputMode="numeric" />
-          </Field>
-        </div>
-        <div className="field-row">
-          {!fromImage && <Field label={<>Branch <span className="muted">(optional)</span></>}>
-            <input className="input mono" value={f.branch} onChange={set('branch')} placeholder="default branch" />
-          </Field>}
-          <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role. Join one with <span className="mono">--roles prod</span>.</span> : undefined}>
-            <select className="input" value={f.node} onChange={set('node')}>
-              <option value="">Auto (first online)</option>
-              {prod.map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}{n.status !== 'online' ? ` (${n.status})` : ''}</option>)}
-            </select>
-          </Field>
-        </div>
-        <div className="field-row">
-          {!fromImage && <Field label={<>Dockerfile <span className="muted">(optional)</span></>}>
-            <input className="input mono" value={f.dockerfile} onChange={set('dockerfile')} placeholder="Dockerfile" />
-          </Field>}
-          <Field label={<>Health check path <span className="muted">(optional)</span></>} hint="Must answer 2xx or 3xx within 90 s.">
-            <input className="input mono" value={f.health_path} onChange={set('health_path')} placeholder="/" />
-          </Field>
-        </div>
+        <Field label="Name" hint={<>DNS label. Other services of the project reach it as <span className="mono">{f.name || 'name'}:port</span>.</>}>
+          <input className="input mono" value={f.name} onChange={e => setF(x => ({ ...x, name: e.target.value }))} placeholder="api" autoFocus />
+        </Field>
+        <Field label={<>Description <span className="muted">(optional)</span></>}>
+          <input className="input" value={f.description} onChange={e => setF(x => ({ ...x, description: e.target.value }))} placeholder="The backend" />
+        </Field>
+        <ProjectField value={f.project} onChange={v => setF(x => ({ ...x, project: v }))} locked={!!project} />
+        <Field label="Node" hint={prod.length === 0 ? <span style={{ color: 'var(--bad)' }}>No node with the prod role. Join one with <span className="mono">--roles prod</span>.</span> : undefined}>
+          <select className="input" value={f.node} onChange={e => setF(x => ({ ...x, node: e.target.value }))}>
+            <option value="">Auto (first online)</option>
+            {prod.map(n => <option key={n.id} value={n.name} disabled={n.status !== 'online'}>{n.name}{n.status !== 'online' ? ` (${n.status})` : ''}</option>)}
+          </select>
+        </Field>
       </div>
     </Modal>
   );
 }
 
-// github.com/me/My_App.git → my-app
-const suggestName = (repo: string) =>
-  (repo.replace(/\/+$/, '').split(/[/:]/).pop() ?? '').replace(/\.git$/, '').toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 63);

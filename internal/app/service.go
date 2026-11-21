@@ -8,6 +8,7 @@ import (
 	"net"
 	"regexp"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
@@ -37,21 +38,49 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 var nameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
-	spec := agent.AppSpec{Name: in.Name, ID: "x", RepoURL: in.RepoURL, Source: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
-	fromRepo := in.Image == "" && workspace.RemoteRepo(in.RepoURL)
-	fromImage := in.Image != "" && in.RepoURL == "" && in.Branch == "" && in.Dockerfile == ""
-	if !nameRe.MatchString(in.Name) || !(fromRepo || fromImage) || !spec.Valid() {
+	src := SourceInput{RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
+	in.Description = strings.TrimSpace(in.Description)
+	if !nameRe.MatchString(in.Name) || in.Name == "from-template" || len(in.Description) > 500 || src != (SourceInput{}) && !validSource(in.Name, src) {
 		return App{}, ErrInvalid
+	}
+	projectID, err := ProjectID(ctx, s.store.db, in.Project)
+	if err != nil {
+		return App{}, err
 	}
 	node, err := s.pickNode(ctx, in.Node)
 	if err != nil {
 		return App{}, err
 	}
 	a := App{
-		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
-		Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath, CreatedAt: s.now().UTC(),
+		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: cmpOr(in.Project, "default"), RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
+		Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath, Description: in.Description, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
+}
+
+// validSource: a remote repo or a fully qualified image (not both), and what the agent accepts.
+func validSource(name string, in SourceInput) bool {
+	spec := agent.AppSpec{Name: name, ID: "x", RepoURL: in.RepoURL, Source: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Port: in.Port, HealthPath: in.HealthPath}
+	fromRepo := in.Image == "" && workspace.RemoteRepo(in.RepoURL)
+	fromImage := in.Image != "" && in.RepoURL == "" && in.Branch == "" && in.Dockerfile == ""
+	return (fromRepo || fromImage) && spec.Valid()
+}
+
+// SetSource gives an app (a draft or not) what to build or pull; it applies on the next deploy.
+func (s *Service) SetSource(ctx context.Context, name string, in SourceInput) (App, error) {
+	a, err := s.store.Get(ctx, name)
+	if err != nil {
+		return App{}, err
+	}
+	in.RepoURL, in.Image = strings.TrimSpace(in.RepoURL), strings.TrimSpace(in.Image)
+	if !validSource(a.Name, in) {
+		return App{}, ErrInvalid
+	}
+	a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Port, a.HealthPath = in.RepoURL, in.Image, in.Branch, in.Dockerfile, in.Port, in.HealthPath
+	if err := s.store.setSource(ctx, a.ID, a); err != nil {
+		return App{}, err
+	}
+	return s.Get(ctx, name)
 }
 
 // pickNode returns the requested node (name or id) if it has the prod role, else the first
@@ -163,7 +192,8 @@ func (s *Service) SetVolumes(ctx context.Context, name string, vols []agent.Volu
 	if vols == nil {
 		vols = []agent.Volume{}
 	}
-	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Source: a.Image, Port: a.Port, Volumes: vols}).Valid() {
+	// Only the volumes are checked here: a draft has no source or port yet.
+	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: "https://example.com/x", Port: 1, Volumes: vols}).Valid() {
 		return App{}, ErrVolumes
 	}
 	if err := s.store.setVolumes(ctx, a.ID, vols); err != nil {
@@ -225,6 +255,9 @@ func (s *Service) Deploy(ctx context.Context, name, sha string) (Deployment, err
 	a, err := s.store.Get(ctx, name)
 	if err != nil {
 		return Deployment{}, err
+	}
+	if a.RepoURL == "" && a.Image == "" {
+		return Deployment{}, ErrNoSource
 	}
 	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Source: a.Image, Port: a.Port, Sha: sha}).Valid() || a.Image != "" && sha != "" {
 		return Deployment{}, ErrInvalid
@@ -333,7 +366,7 @@ func (s *Service) run(ctx context.Context, d Deployment) {
 	log := func(line string) { s.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
 		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
-		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes,
+		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes, Network: agent.ProjectNetwork(a.Project),
 	}
 	if b, ok := s.builder(ctx, a.NodeID); ok && d.Image == "" && a.Image == "" {
 		baddr, bhash, err := s.nodes.AgentTarget(ctx, b.ID)

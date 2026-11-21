@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
+	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -186,8 +187,9 @@ func TestAppDeployFlow(t *testing.T) {
 		t.Fatalf("v1 = %+v", v1)
 	}
 	spec := h.agent.specs[0]
-	if spec.ID != d.ID || spec.RepoURL != a.RepoURL || spec.Port != 8000 || len(spec.Env) != 1 || spec.Env[0] != "DB_URL=postgres://x" {
-		t.Errorf("agent got %+v", spec)
+	if spec.ID != d.ID || spec.RepoURL != a.RepoURL || spec.Port != 8000 || len(spec.Env) != 1 || spec.Env[0] != "DB_URL=postgres://x" ||
+		a.Project != "default" || spec.Network != agent.AppNetwork {
+		t.Errorf("agent got %+v (project %q)", spec, a.Project)
 	}
 
 	// A failed deploy is recorded with its log; it can't be rolled back to.
@@ -413,5 +415,102 @@ func TestAppVolumes(t *testing.T) {
 	}
 	if code := h.call(t, "DELETE", "/api/apps/db?purge=1", nil, nil); code != 204 || strings.Join(h.agent.deleted, ",") != "db?purge=1" {
 		t.Fatalf("purge: %d %v", code, h.agent.deleted)
+	}
+}
+
+// An app in a project deploys on that project's network; one without stays on the shared one.
+func TestAppProjectNetwork(t *testing.T) {
+	h := newHub(t, "prod")
+	h.db.Write.Exec(`INSERT INTO projects (id, name, created_at) VALUES ('p1', 'shop', ?)`, time.Now().UTC())
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps", app.CreateInput{Name: "api", RepoURL: "https://example.com/api.git", Port: 8000, Project: "shop"}, &a); code != 201 || a.Project != "shop" {
+		t.Fatalf("create in shop: %d %+v", code, a)
+	}
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/api/deploy", map[string]string{}, &d)
+	h.wait(t, "api", d.ID)
+	if got := h.agent.specs[0].Network; got != "walroos-p-shop" {
+		t.Errorf("network = %q, want walroos-p-shop", got)
+	}
+}
+
+// Like Dokploy, an app can be created with just a name (a draft), get its source later, then deploy.
+func TestAppDraftThenSource(t *testing.T) {
+	h := newHub(t, "prod")
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps", map[string]string{"name": "api", "description": "the backend"}, &a); code != 201 || a.RepoURL != "" || a.Description != "the backend" {
+		t.Fatalf("draft: %d %+v", code, a)
+	}
+	if code := h.call(t, "POST", "/api/apps/api/deploy", map[string]string{}, nil); code != 400 {
+		t.Errorf("deploy a draft: %d, want 400", code)
+	}
+	// Volumes can be set before the source.
+	if code := h.call(t, "PUT", "/api/apps/api/volumes", []map[string]string{{"name": "data", "target": "/data"}}, nil); code != 200 {
+		t.Errorf("volumes on a draft: %d", code)
+	}
+	for _, bad := range []map[string]any{
+		{"port": 3000},
+		{"repo_url": "/etc", "port": 3000},
+		{"repo_url": "https://github.com/me/api", "port": 0},
+		{"repo_url": "https://github.com/me/api", "image": "ghcr.io/me/api:1", "port": 3000},
+		{"image": "api:latest", "port": 3000},
+	} {
+		if code := h.call(t, "PUT", "/api/apps/api/source", bad, nil); code != 400 {
+			t.Errorf("source %v: %d, want 400", bad, code)
+		}
+	}
+	if code := h.call(t, "PUT", "/api/apps/api/source", map[string]any{"repo_url": "https://github.com/me/api", "branch": "main", "port": 3000}, &a); code != 200 || a.RepoURL != "https://github.com/me/api" || a.Port != 3000 {
+		t.Fatalf("set source: %d %+v", code, a)
+	}
+	var d app.Deployment
+	if code := h.call(t, "POST", "/api/apps/api/deploy", map[string]string{}, &d); code != 202 {
+		t.Fatalf("deploy after source: %d", code)
+	}
+	if got := h.wait(t, "api", d.ID); got.State != "succeeded" || h.agent.specs[0].RepoURL != "https://github.com/me/api" || len(h.agent.specs[0].Volumes) != 1 {
+		t.Errorf("deployment %+v, spec %+v", got, h.agent.specs[0])
+	}
+	// Switch it to a published image.
+	if code := h.call(t, "PUT", "/api/apps/api/source", map[string]any{"image": "ghcr.io/me/api:2", "port": 8080}, &a); code != 200 || a.RepoURL != "" || a.Image != "ghcr.io/me/api:2" {
+		t.Errorf("switch to image: %d %+v", code, a)
+	}
+	if code := h.call(t, "POST", "/api/apps", map[string]string{"name": "x", "description": strings.Repeat("a", 501)}, nil); code != 400 {
+		t.Errorf("long description: %d", code)
+	}
+}
+
+// A template fills in image, port, health path, volumes and generated secrets, then deploys.
+func TestAppFromTemplate(t *testing.T) {
+	h := newHub(t, "prod")
+	var list []app.Template
+	if h.call(t, "GET", "/api/templates", nil, &list); len(list) < 10 {
+		t.Fatalf("templates = %d", len(list))
+	}
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps/from-template", map[string]string{"template": "grafana", "name": "dash"}, &a); code != 201 {
+		t.Fatalf("from template: %d", code)
+	}
+	if a.Image != "docker.io/grafana/grafana:latest" || a.Port != 3000 || a.HealthPath != "/api/health" || len(a.Volumes) != 1 || a.Description == "" {
+		t.Errorf("app = %+v", a)
+	}
+	var env []workspace.EnvVar
+	h.call(t, "GET", "/api/apps/dash/env", nil, &env)
+	if len(env) != 1 || env[0].Key != "GF_SECURITY_ADMIN_PASSWORD" || len(env[0].Value) < 20 || !env[0].Secret {
+		t.Errorf("env = %+v", env)
+	}
+	var deps []app.Deployment
+	h.call(t, "GET", "/api/apps/dash/deployments", nil, &deps)
+	if len(deps) != 1 {
+		t.Fatalf("deployments = %+v, want the first one queued", deps)
+	}
+	h.wait(t, "dash", deps[0].ID)
+	if spec := h.agent.specs[0]; spec.Source != a.Image || spec.Volumes[0].Target != "/var/lib/grafana" || spec.Env[0] != "GF_SECURITY_ADMIN_PASSWORD="+env[0].Value {
+		t.Errorf("deployed spec = %+v", spec)
+	}
+	for body, want := range map[string]int{`{"template":"nope","name":"x"}`: 404, `{"template":"nginx","name":"Bad Name"}`: 400, `{"template":"nginx","name":"dash"}`: 409, `{"template":"nginx","name":"from-template"}`: 400} {
+		var m map[string]string
+		json.Unmarshal([]byte(body), &m)
+		if code := h.call(t, "POST", "/api/apps/from-template", m, nil); code != want {
+			t.Errorf("%s: %d, want %d", body, code, want)
+		}
 	}
 }

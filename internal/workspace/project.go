@@ -11,7 +11,7 @@ import (
 
 var (
 	ErrNoGitHub     = errors.New("GitHub isn't set up: add a token in Settings, or start the project as a local git repo")
-	ErrStackVersion = errors.New("unknown stack or version: pick one of GET /api/projects/stacks")
+	ErrStackVersion = errors.New("unknown stack or version: pick one of GET /api/workspaces/stacks")
 )
 
 const (
@@ -91,7 +91,7 @@ func (s *Service) github(ctx context.Context) (*github.Client, error) {
 // ponytail: if the first commit or the workspace fails after the repo exists, the repo stays (deleting
 // needs another scope); the error says so, and From repo picks it up.
 func (s *Service) CreateProject(ctx context.Context, owner string, in ProjectInput) (Workspace, error) {
-	if !nameRe.MatchString(in.Name) {
+	if !validName(in.Name) {
 		return Workspace{}, fmt.Errorf("%w: name must be a DNS label (lowercase letters, digits, '-')", ErrInvalid)
 	}
 	dc, ok := agent.ProjectDevcontainer(in.Stack, in.Version)
