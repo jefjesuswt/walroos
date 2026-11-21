@@ -250,6 +250,7 @@ export const api = {
   me: () => req<User>('GET', '/api/me'),
   nodes: () => req<Node[]>('GET', '/api/nodes'),
   removeNode: (id: string) => req<void>('DELETE', `/api/nodes/${id}`),
+  setNodeRoles: (id: string, roles: Role[]) => req<Node>('PUT', `/api/nodes/${id}/roles`, { roles }),
   joinToken: () => req<JoinToken>('POST', '/api/nodes/join-tokens'),
 
   workspaces: () => req<Workspace[]>('GET', '/api/workspaces'),

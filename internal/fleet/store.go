@@ -128,6 +128,18 @@ func (s *Store) List(ctx context.Context) ([]Node, error) {
 	return nodes, rows.Err()
 }
 
+// SetRoles replaces a node's roles.
+func (s *Store) SetRoles(ctx context.Context, id string, roles []string) error {
+	res, err := s.db.Write.ExecContext(ctx, `UPDATE nodes SET roles = ? WHERE id = ?`, strings.Join(roles, ","), id)
+	if err != nil {
+		return err
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return ErrNodeNotFound
+	}
+	return nil
+}
+
 func (s *Store) Delete(ctx context.Context, id string) error {
 	res, err := s.db.Write.ExecContext(ctx, `DELETE FROM nodes WHERE id = ?`, id)
 	if err != nil {
