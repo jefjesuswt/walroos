@@ -430,6 +430,11 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
 
 ## Casos tristes que walroos no detecta
 
+- [ ] **Kernel actualizado sin reiniciar: las apps no arrancan** (encontrado 2026-11-21 en el nodo Arch, probando M4).
+  - Qué pasó: pacman actualizó el kernel (corre `7.3.4-zen2`, en `/usr/lib/modules` solo queda `7.3.5-zen1`) y el módulo `nft_reject_inet` ya no se puede cargar. El guard de egress (`ExecStartPost`, `reject with icmpx`) falla con "No such file or directory" y, como falla cerrado, mata el contenedor: todo deploy nuevo falla.
+  - Qué vio walroos: el deploy falla con "systemctl --user: exit status 1"; el motivo real solo está en `journalctl` de la unidad. El nodo sigue `online`.
+  - Arreglo: reiniciar el nodo.
+  - Qué haría walroos: el agente compara `uname -r` con `/usr/lib/modules` en cada heartbeat y lo manda en la telemetría; la UI marca el nodo ("reinicia: kernel actualizado") y el deploy que falla en el guard lo dice con esas palabras en vez del error de systemctl.
 - [ ] **Netns rootless sin salida, y el nodo reporta `online`** (encontrado 2026-11-19 en un nodo Arch con otra VPN).
   - Qué pasó: el proceso `pasta` del netns rootless murió (con 2 h de uptime; probablemente un cambio de red, como la VPN reconectando). El netns siguió existiendo sin interfaz de salida ni ruta por defecto. Todo contenedor en una red bridge se quedó sin internet ni DNS: el workspace (`go build` no bajaba módulos) y también un servicio ajeno a walroos.
   - Qué vio walroos: nada. El nodo seguía `online` con telemetría normal, el workspace `running` y el SSH funcionando. El primer síntoma fue un `lookup … i/o timeout` dentro del workspace.
