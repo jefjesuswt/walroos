@@ -62,21 +62,21 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
         <div className="table-wrap">
           <table className="tbl">
             <thead><tr>
-              <th>Workspace</th><th className="hide-sm">Node</th><th>State</th>
+              <th className="col-grow">Workspace</th><th className="hide-sm">Node</th><th>State</th>
               <th className="hide-lg">Stack</th><th className="hide-sm">Created</th>
               <th className="hide-xs"><span className="sr-only">Actions</span></th><th className="show-xs"><span className="sr-only">More</span></th>
             </tr></thead>
             <tbody>
               {list.map(w => (
                 <tr key={w.id}>
-                  <td><div className="cell-lead">
+                  <td className="col-grow"><div className="cell-lead">
                     <span className={`lead${w.state === 'running' ? '' : ' off'}`} aria-hidden="true"><Icon n="workspace" /></span>
                     <div className="cell-stack">
-                      <span className="cell-title mono od-nowrap">{w.name}</span>
+                      <span className="cell-title mono" title={w.name}>{w.name}</span>
                       <span className="cell-sub mono od-truncate" title={w.repo_url}>{w.repo_url ? repoLabel(w.repo_url) : 'local git repo'}{w.branch ? ` · ${w.branch}` : ''}</span>
                     </div>
                   </div></td>
-                  <td className="hide-sm mono">{w.node_name}</td>
+                  <td className="hide-sm mono"><span className="clip" title={w.node_name}>{w.node_name}</span></td>
                   <td><Badge s={w.state} />
                     {w.state === 'failed' && w.error && (
                       <div className="cell-sub od-truncate err-line" title={w.error}>{w.error}</div>
