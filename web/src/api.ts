@@ -69,7 +69,7 @@ export interface NewWorkspace {
   stack?: string; // Detection.stack, stored for display
 }
 
-// A stack a new project can start from (GET /api/projects/stacks). Versions are image tags, newest first.
+// A stack a workspace from scratch can start from (GET /api/workspaces/stacks). Versions are image tags, newest first.
 export interface ProjectStack {
   id: string;
   label: string;
@@ -164,7 +164,10 @@ export interface App {
   name: string;
   node_id: string;
   node_name: string;
-  repo_url: string; // '' when image is set
+  project_id: string;
+  project: string; // its project's name
+  description: string;
+  repo_url: string; // '' when image is set; both '' = a draft with no source yet
   image: string; // a published image, pulled on each deploy, instead of a repo
   branch: string;
   dockerfile: string;
@@ -195,6 +198,8 @@ export interface NewApp {
   port: number;
   health_path?: string;
   node?: string;
+  project?: string; // name; '' = default
+  description?: string;
 }
 
 // A database engine (GET /api/databases/engines). Versions are image tags, newest first.
@@ -211,6 +216,9 @@ export interface Database {
   name: string;
   node_id: string;
   node_name: string;
+  project_id: string;
+  project: string;
+  description: string;
   engine: string;
   version: string;
   user: string;
@@ -231,6 +239,28 @@ export interface Backup {
   file: string;
   size: number;
   created_at: string;
+}
+
+// A project groups apps and databases; they share a network on their node and reach each other by name.
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  apps: App[];
+  databases: Database[];
+}
+
+// A common service ready to run from a published image (GET /api/templates).
+export interface Template {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  logo?: string;
+  image: string;
+  port: number;
+  health_path: string;
 }
 
 export class ApiError extends Error {
@@ -264,8 +294,8 @@ export const api = {
   workspace: (name: string) => req<Workspace>('GET', `/api/workspaces/${name}`),
   createWorkspace: (w: NewWorkspace) => req<Workspace>('POST', '/api/workspaces', w),
   detect: (repo_url: string, branch: string, node: string) => req<Detection>('POST', '/api/workspaces/detect', { repo_url, branch, node }),
-  projectStacks: () => req<ProjectStack[]>('GET', '/api/projects/stacks'),
-  createProject: (p: NewProject) => req<Workspace>('POST', '/api/projects', p),
+  projectStacks: () => req<ProjectStack[]>('GET', '/api/workspaces/stacks'),
+  createFromScratch: (p: NewProject) => req<Workspace>('POST', '/api/workspaces/from-scratch', p),
   startWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/start`),
   stopWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/stop`),
   rebuildWorkspace: (name: string) => req<Workspace>('POST', `/api/workspaces/${name}/rebuild`),
@@ -285,6 +315,10 @@ export const api = {
   appEnv: (name: string) => req<EnvVar[]>('GET', `/api/apps/${name}/env`),
   setAppEnv: (name: string, vars: EnvVar[]) => req<EnvVar[]>('PUT', `/api/apps/${name}/env`, vars),
   setDomains: (name: string, domains: string[]) => req<App>('PUT', `/api/apps/${name}/domains`, domains),
+  templates: () => req<Template[]>('GET', '/api/templates'),
+  createFromTemplate: (t: { template: string; name: string; project?: string; node?: string }) => req<App>('POST', '/api/apps/from-template', t),
+  setAppSource: (name: string, src: { repo_url?: string; image?: string; branch?: string; dockerfile?: string; port: number; health_path?: string }) =>
+    req<App>('PUT', `/api/apps/${name}/source`, src),
   setVolumes: (name: string, volumes: Volume[]) => req<App>('PUT', `/api/apps/${name}/volumes`, volumes),
   cloudflare: () => req<Cloudflare>('GET', '/api/settings/cloudflare'),
   setCloudflare: (token: string) => req<Cloudflare>('PUT', '/api/settings/cloudflare', { token }),
@@ -292,10 +326,14 @@ export const api = {
   setGitHub: (token: string) => req<GitHub>('PUT', '/api/settings/github', { token }),
   removeGitHub: () => req<void>('DELETE', '/api/settings/github'),
 
+  projects: () => req<Project[]>('GET', '/api/projects'),
+  project: (name: string) => req<Project>('GET', `/api/projects/${name}`),
+  createProjectGroup: (name: string, description: string) => req<Project>('POST', '/api/projects', { name, description }),
+  deleteProject: (name: string) => req<void>('DELETE', `/api/projects/${name}`),
   engines: () => req<Engine[]>('GET', '/api/databases/engines'),
   databases: () => req<Database[]>('GET', '/api/databases'),
   database: (name: string) => req<Database>('GET', `/api/databases/${name}`),
-  createDatabase: (d: { name: string; engine: string; version: string; node?: string }) => req<Database>('POST', '/api/databases', d),
+  createDatabase: (d: { name: string; engine: string; version: string; node?: string; project?: string; description?: string; db?: string; user?: string; password?: string }) => req<Database>('POST', '/api/databases', d),
   deleteDatabase: (name: string, purge = false) => req<void>('DELETE', `/api/databases/${name}${purge ? '?purge=1' : ''}`),
   setSchedule: (name: string, backup_every_hours: number, backup_keep: number) =>
     req<Database>('PUT', `/api/databases/${name}/schedule`, { backup_every_hours, backup_keep }),

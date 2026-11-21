@@ -19,6 +19,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/auth"
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
+	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/workspace"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -104,7 +105,8 @@ func newHub(t *testing.T, login string) (url string, created *agent.WorkspaceSpe
 	r := whttp.NewRouter()
 	r.Group(func(r *whttp.Router) {
 		r.Use(auth.Middleware(auth.Static(login), users))
-		r.Post("/mcp", Handler(nodes, ws, appSvc, database.NewService(database.NewStore(db), nodes, agents, box, appSvc)).ServeHTTP)
+		dbSvc := database.NewService(database.NewStore(db), nodes, agents, box, appSvc)
+		r.Post("/mcp", Handler(nodes, ws, appSvc, dbSvc, project.NewService(db, appSvc, dbSvc)).ServeHTTP)
 	})
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)
@@ -151,7 +153,7 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
 	}
-	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info", "create_project",
+	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info", "create_workspace_from_scratch", "list_projects", "get_project", "create_project",
 		"list_apps", "get_app", "create_app", "deploy_app", "get_deployment", "rollback_app", "app_logs", "set_app_domains"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("missing tool %s in %v", want, names)
@@ -192,17 +194,28 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 	}
 
 	// A new project without GitHub: the node gets the files to git init.
-	if w, text, isErr := call(t, s, "create_project", map[string]any{"name": "fresh", "stack": "go", "version": "1.26"}); isErr || w["state"] != "creating" || w["stack"] != "go" {
+	if w, text, isErr := call(t, s, "create_workspace_from_scratch", map[string]any{"name": "fresh", "stack": "go", "version": "1.26"}); isErr || w["state"] != "creating" || w["stack"] != "go" {
 		t.Fatalf("create_project: %v %s", w, text)
 	}
 	if created.RepoURL != "" || !strings.Contains(created.Init[".devcontainer/devcontainer.json"], "devcontainers/go:1.26") {
 		t.Fatalf("create_project spec: %+v", created)
 	}
-	if _, text, isErr := call(t, s, "create_project", map[string]any{"name": "gh", "stack": "go", "version": "1.26", "github": true}); !isErr || !strings.Contains(text, "GitHub isn't set up") {
+	if _, text, isErr := call(t, s, "create_workspace_from_scratch", map[string]any{"name": "gh", "stack": "go", "version": "1.26", "github": true}); !isErr || !strings.Contains(text, "GitHub isn't set up") {
 		t.Fatalf("create_project without a token: isErr=%v %q", isErr, text)
 	}
-	if _, text, isErr := call(t, s, "create_project", map[string]any{"name": "gh", "stack": "go", "version": "0.1"}); !isErr || !strings.Contains(text, "unknown stack or version") {
+	if _, text, isErr := call(t, s, "create_workspace_from_scratch", map[string]any{"name": "gh", "stack": "go", "version": "0.1"}); !isErr || !strings.Contains(text, "unknown stack or version") {
 		t.Fatalf("create_project bad version: isErr=%v %q", isErr, text)
+	}
+
+	// Projects: create one, it lists with its (empty) services, and the default project is there.
+	if p, text, isErr := call(t, s, "create_project", map[string]any{"name": "shop", "description": "the store"}); isErr || p["name"] != "shop" {
+		t.Fatalf("create_project: %v %s", p, text)
+	}
+	if out, _, _ := call(t, s, "list_projects", nil); !strings.Contains(mustJSON(out), `"name":"shop"`) || !strings.Contains(mustJSON(out), `"name":"default"`) {
+		t.Fatalf("list_projects: %v", out)
+	}
+	if _, text, isErr := call(t, s, "get_project", map[string]any{"name": "nope"}); !isErr || !strings.Contains(text, "not found") {
+		t.Fatalf("get_project unknown: %v %q", isErr, text)
 	}
 
 	// Service errors come back as tool errors the model can read, not protocol failures.
@@ -255,12 +268,12 @@ func TestMCPDeveloperRole(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
 	}
-	for _, gone := range []string{"create_app", "deploy_app", "rollback_app", "set_app_domains", "set_app_volumes", "list_databases", "create_database", "link_database", "backup_database"} {
+	for _, gone := range []string{"create_project", "create_app", "deploy_app", "rollback_app", "set_app_domains", "set_app_volumes", "list_databases", "create_database", "link_database", "backup_database"} {
 		if slices.Contains(names, gone) {
 			t.Errorf("developer sees %s", gone)
 		}
 	}
-	for _, kept := range []string{"list_apps", "get_app", "app_logs", "create_workspace", "create_project", "list_nodes"} {
+	for _, kept := range []string{"list_apps", "get_app", "app_logs", "create_workspace", "create_workspace_from_scratch", "list_projects", "list_nodes"} {
 		if !slices.Contains(names, kept) {
 			t.Errorf("developer lacks %s", kept)
 		}
@@ -268,7 +281,7 @@ func TestMCPDeveloperRole(t *testing.T) {
 	if _, text, isErr := call(t, s, "stop_workspace", map[string]any{"name": "theirs"}); !isErr || !strings.Contains(text, "owner@github's") {
 		t.Errorf("stop someone else's workspace: isErr=%v %q", isErr, text)
 	}
-	if _, text, isErr := call(t, s, "create_project", map[string]any{"name": "p", "stack": "go", "version": "1.26", "github": true}); !isErr || !strings.Contains(text, "developer") {
+	if _, text, isErr := call(t, s, "create_workspace_from_scratch", map[string]any{"name": "p", "stack": "go", "version": "1.26", "github": true}); !isErr || !strings.Contains(text, "developer") {
 		t.Errorf("project on the owner's GitHub: isErr=%v %q", isErr, text)
 	}
 	if w, text, isErr := call(t, s, "create_workspace", map[string]any{"name": "mine", "repo_url": "https://github.com/a/b"}); isErr || w["owner"] != "dev@github" {

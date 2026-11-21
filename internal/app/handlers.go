@@ -27,6 +27,7 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) Routes(r *whttp.Router) {
 	// Everyone reads apps, deployments and logs; env holds secrets.
 	r.Get("/api/apps", h.handleList)
+	r.Get("/api/templates", func(w http.ResponseWriter, r *http.Request) { whttp.JSON(w, http.StatusOK, Templates) })
 	r.Get("/api/deployments", h.handleAllDeployments)
 	r.Get("/api/apps/{name}", h.handleGet)
 	r.Get("/api/apps/{name}/logs", h.handleLogs)
@@ -42,6 +43,8 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
 	d.Put("/api/apps/{name}/domains", h.handlePutDomains)
 	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
+	d.Put("/api/apps/{name}/source", h.handlePutSource)
+	d.Post("/api/apps/from-template", h.handleFromTemplate)
 	d.Get("/api/settings/cloudflare", h.handleGetCloudflare) // zones, for the domains dialog
 
 	r.With(auth.Require(auth.PermSettings)).Put("/api/settings/cloudflare", h.handlePutCloudflare)
@@ -51,6 +54,22 @@ func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []string
 	if decode(w, r, &domains) {
 		a, err := h.svc.SetDomains(r.Context(), r.PathValue("name"), domains)
+		reply(w, http.StatusOK, a, err)
+	}
+}
+
+func (h *Handler) handleFromTemplate(w http.ResponseWriter, r *http.Request) {
+	var in FromTemplateInput
+	if decode(w, r, &in) {
+		a, err := h.svc.CreateFromTemplate(r.Context(), in)
+		reply(w, http.StatusCreated, a, err)
+	}
+}
+
+func (h *Handler) handlePutSource(w http.ResponseWriter, r *http.Request) {
+	var in SourceInput
+	if decode(w, r, &in) {
+		a, err := h.svc.SetSource(r.Context(), r.PathValue("name"), in)
 		reply(w, http.StatusOK, a, err)
 	}
 }
@@ -182,9 +201,9 @@ func (h *Handler) handleRollback(w http.ResponseWriter, r *http.Request) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes):
+	case errors.Is(err, ErrInvalid), errors.Is(err, workspace.ErrInvalid), errors.Is(err, ErrDomain), errors.Is(err, ErrNoZone), errors.Is(err, ErrVolumes), errors.Is(err, ErrNoSource):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrDeployNotFound), errors.Is(err, fleet.ErrNodeNotFound), errors.Is(err, ErrNoProject), errors.Is(err, ErrNoTemplate):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrNoImage), errors.Is(err, ErrBusy),
 		errors.Is(err, ErrNoCloudflare), errors.Is(err, ErrDomainTaken), errors.Is(err, cloudflare.ErrRecordExists):

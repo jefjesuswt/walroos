@@ -37,12 +37,19 @@ var bridgeRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,15}$`) // goes into the nft
 
 // guard writes the rule for the app networks and returns the unit line that applies it to container.
 func (a *Apps) guard(ctx context.Context, container string) (string, error) {
-	for _, n := range []string{AppNetwork, EdgeNetwork} {
+	nets := []string{AppNetwork, EdgeNetwork}
+	for _, n := range nets {
 		if err := ensureNetwork(ctx, n); err != nil {
 			return "", err
 		}
 	}
-	out, err := podman(ctx, "network", "inspect", AppNetwork, EdgeNetwork, "--format", "{{.NetworkInterface}}")
+	// Every project's network too: a project's services get the same rule as the rest.
+	projects, err := podman(ctx, "network", "ls", "--filter", "label="+labelProject, "--format", "{{.Name}}")
+	if err != nil {
+		return "", err
+	}
+	nets = append(nets, strings.Fields(projects)...)
+	out, err := podman(ctx, append(append([]string{"network", "inspect"}, nets...), "--format", "{{.NetworkInterface}}")...)
 	if err != nil {
 		return "", err
 	}
@@ -53,7 +60,7 @@ func (a *Apps) guard(ctx context.Context, container string) (string, error) {
 		}
 		bridges = append(bridges, `"`+b+`"`)
 	}
-	if len(bridges) != 2 {
+	if len(bridges) != len(nets) {
 		return "", fmt.Errorf("app network bridges: %q", out)
 	}
 	if err := os.MkdirAll(a.dir, 0o755); err != nil {

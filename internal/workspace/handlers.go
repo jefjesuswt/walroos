@@ -36,8 +36,8 @@ func (h *Handler) Routes(r *whttp.Router) {
 	own.Put("/api/workspaces/{name}/env", h.handlePutEnv)
 	own.Delete("/api/workspaces/{name}", h.handleDelete)
 
-	r.Get("/api/projects/stacks", h.handleStacks)
-	r.Post("/api/projects", h.handleCreateProject)
+	r.Get("/api/workspaces/stacks", h.handleStacks) // a workspace can't be named "stacks"
+	r.Post("/api/workspaces/from-scratch", h.handleCreateProject)
 	r.Get("/api/settings/github", h.handleGetGitHub) // who repos are created as; never the token
 	s := r.With(auth.Require(auth.PermSettings))
 	s.Put("/api/settings/github", h.handlePutGitHub)

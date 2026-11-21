@@ -20,6 +20,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/mcp"
+	"github.com/jefjesuswt/walroos/internal/project"
 	"github.com/jefjesuswt/walroos/internal/secretbox"
 	"github.com/jefjesuswt/walroos/internal/sshkeys"
 	"github.com/jefjesuswt/walroos/internal/web"
@@ -158,6 +159,7 @@ and --owner with your tailnet login so you can use the UI.
 		go appSvc.Run(ctx)
 		dbSvc := database.NewService(database.NewStore(db), fleetSvc, agents, box, appSvc)
 		go dbSvc.Run(ctx)
+		projectSvc := project.NewService(db, appSvc, dbSvc)
 
 		router := whttp.NewRouter()
 		router.Use(withLogger, withRecoverer)
@@ -172,7 +174,8 @@ and --owner with your tailnet login so you can use the UI.
 			wsHandler.Routes(r)
 			app.NewHandler(appSvc).Routes(r)
 			database.NewHandler(dbSvc).Routes(r)
-			mcpHandler := mcp.Handler(fleetSvc, wsSvc, appSvc, dbSvc).ServeHTTP
+			project.NewHandler(projectSvc).Routes(r)
+			mcpHandler := mcp.Handler(fleetSvc, wsSvc, appSvc, dbSvc, projectSvc).ServeHTTP
 			r.Post("/mcp", mcpHandler)
 			r.Get("/mcp", mcpHandler) // 405 from the SDK (stateless), not the SPA's index.html
 			r.Delete("/mcp", mcpHandler)

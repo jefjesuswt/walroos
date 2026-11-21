@@ -146,9 +146,9 @@ func reply[T any](w http.ResponseWriter, code int, v T, err error) {
 func errorJSON(w http.ResponseWriter, err error) {
 	var ae *agent.AgentError
 	switch {
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrSchedule), errors.Is(err, ErrEnvKey), errors.Is(err, ErrInvalidFile), errors.Is(err, ErrOtherNode):
+	case errors.Is(err, ErrInvalid), errors.Is(err, ErrSchedule), errors.Is(err, ErrEnvKey), errors.Is(err, ErrInvalidFile), errors.Is(err, ErrOtherNode), errors.Is(err, ErrOtherProj):
 		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrNoBackup), errors.Is(err, app.ErrNotFound), errors.Is(err, fleet.ErrNodeNotFound):
+	case errors.Is(err, ErrNotFound), errors.Is(err, ErrNoBackup), errors.Is(err, app.ErrNotFound), errors.Is(err, fleet.ErrNodeNotFound), errors.Is(err, app.ErrNoProject):
 		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrExists), errors.Is(err, ErrNoNode), errors.Is(err, ErrNodeRole), errors.Is(err, ErrBusy):
 		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
