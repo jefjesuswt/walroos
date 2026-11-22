@@ -20,6 +20,7 @@ describe('appState', () => {
     ['the live release beats a failed deploy', app({ last_deployment: dep('failed'), running: { state: 'active' } as App['running'] }), ['running', 'running']],
     ['failed', app({ last_deployment: dep('failed') }), ['failed', 'deploy failed']],
     ['never deployed', app({}), ['stopped', 'not deployed']],
+    ['stopped by its owner', app({ running: { state: 'inactive' } as App['running'] }), ['stopped', 'stopped']],
   ])('%s', (_, a, want) => expect(appState(a as App)).toEqual(want as [string, string]));
 });
 

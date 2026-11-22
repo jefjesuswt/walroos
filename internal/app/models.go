@@ -21,6 +21,8 @@ var (
 	ErrVolumes        = whttp.Invalid("each volume needs a name (lowercase, digits, '_.-') or a host_path inside the node's ~/walroos-data, and an absolute target; no two targets alike, 16 at most")
 	ErrBusy           = whttp.Conflict("a deploy of this app is running on its node; try again when it ends")
 	ErrNoSource       = whttp.Invalid("the app has no source yet: set a repository or an image in its General tab")
+	ErrPower          = whttp.Invalid("action must be stop, start or restart")
+	ErrNotDeployed    = whttp.Conflict("the app has no release on its node yet: deploy it first")
 )
 
 // App is what to build and how to check it.

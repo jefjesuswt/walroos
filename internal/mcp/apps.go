@@ -41,6 +41,11 @@ type deployIn struct {
 	Sha  string `json:"sha,omitempty" jsonschema:"commit to deploy (7 to 40 hex); empty deploys the branch head, or pulls an image app's tag again"`
 }
 
+type powerIn struct {
+	Name   string `json:"name" jsonschema:"app name"`
+	Action string `json:"action" jsonschema:"stop, start or restart"`
+}
+
 type deploymentIn struct {
 	Name string `json:"name" jsonschema:"app name"`
 	ID   string `json:"id" jsonschema:"deployment ID"`
@@ -104,6 +109,13 @@ func addAppActions(s *sdk.Server, apps *app.Service) {
 		func(ctx context.Context, _ *sdk.CallToolRequest, in createAppIn) (*sdk.CallToolResult, any, error) {
 			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static,
 				Port: in.Port, HealthPath: in.HealthPath, Node: in.Node, Project: in.Project})
+			return nil, a, err
+		})
+
+	sdk.AddTool(s, &sdk.Tool{Name: "power_app",
+		Description: "Stop, start or restart the app's running release on its node. A stopped app stays stopped, even after the node reboots, until it's started or deployed again. Returns the app; its running.state is inactive when stopped."},
+		func(ctx context.Context, _ *sdk.CallToolRequest, in powerIn) (*sdk.CallToolResult, any, error) {
+			a, err := apps.Power(ctx, in.Name, in.Action)
 			return nil, a, err
 		})
 

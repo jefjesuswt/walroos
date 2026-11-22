@@ -52,13 +52,21 @@ type Release struct {
 	Container string `json:"container"`
 }
 
+// What POST /v1/apps/{name}/power does to the running release. A stopped app stays stopped
+// after a reboot; a deploy or a rollback starts the new release.
+const (
+	AppStop    = "stop"
+	AppStart   = "start"
+	AppRestart = "restart"
+)
+
 // App is an app's state on this node: the release that's running, if any.
 type App struct {
 	Name      string `json:"name"`
 	Container string `json:"container"`
 	Sha       string `json:"sha"`
 	Image     string `json:"image"`
-	State     string `json:"state"` // systemd ActiveState: active, activating, failed...
+	State     string `json:"state"` // systemd ActiveState: active, activating, failed, inactive (stopped)...
 }
 
 var (

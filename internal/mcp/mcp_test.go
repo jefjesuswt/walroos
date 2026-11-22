@@ -156,7 +156,7 @@ func TestMCPWorkspaceFlow(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	for _, want := range []string{"list_nodes", "list_workspaces", "detect_stack", "create_workspace", "get_workspace", "start_workspace", "stop_workspace", "workspace_ssh_info", "create_workspace_from_scratch", "list_projects", "get_project", "create_project",
-		"list_apps", "get_app", "create_app", "deploy_app", "get_deployment", "rollback_app", "app_logs", "set_app_domains"} {
+		"list_apps", "get_app", "create_app", "deploy_app", "power_app", "get_deployment", "rollback_app", "app_logs", "set_app_domains"} {
 		if !slices.Contains(names, want) {
 			t.Errorf("missing tool %s in %v", want, names)
 		}
@@ -270,7 +270,7 @@ func TestMCPDeveloperRole(t *testing.T) {
 	for _, tl := range tools.Tools {
 		names = append(names, tl.Name)
 	}
-	for _, gone := range []string{"create_project", "create_app", "deploy_app", "rollback_app", "set_app_domains", "set_app_volumes", "list_databases", "create_database", "link_database", "backup_database"} {
+	for _, gone := range []string{"create_project", "create_app", "deploy_app", "power_app", "rollback_app", "set_app_domains", "set_app_volumes", "list_databases", "create_database", "link_database", "backup_database"} {
 		if slices.Contains(names, gone) {
 			t.Errorf("developer sees %s", gone)
 		}

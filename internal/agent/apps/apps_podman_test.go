@@ -444,3 +444,52 @@ func TestAppVolumesPodman(t *testing.T) {
 		t.Fatal("purge touched the data root")
 	}
 }
+
+// TestAppPowerPodman stops, starts and restarts a release: stopped, it's inactive and its unit
+// isn't wanted on boot; started again, it serves.
+func TestAppPowerPodman(t *testing.T) {
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1")
+	}
+	ctx := context.Background()
+	t.Setenv("WALROOS_TEST_RELAY", "1")
+	healthTimeout = 30 * time.Second
+	a := New(quadlet.New())
+	a.relay = []string{os.Args[0]}
+	name := fmt.Sprintf("t%d", time.Now().UnixNano()%1e6)
+	t.Cleanup(func() { a.Delete(context.Background(), name, true) })
+	if err := a.Power(ctx, name, agent.AppStop); err != ErrNotFound {
+		t.Fatalf("stop before a deploy: %v", err)
+	}
+	rel, err := a.Deploy(ctx, agent.AppSpec{Name: name, ID: "p1", Source: "docker.io/library/nginx:alpine", Port: 80}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := func() string {
+		list, _ := a.List(ctx)
+		if mine := appsNamed(list, name); len(mine) == 1 {
+			return mine[0].State
+		}
+		return "missing"
+	}
+	unit := func() string {
+		b, _ := os.ReadFile(filepath.Join(a.q.Dir, rel.Container+".container"))
+		return string(b)
+	}
+
+	if err := a.Power(ctx, name, agent.AppStop); err != nil || state() != "inactive" || !strings.Contains(unit(), "# WantedBy=default.target") {
+		t.Fatalf("stop: %v, state %s\n%s", err, state(), unit())
+	}
+	if err := a.Power(ctx, name, agent.AppStart); err != nil || state() != "active" || strings.Contains(unit(), "# WantedBy") {
+		t.Fatalf("start: %v, state %s", err, state())
+	}
+	if code, err := a.get(ctx, rel.Container, "127.0.0.1:80", "/"); err != nil || code != 200 {
+		t.Fatalf("after start: %d %v", code, err)
+	}
+	if err := a.Power(ctx, name, agent.AppRestart); err != nil || state() != "active" {
+		t.Fatalf("restart: %v, state %s", err, state())
+	}
+	if err := a.Power(ctx, name, "pause"); err != ErrPower {
+		t.Fatalf("pause: %v", err)
+	}
+}

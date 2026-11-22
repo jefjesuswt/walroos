@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type MouseEvent, type ReactNode } from 'react';
 import { api, type App, type Database, type Project, type Template } from '../api';
 import { DeleteApp, NewAppModal } from '../apps/dialogs';
+import { usePower } from '../apps/power';
 import { DeleteDatabase, NewDatabaseModal } from '../databases/dialogs';
 import { appState, dbLabel, dbState, engineLogo, type State } from '../status';
 import { type Action, ago, BrandLogo, EmptyState, Icon, linkActions, Loading, LoadFailed, Mark, PageHeader, PopMenu, Select, useCan, useContextMenu, usePoll, useToast, useTrail } from '../ui';
@@ -24,6 +25,7 @@ export function ProjectPage({ name }: { name: string }) {
   const [variables, setVariables] = useState(false);
   const [deleting, setDeleting] = useState<{ app?: App; db?: Database } | null>(null);
   const [onMenu, contextMenu] = useContextMenu();
+  const [powerActions, powerDialog] = usePower(() => load());
   const [q, setQ] = useState('');
   const [kind, setKind] = useState<Kind>('all');
   useEffect(() => { api.templates().then(setTemplates, () => undefined); }, []);
@@ -43,7 +45,8 @@ export function ProjectPage({ name }: { name: string }) {
   const run = (what: Promise<unknown>, done: string) => what.then(() => { toast(done); load(); }, e => toast(e.message, 'bad'));
   // The right-click menu of a service's card.
   const appActions = (a: App): Action[] => [...linkActions(`#/apps/${a.name}`), ...(!can('apps') ? [] : [
-    { icon: 'deploy', label: 'Deploy', run: () => run(api.deployApp(a.name), `Deploying ${a.name}`), off: !a.repo_url && !a.image, title: a.repo_url || a.image ? undefined : 'Set its source first' },
+    { icon: 'deploy', label: a.running ? 'Redeploy' : 'Deploy', run: () => run(api.deployApp(a.name), `Deploying ${a.name}`), off: !a.repo_url && !a.image, title: a.repo_url || a.image ? undefined : 'Set its source first' },
+    ...powerActions(a),
     { icon: 'trash', label: 'Delete', run: () => setDeleting({ app: a }), danger: true },
   ])];
   const dbActions = (d: Database): Action[] => [...linkActions(`#/databases/${d.name}`), ...(!can('databases') ? [] : [
@@ -104,6 +107,7 @@ export function ProjectPage({ name }: { name: string }) {
       {deleting?.app && <DeleteApp app={deleting.app} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); load(); }} />}
       {deleting?.db && <DeleteDatabase d={deleting.db} onClose={() => setDeleting(null)} onDeleted={() => { setDeleting(null); load(); }} />}
       {contextMenu}
+      {powerDialog}
     </>
   );
 }

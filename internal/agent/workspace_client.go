@@ -154,6 +154,11 @@ func (c *Client) DeleteApp(ctx context.Context, address, tokenHash, name string,
 	return c.do(ctx, http.MethodDelete, address, tokenHash, "/v1/apps/"+name+q, nil, nil)
 }
 
+// PowerApp stops, starts or restarts the app's running release (AppStop, AppStart, AppRestart).
+func (c *Client) PowerApp(ctx context.Context, address, tokenHash, name, action string) error {
+	return c.do(ctx, http.MethodPost, address, tokenHash, "/v1/apps/"+name+"/power", map[string]string{"action": action}, nil)
+}
+
 // DeployApp runs a deploy on the node, calling onLog with each line of output as it comes.
 // It ignores c.HTTP's timeout (a build takes minutes); ctx bounds it.
 func (c *Client) DeployApp(ctx context.Context, address, tokenHash string, spec AppSpec, onLog func(string)) (Release, error) {
