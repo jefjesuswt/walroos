@@ -6,16 +6,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
+	"github.com/jefjesuswt/walroos/cmd/walroos/hubconn"
 	"github.com/spf13/cobra"
 )
 
@@ -161,57 +158,17 @@ func Generate(ctx context.Context, hub, proxy string, port int, suffix string) (
 	return Format(list, used, port, suffix), nil
 }
 
-// defaultProxy is where tailscaled in userspace mode serves its HTTP/SOCKS5 proxy (the port its
-// docs and walroos use). Tests point it elsewhere.
-var defaultProxy = "localhost:1055"
-
 // fetch asks the hub for the caller's workspaces and returns the proxy it went through ("" for
-// none). Without --proxy it tries the tailnet directly, briefly; a machine on userspace
-// tailscaled has no route to it, so if that fails and tailscaled's proxy answers on
-// localhost:1055, it goes through it, and the SSH blocks get the matching ProxyCommand.
+// none): directly, or through tailscaled's userspace proxy (hubconn.Reach).
 func fetch(ctx context.Context, hub, proxy string) ([]workspace, string, error) {
-	if !strings.Contains(hub, "://") {
-		hub = "http://" + hub
-	}
-	hub = strings.TrimSuffix(hub, "/")
-
-	if proxy != "" {
-		list, err := get(ctx, hub, proxy, 15*time.Second)
-		if err != nil && !isHubAnswer(err) {
-			return nil, "", fmt.Errorf("reach %s through %s: %w", hub, proxy, err)
-		}
-		return list, proxy, err
-	}
-	list, err := get(ctx, hub, "", 4*time.Second)
-	if err == nil || isHubAnswer(err) {
-		return list, "", err
-	}
-	if c, derr := net.DialTimeout("tcp", defaultProxy, time.Second); derr == nil {
-		c.Close()
-		if list, perr := get(ctx, hub, defaultProxy, 15*time.Second); perr == nil || isHubAnswer(perr) {
-			fmt.Fprintf(os.Stderr, "# %s isn't reachable directly; went through tailscaled's proxy at %s\n", hub, defaultProxy)
-			return list, defaultProxy, perr
-		}
-	}
-	return nil, "", fmt.Errorf("reach %s: %w (is this machine on the tailnet? with userspace tailscaled, its proxy must be up: --proxy localhost:1055)", hub, err)
+	hub = hubconn.URL(hub)
+	return hubconn.Reach(ctx, hub, proxy, func(ctx context.Context, c *http.Client) ([]workspace, error) {
+		return get(ctx, c, hub)
+	})
 }
 
-// hubError is an answer from the hub (it was reached), as opposed to not reaching it.
-type hubError struct{ msg string }
-
-func (e *hubError) Error() string { return e.msg }
-
-func isHubAnswer(err error) bool {
-	var he *hubError
-	return errors.As(err, &he)
-}
-
-// get is one GET /api/workspaces, directly or through proxy.
-func get(ctx context.Context, hub, proxy string, timeout time.Duration) ([]workspace, error) {
-	client, err := newClient(proxy, timeout)
-	if err != nil {
-		return nil, err
-	}
+// get is one GET /api/workspaces with client.
+func get(ctx context.Context, client *http.Client, hub string) ([]workspace, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, hub+"/api/workspaces", nil)
 	if err != nil {
 		return nil, err
@@ -227,42 +184,19 @@ func get(ctx context.Context, hub, proxy string, timeout time.Duration) ([]works
 			Error string `json:"error"`
 		}
 		json.NewDecoder(resp.Body).Decode(&e)
-		return nil, &hubError{fmt.Sprintf("the hub doesn't know you: %s", e.Error)}
+		return nil, &hubconn.Answer{Msg: fmt.Sprintf("the hub doesn't know you: %s", e.Error)}
 	}
 	if resp.StatusCode == http.StatusBadGateway { // tailscaled's proxy found nothing at that name
 		return nil, fmt.Errorf("nothing answered at %s on the tailnet (502 from the proxy)", hub)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, &hubError{fmt.Sprintf("hub answered %d", resp.StatusCode)}
+		return nil, &hubconn.Answer{Msg: fmt.Sprintf("hub answered %d", resp.StatusCode)}
 	}
 	var list []workspace
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		return nil, err
 	}
 	return list, nil
-}
-
-func newClient(proxy string, timeout time.Duration) (*http.Client, error) {
-	c := &http.Client{Timeout: timeout}
-	if proxy == "" {
-		return c, nil
-	}
-	u, err := url.Parse("http://" + normalizeProxy(proxy))
-	if err != nil {
-		return nil, fmt.Errorf("--proxy %q: %w", proxy, err)
-	}
-	c.Transport = &http.Transport{Proxy: http.ProxyURL(u)}
-	return c, nil
-}
-
-// normalizeProxy accepts localhost:1055, http://localhost:1055 or socks5://localhost:1055 and
-// returns host:port: tailscale's userspace proxy serves HTTP and SOCKS5 on the same port.
-func normalizeProxy(p string) string {
-	p = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(p, "http://"), "socks5://"), "/")
-	if _, _, err := net.SplitHostPort(p); err != nil {
-		p = net.JoinHostPort(p, "1055")
-	}
-	return p
 }
 
 // Format renders the Host blocks, sorted by name so the output is stable.
@@ -287,7 +221,7 @@ func hostBlocks(list []workspace, proxy string, port int, suffix string) string 
 		fmt.Fprintf(&b, "  Port %d\n", port)
 		fmt.Fprintf(&b, "  User %s\n", ws.Name)
 		if proxy != "" {
-			fmt.Fprintf(&b, "  ProxyCommand nc -X 5 -x %s %%h %%p\n", normalizeProxy(proxy))
+			fmt.Fprintf(&b, "  ProxyCommand nc -X 5 -x %s %%h %%p\n", hubconn.NormalizeProxy(proxy))
 		}
 	}
 	return b.String()
