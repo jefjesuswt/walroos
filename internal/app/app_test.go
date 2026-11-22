@@ -609,3 +609,30 @@ func TestAppPower(t *testing.T) {
 		t.Errorf("node got %v", h.agent.powers)
 	}
 }
+
+// With a GitHub token saved, a github.com repo's deploy carries it for the clone (a private repo
+// needs it); a repo elsewhere doesn't get it.
+func TestAppCloneToken(t *testing.T) {
+	h := newHub(t, "prod")
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"login": "octo"}`)) // fine-grained: no X-OAuth-Scopes
+	}))
+	defer gh.Close()
+	h.set.GitHubAPI = gh.URL
+	if _, err := h.set.SetGitHub(context.Background(), "tok-hub"); err != nil {
+		t.Fatal(err)
+	}
+	for name, repo := range map[string]string{"private": "git@github.com:octo/private.git", "elsewhere": "https://gitlab.com/octo/app.git"} {
+		h.call(t, "POST", "/api/apps", app.CreateInput{Name: name, RepoURL: repo, Port: 8000}, nil)
+		var d app.Deployment
+		h.call(t, "POST", "/api/apps/"+name+"/deploy", map[string]string{}, &d)
+		h.wait(t, name, d.ID)
+	}
+	got := map[string]string{}
+	for _, s := range h.agent.specs {
+		got[s.Name] = s.GitToken
+	}
+	if got["private"] != "tok-hub" || got["elsewhere"] != "" {
+		t.Fatalf("tokens = %v", got)
+	}
+}

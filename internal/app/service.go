@@ -35,7 +35,7 @@ var placement = fleet.Placement{Role: "prod", NoNode: ErrNoNode, WrongRole: ErrN
 
 func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *secretbox.Box, st *settings.Service) *Service {
 	s := &Service{store: store, nodes: nodes, agents: agents, box: box, settings: st, now: time.Now}
-	s.deployer = &deployer{store: store, nodes: nodes, agents: agents, env: s.envForAgent, kick: make(chan struct{}, 1), now: time.Now}
+	s.deployer = &deployer{store: store, nodes: nodes, agents: agents, env: s.envForAgent, token: s.cloneToken, kick: make(chan struct{}, 1), now: time.Now}
 	return s
 }
 
@@ -58,6 +58,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 		Dockerfile: in.Dockerfile, Static: src.Static, Port: src.Port, HealthPath: in.HealthPath, Description: in.Description, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
+}
+
+// cloneToken is the GitHub token the node clones a private github.com repo with; "" if none.
+func (s *Service) cloneToken(ctx context.Context, repoURL string) string {
+	if s.settings == nil {
+		return ""
+	}
+	return s.settings.CloneToken(ctx, repoURL)
 }
 
 // validSource: a remote repo or a fully qualified image (not both), and what the agent accepts.

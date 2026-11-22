@@ -19,6 +19,9 @@ type WorkspaceSpec struct {
 	// Init starts a new project instead of cloning: no repo_url, the node runs git init and stages
 	// these files (path → content). The user commits and adds origin from inside.
 	Init map[string]string `json:"init,omitempty"`
+	// GitToken is the hub's GitHub token, to clone a private github.com repo. Only the clone uses
+	// it: the workspace's origin stays the URL given, and pushes use the user's own key.
+	GitToken string `json:"git_token,omitempty"`
 }
 
 // Workspace is the agent's view of a workspace, derived from podman plus in-flight work.

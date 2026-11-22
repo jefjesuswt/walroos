@@ -61,7 +61,7 @@ export function GitHubCard() {
   const remove = () => api.removeGitHub().then(() => { setRemoving(false); toast('GitHub token removed'); load(); }, e => toast(e.message, 'bad'));
   return (
     <Section id="gh-h" title="GitHub" actions={gh && connected(gh.configured)}
-      sub="New projects get their repo created on your GitHub account, with a first commit holding the devcontainer and a README.">
+      sub="Nodes clone private GitHub repos with it (apps, static sites, workspaces), and new projects get their repo created on your account. A fine-grained token needs Contents: read on the repos to clone, plus Administration and Contents: write to create them.">
       {error && <Alert title="GitHub said no">{error}</Alert>}
       {gh?.configured && (
         <div className="section-head">
@@ -73,7 +73,7 @@ export function GitHubCard() {
         hint={<>Create one at github.com → Settings → Developer settings: a classic token with the <span className="mono">repo</span> scope, or a fine-grained one with <span className="mono">Administration</span> and <span className="mono">Contents</span> read and write. It's stored encrypted and never shown again.</>} />
       {removing && (
         <Confirm title="Remove the GitHub token?" confirmLabel="Remove token" danger onClose={() => setRemoving(false)} onConfirm={remove}>
-          <p className="muted">New projects will start as local git repos until you add a token again. Repos already created stay on GitHub; revoke the token there too if you're done with it.</p>
+          <p className="muted">Private GitHub repos stop cloning (unless the node has an SSH key for them) and new projects start as local git repos until you add a token again. Repos already created stay on GitHub; revoke the token there too if you're done with it.</p>
         </Confirm>
       )}
     </Section>

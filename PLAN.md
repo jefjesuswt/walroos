@@ -480,9 +480,10 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
 
 ## Repos privados con token (pedido 2026-11-22)
 
-- [ ] Clonar repos privados por https con el token de GitHub que ya está en Settings (hoy solo crea repos de workspaces desde cero). Sirve para apps, sitios estáticos y workspaces, y evita tener que darle una llave SSH al nodo.
+- [x] Clonar repos privados por https con el token de GitHub que ya está en Settings (hoy solo crea repos de workspaces desde cero). Sirve para apps, sitios estáticos y workspaces, y evita tener que darle una llave SSH al nodo.
   - El hub pasa el token al agente solo para esa clonación, por la tailnet, como hace con las variables. El agente lo usa con `git -c http.extraHeader` o un credential helper temporal, sin escribirlo en `.git/config` ni en el log (`redact` ya tapa las URLs).
   - En la UI, al pegar un repo privado sin token: un aviso con el enlace a Settings → GitHub y los permisos mínimos (fine-grained, `Contents: read` en esos repos).
+  - Hecho (2026-11-22): `host.GitClone` usa el token con `GIT_CONFIG_*` (header `Authorization` solo para github.com), el hub lo manda en `AppSpec`/`WorkspaceSpec`/detect solo para repos de github.com (`settings.CloneToken`), el workspace guarda su `origin` original. Los textos de la UI lo explican.
   - Más adelante: Gitea/Forgejo y GitLab (un token por forge), y el webhook con `on_push` para repos privados ya funciona porque no clona con el webhook.
 
 ## Backlog chico

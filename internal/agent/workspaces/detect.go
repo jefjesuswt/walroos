@@ -16,7 +16,7 @@ import (
 var ErrDetectClone = errors.New("can't clone the repo")
 
 // Detect shallow-clones the repo into a temp dir, scans it and removes the clone.
-func Detect(ctx context.Context, repoURL, branch string) (agent.Detection, error) {
+func Detect(ctx context.Context, repoURL, branch, gitToken string) (agent.Detection, error) {
 	if repoURL == "" {
 		return agent.Detection{}, fmt.Errorf("%w: repo_url is required", ErrDetectClone)
 	}
@@ -32,7 +32,7 @@ func Detect(ctx context.Context, repoURL, branch string) (agent.Detection, error
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
-	if _, err := host.GitClone(ctx, args, repoURL, dir); err != nil {
+	if _, err := host.GitClone(ctx, args, repoURL, dir, gitToken); err != nil {
 		return agent.Detection{}, fmt.Errorf("%w: %v", ErrDetectClone, err)
 	}
 	d := agent.DetectDir(dir)

@@ -78,7 +78,7 @@ export function FromScratch({ c }: { c: Common }) {
         )}
         <NodeSelect role="dev" nodes={c.nodes} value={c.node} onChange={c.setNode} />
       </FormRow>
-      {onGitHub && priv && <p className="help">The node clones with its own SSH key: for a private repo it needs one with access to your account.</p>}
+      {onGitHub && priv && <p className="help">The node clones it with the GitHub token; pushes from the workspace use your own SSH key (forwarded).</p>}
     </Shell>
   );
 }

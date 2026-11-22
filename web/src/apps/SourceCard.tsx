@@ -54,7 +54,7 @@ export function SourceCard({ app, canEdit, onSaved }: { app: App; canEdit: boole
                 <input key="image" className="input mono" value={f.image} onChange={set('image')} placeholder="ghcr.io/owner/app:latest" autoFocus />
               </Field>
             ) : <>
-              <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH key can read.">
+              <Field label="Repository" hint={<>Public repos clone as they are. A private GitHub repo clones with the token in <a href="#/settings">Settings → GitHub</a>; any other, with an SSH key on the node.</>}>
                 <input key="repo" className="input mono" value={f.repo_url} onChange={set('repo_url')} placeholder="https://github.com/me/app.git" autoFocus />
               </Field>
               <Field label="Build" group hint={isStatic ? 'No Dockerfile: walroos installs, builds and serves it, like Netlify.' : undefined}>

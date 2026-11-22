@@ -141,6 +141,12 @@ Tip: right-click a project, a service, a workspace or a node for its actions (op
 
 When a node has a problem walroos can't fix by itself, for example a kernel updated without a reboot (new releases can't start) or containers that lost their internet access, the **Nodes** page says what it breaks and how to fix it. Every other page shows a short warning pointing there.
 
+### Private repos
+
+Public repos clone as they are. To clone a private GitHub repo for an app, a static site or a workspace, add a GitHub token in **Settings → GitHub**. A classic token needs the `repo` scope. A fine-grained one needs **Contents: read** on the repos to clone, plus **Administration** and **Contents: write** if it should also create repos for new projects.
+
+The hub hands the token to the node only for the clone, and git gets it as a header: it never ends up in the URL, the clone's `.git/config` or the logs. A workspace keeps the URL you gave as its `origin`, so pushes from inside use your own SSH key, which is forwarded. Repos on other forges still clone with an SSH key on the node.
+
 ### Static sites
 
 A repo with no `Dockerfile` (React, Vite, Angular, Vue, Astro, or plain HTML) deploys as a static site. In the app's **General** tab pick **Build → Static site**. Walroos installs the dependencies, builds the site and serves the output folder with its own static server, so the image has no nginx and runs as a non-root user. Every setting is optional:

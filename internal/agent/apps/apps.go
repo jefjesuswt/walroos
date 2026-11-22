@@ -189,7 +189,7 @@ func build(ctx context.Context, spec agent.AppSpec, log io.Writer) (sha, image s
 		args = append(args, "--branch", spec.Branch)
 	}
 	fmt.Fprintf(log, "cloning %s %s\n", redact(spec.RepoURL), spec.Branch)
-	if _, err := host.GitClone(ctx, args, spec.RepoURL, dir); err != nil {
+	if _, err := host.GitClone(ctx, args, spec.RepoURL, dir, spec.GitToken); err != nil {
 		msg := strings.ReplaceAll(err.Error(), host.HTTPSURL(spec.RepoURL), redact(host.HTTPSURL(spec.RepoURL)))
 		return "", "", errors.New(strings.ReplaceAll(msg, spec.RepoURL, redact(spec.RepoURL)))
 	}

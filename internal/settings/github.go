@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"strings"
 
 	"github.com/jefjesuswt/walroos/internal/github"
 	"github.com/jefjesuswt/walroos/shared/whttp"
@@ -62,4 +63,14 @@ func (s *Service) GitHubClient(ctx context.Context) (*github.Client, error) {
 		return nil, ErrNoGitHub
 	}
 	return github.New(token, s.GitHubAPI), nil
+}
+
+// CloneToken is what a node clones repoURL with: the saved GitHub token for a github.com repo
+// (https or SSH form), so private repos clone without a key on the node; "" otherwise.
+func (s *Service) CloneToken(ctx context.Context, repoURL string) string {
+	if !strings.Contains(repoURL, "github.com/") && !strings.Contains(repoURL, "github.com:") {
+		return ""
+	}
+	token, _ := s.token(ctx, githubTokenKey)
+	return token
 }

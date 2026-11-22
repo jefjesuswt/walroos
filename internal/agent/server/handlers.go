@@ -31,14 +31,15 @@ func (s *Server) workspaceRoutes(r *whttp.Router) {
 // handleDetect proposes a devcontainer for a repo: shallow clone, scan, answer. Nothing is kept.
 func (s *Server) handleDetect(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		RepoURL string `json:"repo_url"`
-		Branch  string `json:"branch"`
+		RepoURL  string `json:"repo_url"`
+		Branch   string `json:"branch"`
+		GitToken string `json:"git_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	d, err := workspaces.Detect(r.Context(), body.RepoURL, body.Branch)
+	d, err := workspaces.Detect(r.Context(), body.RepoURL, body.Branch, body.GitToken)
 	switch {
 	case errors.Is(err, workspaces.ErrDetectClone):
 		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())
