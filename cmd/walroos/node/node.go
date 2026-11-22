@@ -10,12 +10,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/jefjesuswt/walroos/cmd/walroos/userservice"
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/agent/server"
 	"github.com/jefjesuswt/walroos/internal/agent/sshgw"
@@ -199,47 +198,23 @@ var installCmd = &cobra.Command{
 		if _, err := loadState(); err != nil {
 			return ui.WrapError("no node state at %s, run `walroos node join` first: %w", statePath(), err)
 		}
-		exe, err := os.Executable()
+		path, err := userservice.Install(cmd.Context(), nodeUnit)
 		if err != nil {
-			return err
-		}
-		if exe, err = filepath.EvalSymlinks(exe); err != nil {
-			return err
-		}
-		cfg, err := os.UserConfigDir()
-		if err != nil {
-			return err
-		}
-		path := filepath.Join(cfg, "systemd", "user", serviceName)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, []byte(unit(exe)), 0o644); err != nil {
-			return err
-		}
-		ctx := cmd.Context()
-		for _, args := range [][]string{{"--user", "daemon-reload"}, {"--user", "enable", "--now", serviceName}} {
-			if out, err := exec.CommandContext(ctx, "systemctl", args...).CombinedOutput(); err != nil {
-				return ui.WrapError("systemctl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-			}
+			return ui.WrapError("%w", err)
 		}
 		ui.PrintSuccess("Installed and started %s.", serviceName)
 		ui.PrintKeyValue("Unit", path)
 		fmt.Println("\n  Logs:  journalctl --user -u walroos-node -f")
-
-		// Without lingering, user services stop at logout and don't start on boot. loginctl can
-		// exit 0 even when polkit says no (no active session), so read the setting back.
-		u, err := user.Current()
-		if err != nil {
-			return err
-		}
-		exec.CommandContext(ctx, "loginctl", "enable-linger", u.Username).Run()
-		if out, _ := exec.CommandContext(ctx, "loginctl", "show-user", u.Username, "-p", "Linger", "--value").Output(); strings.TrimSpace(string(out)) != "yes" {
-			fmt.Printf("\n  To start on boot without logging in, run:  sudo loginctl enable-linger %s\n", u.Username)
+		if fix := userservice.Linger(cmd.Context()); fix != "" {
+			fmt.Printf("\n  To start on boot without logging in, run:  %s\n", fix)
 		}
 		return nil
 	},
 }
+
+// nodeUnit keeps workspaces running across agent restarts (KillProcess): a workspace the agent
+// started leaves its conmon in the service's cgroup.
+var nodeUnit = userservice.Unit{Name: serviceName, Description: "walroos node agent", Args: []string{"node", "run"}, KillProcess: true}
 
 // unit is the systemd --user service for `node run`. on-failure restarts it after a crash or
 // after the hub rejects the node (exit 1): once you `node join` again, it comes back on its own.
@@ -247,22 +222,6 @@ var installCmd = &cobra.Command{
 // service's cgroup, and the default control-group mode killed it on every restart, stopping the
 // workspace. Only the agent itself is stopped now; containers and their conmon live on.
 // ponytail: a clone or build in flight also outlives a restart, unwatched (the agent forgets it).
-func unit(exe string) string {
-	return `[Unit]
-Description=walroos node agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart="` + exe + `" node run
-Restart=on-failure
-RestartSec=10
-KillMode=process
-
-[Install]
-WantedBy=default.target
-`
-}
 
 // relayCmd is how the SSH gateway reaches ports inside a workspace (ssh -L, VS Code): it runs
 // in the workspace's network namespace, chrooted to ROOT (its filesystem, for name lookups),

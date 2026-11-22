@@ -40,11 +40,12 @@ and --owner with your tailnet login so you can use the UI.
 
 func init() {
 	cfgDir, _ := os.UserConfigDir()
-	Cmd.Flags().StringVar(&dataDir, "data", filepath.Join(cfgDir, "walroos"), "Directory for hub.db and Tailscale state")
-	Cmd.Flags().StringVar(&hostname, "hostname", "walroos-hub", "Hostname on the tailnet")
+	Cmd.PersistentFlags().StringVar(&dataDir, "data", filepath.Join(cfgDir, "walroos"), "Directory for hub.db and Tailscale state")
+	Cmd.PersistentFlags().StringVar(&hostname, "hostname", "walroos-hub", "Hostname on the tailnet")
 	Cmd.Flags().StringVar(&owner, "owner", "", "Tailnet login allowed as owner (e.g. you@github); needed on first run")
 	Cmd.Flags().BoolVar(&dev, "dev", false, "Local development: no Tailscale, no auth")
 	Cmd.Flags().StringVar(&devAddr, "addr", "127.0.0.1:8080", "Listen address in --dev mode")
+	Cmd.AddCommand(installCmd, backupCmd, restoreCmd)
 }
 
 // run opens the database, joins the tailnet (or not, in --dev), wires the services and serves.
