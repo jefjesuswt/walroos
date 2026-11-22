@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type MouseEvent } from 'react';
 import { api, ROLES, type JoinToken, type Node, type Role } from '../api';
-import { ago, Alert, Badge, Check, Chip, Cmd, Confirm, EmptyState, ErrorAlert, Foot, Icon, Loading, LoadError, Meter, Modal, PageBar, RowActions, useCan, usePoll, useToast } from '../ui';
+import { ago, Alert, Badge, Check, Chip, Cmd, Confirm, EmptyState, ErrorAlert, Foot, Icon, Loading, LoadError, Meter, Modal, PageBar, RowActions, useCan, useContextMenu, usePoll, useToast, type Action } from '../ui';
 
 export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpen: (v: boolean) => void }) {
   const toast = useToast();
@@ -9,6 +9,11 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
   const [error, setError] = useState('');
   const [removing, setRemoving] = useState<Node | null>(null);
   const [editing, setEditing] = useState<Node | null>(null);
+  const [onMenu, contextMenu] = useContextMenu();
+  const actions = (n: Node): Action[] => !can('nodes') ? [] : [
+    { icon: 'settings', label: 'Roles', run: () => setEditing(n) },
+    { icon: 'trash', label: 'Remove node', run: () => setRemoving(n), danger: true },
+  ];
 
   const load = useCallback(() => {
     api.nodes().then(n => { setNodes(n); setError(''); }, e => setError(e.message));
@@ -47,11 +52,12 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
               <th className="hide-md col-meter">Disk</th><th className="hide-md">Podman</th>
               <th className="hide-sm">Last seen</th><th><span className="sr-only">Actions</span></th>
             </tr></thead>
-            <tbody>{nodes.map(n => <NodeRow key={n.id} n={n} onRemove={() => setRemoving(n)} onRoles={() => setEditing(n)} />)}</tbody>
+            <tbody>{nodes.map(n => <NodeRow key={n.id} n={n} actions={actions(n)} onMenu={onMenu(n.name, actions(n))} />)}</tbody>
           </table>
         </div>
       )}
 
+      {contextMenu}
       {editing && <RolesModal n={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
       {addOpen && <AddNodeModal known={nodes ?? []} onClose={() => setAddOpen(false)} onJoined={load} />}
 
@@ -64,14 +70,13 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
   );
 }
 
-function NodeRow({ n, onRemove, onRoles }: { n: Node; onRemove: () => void; onRoles: () => void }) {
-  const { can } = useCan();
+function NodeRow({ n, actions, onMenu }: { n: Node; actions: Action[]; onMenu: (e: MouseEvent) => void }) {
   const t = n.telemetry;
   const live = n.status === 'online';
   const dash = <span className="muted">—</span>;
   const gb = (mb: number) => (mb / 1024).toFixed(1);
   return (
-    <tr>
+    <tr onContextMenu={onMenu}>
       <td className="col-grow"><div className="cell-stack">
         <span className="cell-title mono" title={n.name}>{n.name}</span>
         <span className="cell-sub mono od-truncate">{[n.address, t.os, t.walroos && `walroos ${t.walroos}`].filter(Boolean).join(' · ') || 'waiting for first heartbeat'}</span>
@@ -84,10 +89,7 @@ function NodeRow({ n, onRemove, onRoles }: { n: Node; onRemove: () => void; onRo
       <td className="hide-md">{t.podman ? <div className="cell-stack"><span className="mono">{t.podman}</span>
         <span className="cell-sub od-nowrap">{t.containers} containers</span></div> : dash}</td>
       <td className={`hide-sm od-nowrap${n.status === 'offline' ? ' bad-tx' : ' muted'}`}>{ago(n.last_seen)}</td>
-      <td className="ta-r od-nowrap">{can('nodes') && <RowActions name={n.name} actions={[
-        { icon: 'settings', label: 'Roles', run: onRoles },
-        { icon: 'trash', label: 'Remove node', run: onRemove },
-      ]} />}</td>
+      <td className="ta-r od-nowrap"><RowActions name={n.name} actions={actions} /></td>
     </tr>
   );
 }

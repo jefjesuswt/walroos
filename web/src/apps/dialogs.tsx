@@ -1,7 +1,7 @@
 // The dialogs of an app's page, and the one that creates an app.
 import { useEffect, useState } from 'react';
 import { api, type App, type Cloudflare, type Deployment, type Volume } from '../api';
-import { Alert, ErrorAlert, Field, Foot, Modal, NodeSelect, ProjectField, useToast } from '../ui';
+import { Alert, Check, Confirm, ErrorAlert, Field, Foot, Modal, NodeSelect, ProjectField, useToast } from '../ui';
 
 // Compose-like: name:/target for a podman volume, ./dir:/target for a directory under the
 // node's ~/walroos-data; :ro at the end mounts it read-only.
@@ -122,3 +122,20 @@ export function NewAppModal({ onClose, onCreated, project = '' }: { onClose: () 
   );
 }
 
+export // DeleteApp asks before deleting app; then onDeleted, or back to its project.
+function DeleteApp({ app, onClose, onDeleted }: { app: App; onClose: () => void; onDeleted?: () => void }) {
+  const toast = useToast();
+  const [purge, setPurge] = useState(false);
+  const remove = () => api.deleteApp(app.name, purge).then(
+    () => { toast(`${app.name} deleted`); if (onDeleted) onDeleted(); else location.hash = `#/projects/${app.project}`; },
+    e => { onClose(); toast(e.message, 'bad'); },
+  );
+  return (
+    <Confirm title={`Delete ${app.name}?`} confirmLabel="Delete app" danger onClose={onClose} onConfirm={remove}>
+      <p className="muted">Stops the app on <span className="mono">{app.node_name}</span> and removes its images, environment and deployment history. It can't be undone.</p>
+      {app.volumes.some(v => v.name) && (
+        <Check checked={purge} onChange={setPurge}>Also delete its named volumes. Otherwise an app created again as {app.name} gets them back.</Check>
+      )}
+    </Confirm>
+  );
+}

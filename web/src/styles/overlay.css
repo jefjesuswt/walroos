@@ -32,3 +32,14 @@
 @media (hover: hover) { .sheet-list button:not(:disabled):hover { box-shadow: var(--hover); } }
 /* A confirm's option (also delete the data) sits apart from the explanation above it. */
 .m-body > p + .check { margin-top: var(--sp3); }
+
+/* The right-click menu (ui/contextmenu.tsx): at the pointer, kept on screen by the component. */
+.ctxmenu-scrim { position: fixed; inset: 0; z-index: 39; }
+.ctxmenu { position: fixed; left: var(--x); top: var(--y); z-index: 40; min-width: 200px; max-width: min(300px, calc(100vw - 16px)); padding: var(--sp1); border-radius: var(--r2); background: var(--s3); box-shadow: var(--elev3); display: grid; }
+.ctxmenu-title { padding: var(--sp1) var(--sp3); font-size: var(--fs-xs); color: var(--tx2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctxmenu button { display: flex; align-items: center; gap: var(--sp3); height: 36px; padding: 0 var(--sp3); border: 0; border-radius: var(--r1); background: none; color: var(--tx); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.ctxmenu button .ic { color: var(--tx2); }
+.ctxmenu button.danger, .ctxmenu button.danger .ic { color: var(--bad); }
+.ctxmenu button:disabled { opacity: .38; cursor: default; }
+.ctxmenu button:focus-visible { outline: 2px solid var(--ac); outline-offset: -2px; }
+@media (hover: hover) { .ctxmenu button:not(:disabled):hover { box-shadow: var(--hover); } }

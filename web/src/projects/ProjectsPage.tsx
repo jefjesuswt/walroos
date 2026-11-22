@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type MouseEvent } from 'react';
 import { api, type Project } from '../api';
 import { appState, dbState } from '../status';
-import { EmptyState, ErrorAlert, Field, Foot, Icon, Loading, LoadError, Modal, useCan, usePoll, useToast } from '../ui';
+import { type Action, EmptyState, ErrorAlert, Field, Foot, Icon, linkActions, Loading, LoadError, Modal, useCan, useContextMenu, usePoll, useToast } from '../ui';
+import { DeleteProject, deletable, ProjectVariables } from './dialogs';
 
 export const total = (p: Project) => p.apps.length + p.databases.length;
 const running = (p: Project) =>
@@ -14,6 +15,13 @@ export function ProjectsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNew
   const [error, setError] = useState('');
   const load = useCallback(() => { api.projects().then(l => { setList(l); setError(''); }, e => setError(e.message)); }, []);
   usePoll(load, 10000);
+  const [dialog, setDialog] = useState<{ kind: 'variables' | 'delete'; p: Project } | null>(null);
+  const [onMenu, contextMenu] = useContextMenu();
+  const actions = (p: Project): Action[] => [...linkActions(`#/projects/${p.name}`), ...(!can('apps') ? [] : [
+    { icon: 'settings', label: 'Variables', run: () => setDialog({ kind: 'variables', p }) },
+    { icon: 'trash', label: 'Delete project', run: () => setDialog({ kind: 'delete', p }), danger: true, off: !deletable(p),
+      title: deletable(p) ? undefined : p.name === 'default' ? 'The default project stays' : 'Delete its services first' },
+  ])];
 
   return (
     <>
@@ -26,20 +34,23 @@ export function ProjectsPage({ newOpen, setNewOpen }: { newOpen: boolean; setNew
             action={can('apps') ? <button className="btn btn-primary" onClick={() => setNewOpen(true)}><Icon n="plus" />New project</button> : undefined} />
         ) : (
           <div className="grid-cards">
-            {list.filter(p => p.name !== 'default' || total(p) > 0).map(p => <ProjectCard key={p.id} p={p} />)}
+            {list.filter(p => p.name !== 'default' || total(p) > 0).map(p => <ProjectCard key={p.id} p={p} onMenu={onMenu(p.name, actions(p))} />)}
           </div>
         )}
+      {dialog?.kind === 'variables' && <ProjectVariables p={dialog.p} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'delete' && <DeleteProject p={dialog.p} onClose={() => setDialog(null)} onDeleted={() => { setDialog(null); load(); }} />}
+      {contextMenu}
       {newOpen && <NewProjectModal onClose={() => setNewOpen(false)} onCreated={p => { setNewOpen(false); location.hash = `#/projects/${p.name}`; }} />}
     </>
   );
 }
 
-function ProjectCard({ p }: { p: Project }) {
+function ProjectCard({ p, onMenu }: { p: Project; onMenu: (e: MouseEvent) => void }) {
   const chip = (key: string, icon: string, name: string, up: boolean) => (
     <span key={key} className="chip"><span className={`dot ${up ? 'ok' : 'idle'}`} aria-hidden="true" /><Icon n={icon} /><span className="mono">{name}</span></span>
   );
   return (
-    <article className="card app-card" onClick={() => { location.hash = `#/projects/${p.name}`; }}>
+    <article className="card app-card" onClick={() => { location.hash = `#/projects/${p.name}`; }} onContextMenu={onMenu}>
       <div className="ac-head">
         <a className="cell-title mono od-truncate" href={`#/projects/${p.name}`} title={p.name}>{p.name}</a>
         <span className="muted od-nowrap ac-count">{total(p) ? `${running(p)} of ${total(p)} running` : 'empty'}</span>

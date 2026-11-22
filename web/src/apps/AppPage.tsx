@@ -1,10 +1,10 @@
 import { useCallback, useState } from 'react';
 import { api, type App, type Deployment } from '../api';
 import { appState, isDraft, settling, short } from '../status';
-import { Alert, Badge, BrandLogo, Check, Confirm, Icon, Loading, LoadFailed, PageHeader, Tabs, useCan, usePoll, useToast, useTrail } from '../ui';
+import { Alert, Badge, BrandLogo, Icon, Loading, LoadFailed, PageHeader, Tabs, useCan, usePoll, useToast, useTrail } from '../ui';
 import { AutomationTab } from './AutomationTab';
 import { DeploymentModal } from './DeploymentModal';
-import { DeployModal, DomainsModal, VolumesModal } from './dialogs';
+import { DeleteApp, DeployModal, DomainsModal, VolumesModal } from './dialogs';
 import { SourceCard } from './SourceCard';
 import { AdvancedTab, DeploymentsTab, DomainsTab, EnvironmentTab, LogsTab } from './tabs';
 
@@ -71,22 +71,5 @@ export function AppPage({ name }: { name: string }) {
       {dialog === 'delete' && <DeleteApp app={a} onClose={close} />}
       {open && <DeploymentModal key={open} app={a} id={open} onClose={() => setOpen(null)} onRollback={d => { load(); setOpen(d.id); }} />}
     </>
-  );
-}
-
-function DeleteApp({ app, onClose }: { app: App; onClose: () => void }) {
-  const toast = useToast();
-  const [purge, setPurge] = useState(false);
-  const remove = () => api.deleteApp(app.name, purge).then(
-    () => { toast(`${app.name} deleted`); location.hash = `#/projects/${app.project}`; },
-    e => { onClose(); toast(e.message, 'bad'); },
-  );
-  return (
-    <Confirm title={`Delete ${app.name}?`} confirmLabel="Delete app" danger onClose={onClose} onConfirm={remove}>
-      <p className="muted">Stops the app on <span className="mono">{app.node_name}</span> and removes its images, environment and deployment history. It can't be undone.</p>
-      {app.volumes.some(v => v.name) && (
-        <Check checked={purge} onChange={setPurge}>Also delete its named volumes. Otherwise an app created again as {app.name} gets them back.</Check>
-      )}
-    </Confirm>
   );
 }
