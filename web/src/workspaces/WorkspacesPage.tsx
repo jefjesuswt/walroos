@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { api, type Node, type Workspace } from '../api';
 import { stackLabel } from '../stack';
-import { ActionSheet, ago, Badge, Confirm, EmptyState, EnvModal, Icon, Loading, LoadError, PageBar, RowActions, useCan, usePoll, useToast, type Action } from '../ui';
+import { ActionSheet, ago, Badge, Confirm, EmptyState, EnvModal, Icon, Loading, LoadError, PageBar, RowActions, useCan, useContextMenu, usePoll, useToast, type Action } from '../ui';
 import { ConnectModal } from './ConnectModal';
 import { NewWorkspaceModal } from './NewWorkspace';
 
@@ -20,6 +20,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
   const [nodes, setNodes] = useState<Node[]>([]);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [onMenu, contextMenu] = useContextMenu();
 
   const load = useCallback(() => {
     api.workspaces().then(w => { setList(w); setError(''); }, e => setError(e.message));
@@ -65,7 +66,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
               </tr></thead>
               <tbody>
                 {list.map(w => (
-                  <tr key={w.id}>
+                  <tr key={w.id} onContextMenu={onMenu(w.name, actions(w))}>
                     <td className="col-grow"><div className="cell-lead">
                       <span className={`lead${w.state === 'running' ? '' : ' off'}`} aria-hidden="true"><Icon n="workspace" /></span>
                       <div className="cell-stack">
@@ -90,6 +91,7 @@ export function WorkspacesPage({ newOpen, setNewOpen }: { newOpen: boolean; setN
           </div>
         )}
 
+      {contextMenu}
       {newOpen && <NewWorkspaceModal nodes={nodes} onClose={() => setNewOpen(false)} onCreated={() => { setNewOpen(false); load(); }} />}
       {dialog && <WorkspaceDialog d={dialog} actions={actions(dialog.w)} canUse={canUse(dialog.w.owner)} onClose={close} onDone={() => { close(); load(); }} />}
     </>

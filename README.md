@@ -133,6 +133,8 @@ Tools cover nodes, workspaces (`detect_stack`, `create_workspace`, `create_works
 
 **4. Deploy an app.** Give a node the `prod` role, open **Projects**, create a project and add an **Application** (a repo with a `Dockerfile`, a static site, or a published image), a **Database** or a **Template**. **Deploy** builds it on the node, starts it next to the running release, checks its health and switches over. **Domains** puts it on the internet with TLS through a Cloudflare Tunnel (add a Cloudflare API token in **Settings** first).
 
+Tip: right-click a project, a service, a workspace or a node for its actions (open in a new tab, deploy, back up, delete…). On a phone, long-press it. Shift+right-click shows the browser's own menu.
+
 ### Static sites
 
 A repo with no `Dockerfile` (React, Vite, Angular, Vue, Astro, or plain HTML) deploys as a static site. In the app's **General** tab pick **Build → Static site**. Walroos installs the dependencies, builds the site and serves the output folder with its own static server, so the image has no nginx and runs as a non-root user. Every setting is optional:

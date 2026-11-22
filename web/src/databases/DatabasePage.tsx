@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import { api, type Backup, type Database } from '../api';
 import { dbLabel, dbState, engineLogo } from '../status';
-import { ago, Alert, Badge, Check, Confirm, Icon, Loading, LoadFailed, Mark, PageHeader, Tabs, usePoll, useToast, useTrail } from '../ui';
-import { LinkModal, ScheduleModal } from './dialogs';
+import { ago, Alert, Badge, Confirm, Icon, Loading, LoadFailed, Mark, PageHeader, Tabs, usePoll, useToast, useTrail } from '../ui';
+import { DeleteDatabase, LinkModal, ScheduleModal } from './dialogs';
 import { AdvancedTab, BackupsTab, ConnectionCard } from './tabs';
 
 type Tab = 'general' | 'backups' | 'advanced';
@@ -72,20 +72,5 @@ export function DatabasePage({ name }: { name: string }) {
         </Confirm>
       )}
     </>
-  );
-}
-
-function DeleteDatabase({ d, onClose }: { d: Database; onClose: () => void }) {
-  const toast = useToast();
-  const [purge, setPurge] = useState(false);
-  const remove = () => api.deleteDatabase(d.name, purge).then(
-    () => { toast(`${d.name} deleted`); location.hash = `#/projects/${d.project}`; },
-    e => { onClose(); toast(e.message, 'bad'); },
-  );
-  return (
-    <Confirm title={`Delete ${d.name}?`} confirmLabel="Delete database" danger onClose={onClose} onConfirm={remove}>
-      <p className="muted">Stops it on <span className="mono">{d.node_name}</span> and forgets it here. Apps using it lose their connection.</p>
-      <Check checked={purge} onChange={setPurge}>Also delete its data and its backups. Otherwise a database created again as {d.name} finds its data, but keeps its old password.</Check>
-    </Confirm>
   );
 }

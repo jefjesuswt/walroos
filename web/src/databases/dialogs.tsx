@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, type App, type Database, type Engine } from '../api';
 import { engineLogo } from '../status';
-import { Disclosure, ErrorAlert, Field, Foot, FormRow, Mark, Modal, NodeSelect, ProjectField, Select, useToast } from '../ui';
+import { Check, Confirm, Disclosure, ErrorAlert, Field, Foot, FormRow, Mark, Modal, NodeSelect, ProjectField, Select, useToast } from '../ui';
 
 export function NewDatabaseModal({ onClose, onCreated, project = '' }: { onClose: () => void; onCreated: (d: Database) => void; project?: string }) {
   const toast = useToast();
@@ -136,5 +136,21 @@ export function ScheduleModal({ d, onClose, onSaved }: { d: Database; onClose: (
         </FormRow>
       </div>
     </Modal>
+  );
+}
+
+export // DeleteDatabase asks before deleting d; then onDeleted, or back to its project.
+function DeleteDatabase({ d, onClose, onDeleted }: { d: Database; onClose: () => void; onDeleted?: () => void }) {
+  const toast = useToast();
+  const [purge, setPurge] = useState(false);
+  const remove = () => api.deleteDatabase(d.name, purge).then(
+    () => { toast(`${d.name} deleted`); if (onDeleted) onDeleted(); else location.hash = `#/projects/${d.project}`; },
+    e => { onClose(); toast(e.message, 'bad'); },
+  );
+  return (
+    <Confirm title={`Delete ${d.name}?`} confirmLabel="Delete database" danger onClose={onClose} onConfirm={remove}>
+      <p className="muted">Stops it on <span className="mono">{d.node_name}</span> and forgets it here. Apps using it lose their connection.</p>
+      <Check checked={purge} onChange={setPurge}>Also delete its data and its backups. Otherwise a database created again as {d.name} finds its data, but keeps its old password.</Check>
+    </Confirm>
   );
 }

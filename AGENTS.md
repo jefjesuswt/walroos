@@ -75,7 +75,7 @@ index.html (root)       Open Design prototype the UI is ported from; reference f
   - Material 3 look, plain CSS in `web/src/styles/`. No Tailwind, no MUI or `@material/web`.
   - Colors are only M3 roles (`--md-*`, via the aliases in `styles/tokens.css`), never a hex: themes swap them.
   - Themes live in `web/src/theme.ts`: presets (Walroos, Catppuccin, Dracula, Aura) plus imported Material Theme Builder JSON. Presets must pass `contrastWarnings` (WCAG AA).
-  - Build screens from the shared UI components (see Rules below). On phones, modals are bottom sheets and row actions go in a ⋮ sheet.
+  - Build screens from the shared UI components (see Rules below). On phones, modals are bottom sheets and row actions go in a ⋮ sheet. Rows and cards with actions also get them on right-click (`useContextMenu`).
   - Port new screens from the prototype `index.html`, restyled to M3.
   - Check every change at mobile width (no horizontal scroll), in light and dark, and with a non-default theme.
 - **Commits:** conventional style (`feat:`, `fix:` …). Work on a branch, not `main`.

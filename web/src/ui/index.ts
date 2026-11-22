@@ -1,5 +1,6 @@
 // The UI kit. Pages import from here ('./ui'), never build these by hand. See README.md.
 export * from './auth';
+export * from './contextmenu';
 export * from './data';
 export * from './feedback';
 export * from './fields';

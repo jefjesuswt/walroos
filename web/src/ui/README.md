@@ -30,6 +30,7 @@ fields end up misaligned on one screen and not the others.
 | `form.tsx` | `Field`, `FormRow`, `Select`, `Check`, `Seg`, `Disclosure` |
 | `fields.tsx` | `NodeSelect`, `ProjectField`, `EnvEditor`, `EnvModal` |
 | `overlay.tsx` | `Modal`, `Foot`, `Confirm`, `PopMenu`, `RowActions`, `ActionSheet` |
+| `contextmenu.tsx` | `useContextMenu` (the right-click menu), `linkActions` (Open, Open in a new tab) |
 | `feedback.tsx` | `Badge`, `Alert`, `ErrorAlert`, `EmptyState`, `Loading`, `LoadError`, `LoadFailed`, toasts |
 | `data.tsx` | `Chip`, `Meter`, `CopyBtn`, `Cmd` |
 | `icons.tsx`, `logos.tsx` | `Icon`, `Logo`; `BrandLogo`, `Mark` (Simple Icons, CC0) |
@@ -89,4 +90,13 @@ const actions = (w: Workspace): Action[] => [
 <td className="hide-xs"><RowActions name={w.name} actions={actions(w)} /></td>
 <td className="show-xs"><button className="btn-icon" onClick={() => setSheet(w)}><Icon n="more" /></button></td>
 {sheet && <ActionSheet title={sheet.name} actions={actions(sheet)} onClose={() => setSheet(null)} />}
+```
+
+The same actions on right-click: every row or card that has actions gets the menu too, opened at the pointer (on a phone, a long press opens the ActionSheet). A card that is a link starts with `linkActions(href)`, since the menu replaces the browser's (Shift+right-click still shows the browser's).
+
+```tsx
+const [onMenu, contextMenu] = useContextMenu();
+<tr onContextMenu={onMenu(w.name, actions(w))}>…</tr>
+<a className="card" href={href} onContextMenu={onMenu(a.name, [...linkActions(href), ...actions(a)])}>…</a>
+{contextMenu}
 ```
