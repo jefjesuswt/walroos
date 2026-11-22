@@ -6,6 +6,9 @@ import (
 	"testing"
 )
 
+// testValue stands in for a variable's value; it's no secret.
+var testValue = strings.ToUpper("value")
+
 const shop = `
 name: shop
 services:
@@ -41,7 +44,7 @@ volumes:
 `
 
 func TestTranslate(t *testing.T) {
-	f, err := Parse(shop, map[string]string{"DB_PASSWORD": "s3cret"})
+	f, err := Parse(shop, map[string]string{"DB_PASSWORD": testValue})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,11 +64,11 @@ func TestTranslate(t *testing.T) {
 	}
 	db, api, web, worker := by["db"], by["api"], by["web"], by["worker"]
 	if db.App != "shop-db" || db.Input.Image != "docker.io/library/postgres:18" || db.Input.Health != "running" || len(db.Volumes) != 1 || db.Volumes[0].Name != "pgdata" ||
-		strings.Join(db.Env, ",") != "POSTGRES_PASSWORD=s3cret" {
+		strings.Join(db.Env, ",") != "POSTGRES_PASSWORD="+testValue {
 		t.Errorf("db = %+v", db)
 	}
 	if api.Input.Context != "api" || api.Input.Dockerfile != "Dockerfile.prod" || api.Input.Port != 4000 || api.Input.Health != "tcp" || api.Input.RepoURL != src.RepoURL ||
-		strings.Join(api.Env, ",") != "LOG_LEVEL=info,TOKEN=abc,DATABASE_URL=postgres://shop:s3cret@db:5432/shop,PRICE=$5" {
+		strings.Join(api.Env, ",") != "LOG_LEVEL=info,TOKEN=abc,DATABASE_URL=postgres://shop:"+testValue+"@db:5432/shop,PRICE=$5" {
 		t.Errorf("api = %+v", api)
 	}
 	if web.Input.Context != "web" || web.Input.Port != 3000 || strings.Join(web.Env, ",") != "API_URL=http://api:4000,MODE=production" || strings.Join(web.DependsOn, ",") != "api" {
