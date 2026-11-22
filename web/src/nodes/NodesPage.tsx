@@ -1,6 +1,7 @@
 import { useCallback, useState, type MouseEvent } from 'react';
 import { api, ROLES, type JoinToken, type Node, type Role } from '../api';
 import { ago, Alert, Badge, Check, Chip, Cmd, Confirm, EmptyState, ErrorAlert, Foot, Icon, Loading, LoadError, Meter, Modal, PageBar, RowActions, useCan, useContextMenu, usePoll, useToast, type Action } from '../ui';
+import { NodeProblems } from './NodeProblems';
 
 export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpen: (v: boolean) => void }) {
   const toast = useToast();
@@ -34,6 +35,7 @@ export function NodesPage({ addOpen, setAddOpen }: { addOpen: boolean; setAddOpe
       {nodes && nodes.length > 0 && (
         <PageBar sub={`${online} of ${nodes.length} online`} />
       )}
+      {nodes && <NodeProblems nodes={nodes} />}
 
       {error && !nodes ? (
 <LoadError what="nodes" error={error} onRetry={load} />

@@ -3,6 +3,7 @@ package fleet
 import (
 	"time"
 
+	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
 
@@ -39,6 +40,9 @@ type Telemetry struct {
 	Podman      string  `json:"podman"`     // empty when podman is not installed
 	Walroos     string  `json:"walroos"`    // agent version
 	Containers  int     `json:"containers"` // -1 when unknown
+	// Problems the agent found on the node (agent/host/health.go): the node still works, but
+	// something it runs doesn't. The UI shows each with its fix.
+	Problems []agent.Problem `json:"problems,omitempty"`
 }
 
 type Node struct {
