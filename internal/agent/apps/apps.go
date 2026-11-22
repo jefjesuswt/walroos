@@ -400,7 +400,10 @@ func (a *Apps) get(ctx context.Context, container, addr, path string) (int, erro
 		args = append([]string{"podman", "unshare"}, args...)
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	cmd.Stdin = strings.NewReader("GET " + path + " HTTP/1.0\r\nHost: localhost\r\nUser-Agent: walroos-health\r\n\r\n")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return 0, err
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return 0, err
@@ -408,8 +411,8 @@ func (a *Apps) get(ctx context.Context, container, addr, path string) (int, erro
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("connect: %w", err)
 	}
-	out, _ := io.ReadAll(io.LimitReader(stdout, 4096)) // the status line is enough; an endless body must not fill memory
-	stdout.Close()                                     // the relay gets EPIPE and exits
+	out := ask(stdin, stdout, path)
+	stdout.Close() // the relay gets EPIPE and exits
 	werr := cmd.Wait()
 	out = bytes.TrimPrefix(out, []byte{0}) // the relay's "connected" byte
 	status, _, _ := bufio.NewReader(bytes.NewReader(out)).ReadLine()
@@ -420,6 +423,18 @@ func (a *Apps) get(ctx context.Context, container, addr, path string) (int, erro
 		return 0, fmt.Errorf("connect: %w", werr)
 	}
 	return 0, fmt.Errorf("not an HTTP answer: %q", string(status))
+}
+
+// ask sends the health check's request on w and reads the answer from r. It closes w (the relay
+// then half-closes the connection) only after the answer: Bun drops a request whose client
+// half-closed before it was answered.
+func ask(w io.WriteCloser, r io.Reader, path string) []byte {
+	defer w.Close()
+	if _, err := io.WriteString(w, "GET "+path+" HTTP/1.0\r\nHost: localhost\r\nUser-Agent: walroos-health\r\nConnection: close\r\n\r\n"); err != nil {
+		return nil
+	}
+	out, _ := io.ReadAll(io.LimitReader(r, 4096)) // the status line is enough; an endless body must not fill memory
+	return out
 }
 
 // units lists the Quadlet containers of app, by file name.

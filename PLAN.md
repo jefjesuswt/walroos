@@ -449,6 +449,8 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
 
 ## Casos tristes que walroos no detecta
 
+- [x] **Una app en Bun nunca pasaba el health check** (encontrado 2026-11-22 desplegando la demo de notas). El relay hacía half-close del socket apenas mandaba la petición, y Bun descarta una petición si el cliente ya cerró su lado. Arreglo: el health check deja la escritura abierta hasta leer la respuesta y manda `Connection: close`.
+
 - [ ] **Kernel actualizado sin reiniciar: las apps no arrancan** (encontrado 2026-11-21 en el nodo Arch, probando M4).
   - Qué pasó: pacman actualizó el kernel (corre `7.3.4-zen2`, en `/usr/lib/modules` solo queda `7.3.5-zen1`) y el módulo `nft_reject_inet` ya no se puede cargar. El guard de egress (`ExecStartPost`, `reject with icmpx`) falla con "No such file or directory" y, como falla cerrado, mata el contenedor: todo deploy nuevo falla.
   - Qué vio walroos: el deploy falla con "systemctl --user: exit status 1"; el motivo real solo está en `journalctl` de la unidad. El nodo sigue `online`.
