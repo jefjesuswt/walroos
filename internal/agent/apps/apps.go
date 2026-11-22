@@ -313,7 +313,7 @@ Description=walroos app %[1]s (%[3]s)
 [Container]
 Image=%[4]s
 ContainerName=%[2]s
-Network=%[5]s:alias=%[1]s
+Network=%[5]s:alias=%[1]s%[12]s
 Label=%[6]s=%[1]s
 Label=%[7]s=%[3]s
 EnvironmentFile=%[8]s
@@ -332,7 +332,15 @@ Restart=always
 
 [Install]
 WantedBy=default.target
-`, spec.Name, rel.Container, rel.Sha, rel.Image, cmp.Or(spec.Network, agent.AppNetwork), quadlet.LabelApp, quadlet.LabelSha, envFile, guard, mounts, execLine(spec.Command))
+`, spec.Name, rel.Container, rel.Sha, rel.Image, cmp.Or(spec.Network, agent.AppNetwork), quadlet.LabelApp, quadlet.LabelSha, envFile, guard, mounts, execLine(spec.Command), alias(spec.Alias))
+}
+
+// alias adds a second name on the app's network (a compose service's), or nothing.
+func alias(a string) string {
+	if a == "" {
+		return ""
+	}
+	return ",alias=" + a
 }
 
 // execLine replaces the image's CMD, or keeps it ("").

@@ -179,3 +179,17 @@ func TestTokenFallback(t *testing.T) {
 		t.Errorf("a private repo with a dead token: %v", err)
 	}
 }
+
+func TestRepoFiles(t *testing.T) {
+	src := agenttest.GitRepo(t, map[string]string{"docker-compose.yml": "services: {}\n", "api/.env": "A=1\n", "secret": "x"})
+	os.Symlink("/etc/passwd", filepath.Join(src, "link"))
+	exec.Command("git", "-C", src, "add", "-A").Run()
+	exec.Command("git", "-C", src, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "link").Run()
+	got, err := RepoFiles(context.Background(), src, "", "", []string{"docker-compose.yml", "api/../api/.env", "missing", "../outside", "/etc/passwd", "link", "api"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got["docker-compose.yml"] != "services: {}\n" || got["api/.env"] != "A=1\n" {
+		t.Fatalf("files = %v", got)
+	}
+}

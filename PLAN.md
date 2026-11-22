@@ -302,6 +302,12 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Compose (2026-11-22)
+
+- [x] PR 1: health checks HTTP, TCP o running (un worker sin puerto), `command` (Quadlet `Exec=`) y carpeta de build (`context`).
+- [x] PR 2: `internal/compose` traduce un docker-compose.yml (de un repo o pegado) a apps del proyecto: `<proyecto>-<servicio>` con el nombre del servicio como alias en la red del proyecto. Subconjunto claro (image, build, command, environment, env_file, ports/expose, volúmenes con nombre, depends_on); lo que no se puede, error con motivo; lo ignorado, advertencia. `${VAR}` desde las variables del proyecto y el `.env` del repo. Plan (crea/actualiza/borra) y Sync; deploys en orden de depends_on. El nodo lee el compose y sus env_files (`/v1/repo/files`, con el token de GitHub). UI: Create service → Compose, botón Compose en el proyecto. MCP: plan_compose, sync_compose.
+- ponytail: interpola sobre el texto (un `${VAR}` en un comentario cuenta); un sync que falla a mitad deja lo hecho (el siguiente sigue); un cambio de una variable compartida pide otro sync; las bases de datos del compose no tienen los backups de walroos.
+
 ## Sitios estáticos, como Netlify (2026-11-21)
 
 - [x] Build **Static site** en la fuente de la app: repo sin Dockerfile. Runtime Node o Bun (auto por el lockfile), comandos de install y build, carpeta a publicar (auto: `dist/*/browser`, `dist`, `build`, `out`, `public`), SPA. Todo opcional.

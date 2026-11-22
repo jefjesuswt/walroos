@@ -1,5 +1,5 @@
 // The hub's HTTP API. Its types are in types.ts; they're re-exported here, so pages import both from './api'.
-import { type Role, type Node, type UserRole, type User, type Member, type Workspace, type NewWorkspace, type ProjectStack, type NewProject, type GitHub, type Detection, type EnvVar, type SSHKey, type JoinToken, type Deployment, type Cloudflare, type App, type Volume, type NewApp, type Engine, type Database, type Backup, type Project, type Template, type Trigger, type Hooks, type Ref, type StaticBuild, type Health } from './types';
+import { type Role, type Node, type UserRole, type User, type Member, type Workspace, type NewWorkspace, type ProjectStack, type NewProject, type GitHub, type Detection, type EnvVar, type SSHKey, type JoinToken, type Deployment, type Cloudflare, type App, type Volume, type NewApp, type Engine, type Database, type Backup, type Project, type Template, type Trigger, type Hooks, type Ref, type StaticBuild, type Health, type ComposeSource, type ComposeDiff } from './types';
 
 export * from './types';
 
@@ -80,6 +80,9 @@ export const api = {
   projectEnv: (name: string) => req<EnvVar[]>('GET', `/api/projects/${name}/env`),
   setProjectEnv: (name: string, vars: EnvVar[]) => req<void>('PUT', `/api/projects/${name}/env`, vars),
   projectRefs: (name: string) => req<Ref[]>('GET', `/api/projects/${name}/refs`),
+  composeSource: (name: string) => req<ComposeSource>('GET', `/api/projects/${name}/compose`),
+  planCompose: (name: string, src: ComposeSource) => req<ComposeDiff>('POST', `/api/projects/${name}/compose/plan`, src),
+  syncCompose: (name: string, src: ComposeSource) => req<ComposeDiff>('PUT', `/api/projects/${name}/compose`, src),
   engines: () => req<Engine[]>('GET', '/api/databases/engines'),
   databases: () => req<Database[]>('GET', '/api/databases'),
   database: (name: string) => req<Database>('GET', `/api/databases/${name}`),

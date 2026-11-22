@@ -1,8 +1,6 @@
 package database
 
 import (
-	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -47,7 +45,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var in CreateInput
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		d, err := h.svc.Create(r.Context(), in)
 		whttp.Reply(w, http.StatusCreated, d, err)
 	}
@@ -68,7 +66,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleSchedule(w http.ResponseWriter, r *http.Request) {
 	var sc Schedule
-	if decode(w, r, &sc) {
+	if whttp.Decode(w, r, &sc) {
 		d, err := h.svc.SetSchedule(r.Context(), r.PathValue("name"), sc)
 		whttp.Reply(w, http.StatusOK, d, err)
 	}
@@ -76,7 +74,7 @@ func (h *Handler) handleSchedule(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLink(w http.ResponseWriter, r *http.Request) {
 	var in LinkInput
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		vars, err := h.svc.Link(r.Context(), r.PathValue("name"), in)
 		if vars == nil {
 			vars = []workspace.EnvVar{}
@@ -115,7 +113,7 @@ func (h *Handler) handleRestore(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		File string `json:"file"`
 	}
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		if err := h.svc.Restore(r.Context(), r.PathValue("name"), in.File); err != nil {
 			whttp.WriteError(w, err)
 			return
@@ -124,10 +122,3 @@ func (h *Handler) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil && !errors.Is(err, io.EOF) {
-		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
-		return false
-	}
-	return true
-}

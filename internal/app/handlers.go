@@ -1,8 +1,6 @@
 package app
 
 import (
-	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -54,7 +52,7 @@ func (h *Handler) Routes(r *whttp.Router) {
 
 func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []string
-	if decode(w, r, &domains) {
+	if whttp.Decode(w, r, &domains) {
 		a, err := h.svc.SetDomains(r.Context(), r.PathValue("name"), domains)
 		whttp.Reply(w, http.StatusOK, a, err)
 	}
@@ -62,7 +60,7 @@ func (h *Handler) handlePutDomains(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleFromTemplate(w http.ResponseWriter, r *http.Request) {
 	var in FromTemplateInput
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		a, err := h.svc.CreateFromTemplate(r.Context(), in)
 		whttp.Reply(w, http.StatusCreated, a, err)
 	}
@@ -70,7 +68,7 @@ func (h *Handler) handleFromTemplate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePutSource(w http.ResponseWriter, r *http.Request) {
 	var in SourceInput
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		a, err := h.svc.SetSource(r.Context(), r.PathValue("name"), in)
 		whttp.Reply(w, http.StatusOK, a, err)
 	}
@@ -78,18 +76,10 @@ func (h *Handler) handlePutSource(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePutVolumes(w http.ResponseWriter, r *http.Request) {
 	var vols []agent.Volume
-	if decode(w, r, &vols) {
+	if whttp.Decode(w, r, &vols) {
 		a, err := h.svc.SetVolumes(r.Context(), r.PathValue("name"), vols)
 		whttp.Reply(w, http.StatusOK, a, err)
 	}
-}
-
-func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil && !errors.Is(err, io.EOF) {
-		whttp.ErrorJSON(w, http.StatusBadRequest, "invalid JSON body")
-		return false
-	}
-	return true
 }
 
 func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +89,7 @@ func (h *Handler) handleList(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var in CreateInput
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		a, err := h.svc.Create(r.Context(), in)
 		whttp.Reply(w, http.StatusCreated, a, err)
 	}
@@ -125,7 +115,7 @@ func (h *Handler) handleGetEnv(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePutEnv(w http.ResponseWriter, r *http.Request) {
 	var vars []workspace.EnvVar
-	if !decode(w, r, &vars) {
+	if !whttp.Decode(w, r, &vars) {
 		return
 	}
 	if err := h.svc.SetEnv(r.Context(), r.PathValue("name"), vars); err != nil {
@@ -151,7 +141,7 @@ func (h *Handler) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Sha string `json:"sha"`
 	}
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		d, err := h.svc.Deploy(r.Context(), r.PathValue("name"), in.Sha)
 		whttp.Reply(w, http.StatusAccepted, d, err)
 	}
@@ -162,7 +152,7 @@ func (h *Handler) handlePower(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Action string `json:"action"`
 	}
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		a, err := h.svc.Power(r.Context(), r.PathValue("name"), in.Action)
 		whttp.Reply(w, http.StatusOK, a, err)
 	}
@@ -192,7 +182,7 @@ func (h *Handler) handlePutTrigger(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Trigger string `json:"trigger"`
 	}
-	if decode(w, r, &in) {
+	if whttp.Decode(w, r, &in) {
 		a, err := h.svc.SetTrigger(r.Context(), r.PathValue("name"), in.Trigger)
 		whttp.Reply(w, http.StatusOK, a, err)
 	}

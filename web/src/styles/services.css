@@ -57,3 +57,12 @@
 
 .tile-sub { display: block; }
 .ac-count { font-size: var(--fs-xs); }
+
+/* Compose's plan (projects/ComposeModal.tsx): what a sync creates, updates and removes. */
+.compose-plan { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp2); max-height: 40vh; overflow-y: auto; }
+.compose-plan li { display: grid; grid-template-columns: 5.5rem auto minmax(0, 1fr); gap: var(--sp3); align-items: center; font-size: var(--fs-sm); }
+.compose-plan .chip { justify-content: center; }
+.compose-create { background: var(--ok-soft); color: var(--ok-tx); }
+.compose-update { background: var(--busy-soft); color: var(--busy-tx); }
+.compose-remove { background: var(--bad-soft); color: var(--bad-tx); }
+@media (max-width: 640px) { .compose-plan li { grid-template-columns: 5.5rem minmax(0, 1fr); } .compose-plan li > .muted { grid-column: 2; } }

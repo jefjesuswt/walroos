@@ -55,7 +55,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 	}
 	a := App{
 		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: cmp.Or(in.Project, "default"), RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
-		Dockerfile: in.Dockerfile, Static: src.Static, Port: src.Port, HealthPath: in.HealthPath, Health: in.Health, Command: in.Command, Context: in.Context, Description: in.Description, CreatedAt: s.now().UTC(),
+		Dockerfile: in.Dockerfile, Static: src.Static, Port: src.Port, HealthPath: in.HealthPath, Health: in.Health, Command: in.Command, Context: in.Context, Compose: in.Compose, Description: in.Description, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
 }
@@ -66,6 +66,14 @@ func (s *Service) cloneToken(ctx context.Context, repoURL string) string {
 		return ""
 	}
 	return s.settings.CloneToken(ctx, repoURL)
+}
+
+// CheckSource says whether in would be a valid source for an app named name, before creating it.
+func CheckSource(name string, in SourceInput) error {
+	if !names.DNSLabel(name) || !validSource(name, withStaticPort(in)) {
+		return ErrInvalid
+	}
+	return nil
 }
 
 // empty: nothing of the source was sent, so the app is a draft.

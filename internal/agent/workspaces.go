@@ -24,6 +24,14 @@ type WorkspaceSpec struct {
 	GitToken string `json:"git_token,omitempty"`
 }
 
+// RepoFilesRequest asks a node for files of a repo (POST /v1/repo/files).
+type RepoFilesRequest struct {
+	RepoURL  string   `json:"repo_url"`
+	Branch   string   `json:"branch,omitempty"`
+	GitToken string   `json:"git_token,omitempty"` // the hub's GitHub token, for a private repo
+	Paths    []string `json:"paths"`
+}
+
 // Workspace is the agent's view of a workspace, derived from podman plus in-flight work.
 type Workspace struct {
 	Name   string `json:"name"`

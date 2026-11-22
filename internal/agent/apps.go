@@ -31,6 +31,7 @@ type AppSpec struct {
 	Health     string       `json:"health,omitempty"`  // HealthHTTP (""), HealthTCP or HealthRunning
 	Command    []string     `json:"command,omitempty"` // replaces the image's CMD
 	Context    string       `json:"context,omitempty"` // build from this folder of the repo; Dockerfile is relative to it
+	Alias      string       `json:"alias,omitempty"`   // another name on its network: a compose service's own name
 	Image      string       `json:"image"`
 	Env        []string     `json:"env"`
 	Volumes    []Volume     `json:"volumes,omitempty"`    // with any, a deploy stops the old release before starting the new one
@@ -100,7 +101,7 @@ func (spec AppSpec) Valid() bool {
 	opt := func(re *regexp.Regexp, v string) bool { return v == "" || re.MatchString(v) }
 	ownImage := "localhost/walroos-app-" + spec.Name + ":"
 	tag, isOwn := strings.CutPrefix(spec.Image, ownImage)
-	return names.DNSLabel(spec.Name) && deployIDRe.MatchString(spec.ID) && validPort(spec) && validCommand(spec.Command) && opt(relPathRe, spec.Context) && cleanRel(spec.Context) &&
+	return names.DNSLabel(spec.Name) && deployIDRe.MatchString(spec.ID) && validPort(spec) && validCommand(spec.Command) && (spec.Alias == "" || names.DNSLabel(spec.Alias)) && opt(relPathRe, spec.Context) && cleanRel(spec.Context) &&
 		(spec.RepoURL != "" || spec.Image != "" || spec.Source != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
 		(spec.Source == "" || len(spec.Source) <= 255 && imageRe.MatchString(spec.Source) && spec.RepoURL == "" && spec.Pull == "") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&

@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/agent/apps"
 	"github.com/jefjesuswt/walroos/internal/agent/databases"
+	"github.com/jefjesuswt/walroos/internal/agent/host"
 	"github.com/jefjesuswt/walroos/internal/agent/workspaces"
 	"github.com/jefjesuswt/walroos/shared/whttp"
 )
@@ -26,6 +28,25 @@ func (s *Server) workspaceRoutes(r *whttp.Router) {
 	r.Post("/v1/workspaces/{name}/rebuild", s.handleRebuildWorkspace)
 	r.Delete("/v1/workspaces/{name}", s.handleDeleteWorkspace)
 	r.Post("/v1/detect", s.handleDetect)
+	r.Post("/v1/repo/files", s.handleRepoFiles)
+}
+
+// handleRepoFiles answers {"files": {path: content}} for the paths of a repo that exist: shallow
+// clone, read, forget.
+func (s *Server) handleRepoFiles(w http.ResponseWriter, r *http.Request) {
+	var in agent.RepoFilesRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.RepoURL == "" || len(in.Paths) == 0 || len(in.Paths) > 32 {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "repo_url and 1 to 32 paths, please")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second) // the hub gives up on agents at 30s
+	defer cancel()
+	files, err := host.RepoFiles(ctx, in.RepoURL, in.Branch, in.GitToken, in.Paths)
+	if err != nil {
+		whttp.ErrorJSON(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	whttp.JSON(w, http.StatusOK, map[string]any{"files": files})
 }
 
 // handleDetect proposes a devcontainer for a repo: shallow clone, scan, answer. Nothing is kept.
