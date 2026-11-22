@@ -129,9 +129,11 @@ Clients on that machine then reach the tailnet through the proxy. `walroos ssh-c
 claude mcp add --transport http walroos http://walroos-hub/mcp
 ```
 
-Tools cover nodes, workspaces (`detect_stack`, `create_workspace`, `create_workspace_from_scratch`, `workspace_ssh_info`…), projects, apps (`create_app`, `deploy_app`, `rollback_app`, `app_logs`…) and databases. Each user only gets the tools their role allows. Ask "create a workspace for github.com/you/app" and Claude detects the stack, creates it, waits until it's running and gives you the `ssh` line.
+Tools cover nodes, workspaces (`detect_stack`, `create_workspace`, `create_workspace_from_scratch`, `workspace_ssh_info`…), projects, apps (`create_app`, `deploy_app`, `power_app`, `rollback_app`, `app_logs`…) and databases. Each user only gets the tools their role allows. Ask "create a workspace for github.com/you/app" and Claude detects the stack, creates it, waits until it's running and gives you the `ssh` line.
 
 **4. Deploy an app.** Give a node the `prod` role, open **Projects**, create a project and add an **Application** (a repo with a `Dockerfile`, a static site, or a published image), a **Database** or a **Template**. **Deploy** builds it on the node, starts it next to the running release, checks its health and switches over. **Domains** puts it on the internet with TLS through a Cloudflare Tunnel (add a Cloudflare API token in **Settings** first).
+
+Once an app is live, its page shows **Redeploy** (a new release, with no downtime) next to **Restart** and **Stop**. A stopped app stays stopped, even when its node reboots, until you **Start** it or deploy it again.
 
 Tip: right-click a project, a service, a workspace or a node for its actions (open in a new tab, deploy, back up, delete…). On a phone, long-press it. Shift+right-click shows the browser's own menu.
 

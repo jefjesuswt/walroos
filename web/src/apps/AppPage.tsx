@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
 import { api, type App, type Deployment } from '../api';
 import { appState, isDraft, settling, short } from '../status';
-import { Alert, Badge, BrandLogo, Icon, Loading, LoadFailed, PageHeader, Tabs, useCan, usePoll, useToast, useTrail } from '../ui';
+import { Alert, Badge, BrandLogo, Icon, Loading, LoadFailed, PageHeader, RowActions, Tabs, useCan, usePoll, useToast, useTrail } from '../ui';
 import { AutomationTab } from './AutomationTab';
 import { DeploymentModal } from './DeploymentModal';
 import { DeleteApp, DeployModal, DomainsModal, VolumesModal } from './dialogs';
+import { usePower } from './power';
 import { SourceCard } from './SourceCard';
 import { AdvancedTab, DeploymentsTab, DomainsTab, EnvironmentTab, LogsTab } from './tabs';
 
@@ -24,6 +25,7 @@ export function AppPage({ name }: { name: string }) {
   const [tab, setTab] = useState<AppTab>('general');
   const [dialog, setDialog] = useState<Dialog>(null);
   const [open, setOpen] = useState<string | null>(null); // deployment id in the log modal
+  const [powerActions, powerDialog] = usePower(setA);
 
   const load = useCallback(() => {
     api.app(name).then(x => { setA(x); setError(''); }, e => setError(e.message));
@@ -49,9 +51,11 @@ export function AppPage({ name }: { name: string }) {
           <span><Icon n="nodes" /><span className="mono">{a.node_name}</span></span>
           {a.running && <span>live <span className="sha">{short(a.running.sha)}</span></span>}
         </>}
-        actions={canEdit && (
-          <button className="btn btn-primary" disabled={a.node_down || isDraft(a)} title={isDraft(a) ? 'Set its source first' : undefined} onClick={() => setDialog('deploy')}><Icon n="deploy" />Deploy</button>
-        )} />
+        actions={canEdit && <>
+          <RowActions name={a.name} actions={powerActions(a)} />
+          <button className="btn btn-primary" disabled={a.node_down || isDraft(a)} title={isDraft(a) ? 'Set its source first' : a.running ? 'Build and switch to a new release, without downtime' : undefined}
+            onClick={() => setDialog('deploy')}><Icon n="deploy" />{a.running ? 'Redeploy' : 'Deploy'}</button>
+        </>} />
 
       {a.node_down && <Alert title={`${a.node_name} isn't answering`}>Deploys and logs wait for it. The app keeps running if the node is up but the hub can't reach it.</Alert>}
 
@@ -68,6 +72,7 @@ export function AppPage({ name }: { name: string }) {
       {dialog === 'deploy' && <DeployModal app={a} onClose={close} onQueued={d => { close(); load(); setTab('deployments'); setOpen(d.id); }} />}
       {dialog === 'volumes' && <VolumesModal app={a} onClose={close} onSaved={saved} />}
       {dialog === 'domains' && <DomainsModal app={a} onClose={close} onSaved={saved} />}
+      {powerDialog}
       {dialog === 'delete' && <DeleteApp app={a} onClose={close} />}
       {open && <DeploymentModal key={open} app={a} id={open} onClose={() => setOpen(null)} onRollback={d => { load(); setOpen(d.id); }} />}
     </>

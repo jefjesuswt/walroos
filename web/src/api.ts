@@ -48,6 +48,7 @@ export const api = {
   createApp: (a: NewApp) => req<App>('POST', '/api/apps', a),
   deleteApp: (name: string, purge = false) => req<void>('DELETE', `/api/apps/${name}${purge ? '?purge=1' : ''}`),
   deployApp: (name: string, sha = '') => req<Deployment>('POST', `/api/apps/${name}/deploy`, { sha }),
+  powerApp: (name: string, action: 'stop' | 'start' | 'restart') => req<App>('POST', `/api/apps/${name}/power`, { action }),
   deployments: (name?: string) => req<Deployment[]>('GET', name ? `/api/apps/${name}/deployments` : '/api/deployments'),
   deployment: (name: string, id: string) => req<Deployment>('GET', `/api/apps/${name}/deployments/${id}`),
   rollback: (name: string, id: string) => req<Deployment>('POST', `/api/apps/${name}/deployments/${id}/rollback`),

@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"net"
@@ -35,6 +36,8 @@ type fakeAgent struct {
 	calls   []string // "<host> <op>" of each build and deploy
 	builds  []agent.AppSpec
 	tunnel  string // the token of the last PUT /v1/tunnel
+	state   string // the release's ActiveState in GET /v1/apps; "" = active
+	powers  []string
 }
 
 func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
@@ -75,11 +78,24 @@ func (f *fakeAgent) serve(w http.ResponseWriter, r *http.Request) {
 			image = spec.Image
 		}
 		enc.Encode(agent.DeployLine{Release: &agent.Release{Sha: sha, Image: image, Container: spec.Name + "-" + spec.ID}})
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/power"):
+		var in struct{ Action string }
+		json.NewDecoder(r.Body).Decode(&in)
+		switch {
+		case f.busy:
+			http.Error(w, `{"error":"busy"}`, 409)
+		case len(f.specs) == 0:
+			http.Error(w, `{"error":"app not found on this node"}`, 404)
+		default:
+			f.powers = append(f.powers, in.Action)
+			f.state = map[string]string{"stop": "inactive"}[in.Action]
+			w.WriteHeader(204)
+		}
 	case r.Method == "GET" && r.URL.Path == "/v1/apps":
 		var list []agent.App
 		if n := len(f.specs); n > 0 && f.fail == "" {
 			s := f.specs[n-1]
-			list = append(list, agent.App{Name: s.Name, Container: s.Name + "-" + s.ID, State: "active"})
+			list = append(list, agent.App{Name: s.Name, Container: s.Name + "-" + s.ID, State: cmp.Or(f.state, "active")})
 		}
 		json.NewEncoder(w).Encode(append([]agent.App{}, list...))
 	case r.Method == "GET" && strings.HasSuffix(r.URL.Path, "/logs"):
@@ -561,5 +577,35 @@ func TestAppFromTemplate(t *testing.T) {
 		if code := h.call(t, "POST", "/api/apps/from-template", m, nil); code != want {
 			t.Errorf("%s: %d, want %d", body, code, want)
 		}
+	}
+}
+
+// Stop, start and restart reach the node; an app with no release yet can't, nor one mid-deploy.
+func TestAppPower(t *testing.T) {
+	h := newHub(t, "prod")
+	h.call(t, "POST", "/api/apps", app.CreateInput{Name: "web", RepoURL: "https://example.com/web.git", Port: 8000}, nil)
+	if code := h.call(t, "POST", "/api/apps/web/power", map[string]string{"action": "stop"}, nil); code != 409 {
+		t.Errorf("stop before a deploy: %d, want 409", code)
+	}
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{}, &d)
+	h.wait(t, "web", d.ID)
+
+	var a app.App
+	if code := h.call(t, "POST", "/api/apps/web/power", map[string]string{"action": "stop"}, &a); code != 200 || a.Running == nil || a.Running.State != "inactive" {
+		t.Fatalf("stop: %d %+v", code, a.Running)
+	}
+	if code := h.call(t, "POST", "/api/apps/web/power", map[string]string{"action": "restart"}, &a); code != 200 || a.Running.State != "active" {
+		t.Fatalf("restart: %d %+v", code, a.Running)
+	}
+	if code := h.call(t, "POST", "/api/apps/web/power", map[string]string{"action": "pause"}, nil); code != 400 {
+		t.Errorf("unknown action: %d, want 400", code)
+	}
+	h.agent.busy = true
+	if code := h.call(t, "POST", "/api/apps/web/power", map[string]string{"action": "start"}, nil); code != 409 {
+		t.Errorf("mid-deploy: %d, want 409", code)
+	}
+	if strings.Join(h.agent.powers, ",") != "stop,restart" {
+		t.Errorf("node got %v", h.agent.powers)
 	}
 }

@@ -38,6 +38,7 @@ func (h *Handler) Routes(r *whttp.Router) {
 	d.Get("/api/apps/{name}/env", h.handleGetEnv)
 	d.Put("/api/apps/{name}/env", h.handlePutEnv)
 	d.Post("/api/apps/{name}/deploy", h.handleDeploy)
+	d.Post("/api/apps/{name}/power", h.handlePower)
 	d.Post("/api/apps/{name}/deployments/{id}/rollback", h.handleRollback)
 	d.Put("/api/apps/{name}/domains", h.handlePutDomains)
 	d.Put("/api/apps/{name}/volumes", h.handlePutVolumes)
@@ -153,6 +154,17 @@ func (h *Handler) handleDeploy(w http.ResponseWriter, r *http.Request) {
 	if decode(w, r, &in) {
 		d, err := h.svc.Deploy(r.Context(), r.PathValue("name"), in.Sha)
 		whttp.Reply(w, http.StatusAccepted, d, err)
+	}
+}
+
+// handlePower: {"action": "stop" | "start" | "restart"}; answers the app as it is now.
+func (h *Handler) handlePower(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Action string `json:"action"`
+	}
+	if decode(w, r, &in) {
+		a, err := h.svc.Power(r.Context(), r.PathValue("name"), in.Action)
+		whttp.Reply(w, http.StatusOK, a, err)
 	}
 }
 

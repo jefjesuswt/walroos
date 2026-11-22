@@ -143,6 +143,7 @@ func (s *Server) appRoutes(r *whttp.Router) {
 	r.Post("/v1/apps/{name}/build", s.handleStream(s.apps.Build))
 	r.Get("/v1/apps/{name}/logs", s.handleAppLogs)
 	r.Delete("/v1/apps/{name}", s.handleDeleteApp)
+	r.Post("/v1/apps/{name}/power", s.handleAppPower)
 	r.Put("/v1/tunnel", s.handleSetTunnel)
 
 	r.Get("/v1/databases", s.handleListDatabases)
@@ -317,6 +318,28 @@ func (s *Server) handleDeleteApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleAppPower stops, starts or restarts the app's running release: {"action": "stop"}.
+func (s *Server) handleAppPower(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Action string }
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		whttp.ErrorJSON(w, http.StatusBadRequest, "bad JSON")
+		return
+	}
+	err := s.apps.Power(r.Context(), r.PathValue("name"), in.Action)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, apps.ErrPower):
+		whttp.ErrorJSON(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, apps.ErrNotFound):
+		whttp.ErrorJSON(w, http.StatusNotFound, err.Error())
+	case errors.Is(err, apps.ErrBusy):
+		whttp.ErrorJSON(w, http.StatusConflict, err.Error())
+	default:
+		whttp.ErrorJSON(w, http.StatusInternalServerError, err.Error())
+	}
 }
 
 func cmpInt(n, fallback int) int {

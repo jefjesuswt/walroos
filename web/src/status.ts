@@ -26,7 +26,7 @@ export function appState(a: App): State {
   if (isDraft(a)) return ['stopped', 'no source yet'];
   const d = a.last_deployment;
   if (d && settling(d)) return ['deploying', d.state === 'queued' ? 'queued' : 'deploying'];
-  if (a.running) return a.running.state === 'active' ? ['running', 'running'] : [a.running.state, a.running.state];
+  if (a.running) return a.running.state === 'active' ? ['running', 'running'] : a.running.state === 'inactive' ? ['stopped', 'stopped'] : [a.running.state, a.running.state];
   if (d?.state === 'failed') return ['failed', 'deploy failed'];
   return ['stopped', 'not deployed'];
 }

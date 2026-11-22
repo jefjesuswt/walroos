@@ -212,6 +212,33 @@ func (s *Service) Delete(ctx context.Context, name string, purge bool) error {
 	return nil
 }
 
+// Power stops, starts or restarts the app's release on its node. A stopped app stays stopped,
+// even after the node reboots, until it's started or deployed again.
+func (s *Service) Power(ctx context.Context, name, action string) (App, error) {
+	if action != agent.AppStop && action != agent.AppStart && action != agent.AppRestart {
+		return App{}, ErrPower
+	}
+	a, err := s.store.Get(ctx, name)
+	if err != nil {
+		return App{}, err
+	}
+	address, tokenHash, err := s.nodes.AgentTarget(ctx, a.NodeID)
+	if err != nil {
+		return App{}, err
+	}
+	if err := s.agents.PowerApp(ctx, address, tokenHash, name, action); err != nil {
+		var ae *agent.AgentError
+		switch {
+		case errors.As(err, &ae) && ae.Status == 409:
+			return App{}, ErrBusy
+		case errors.As(err, &ae) && ae.Status == 404:
+			return App{}, ErrNotDeployed
+		}
+		return App{}, err
+	}
+	return s.Get(ctx, name)
+}
+
 // Logs returns the running release's output from the node's journal.
 func (s *Service) Logs(ctx context.Context, name string, lines int) (string, error) {
 	a, err := s.store.Get(ctx, name)
