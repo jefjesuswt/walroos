@@ -1,0 +1,22 @@
+# Every pull request and push to main: Go vet and tests, the UI's typecheck, rules and tests.
+# The podman tests need a real rootless podman and run on a node (WALROOS_PODMAN_TEST=1).
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@v2
+      - name: UI
+        working-directory: web
+        run: bun install --frozen-lockfile && bun test && bun run build
+      - name: Go
+        run: go vet ./... && go test ./...
