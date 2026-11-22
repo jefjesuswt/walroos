@@ -7,10 +7,11 @@ import { appState, dbLabel, dbState, engineLogo, type State } from '../status';
 import { type Action, ago, BrandLogo, EmptyState, Icon, linkActions, Loading, LoadFailed, Mark, PageHeader, PopMenu, Select, useCan, useContextMenu, usePoll, useToast, useTrail } from '../ui';
 import { DeleteProject, deletable, ProjectVariables } from './dialogs';
 import { total } from './ProjectsPage';
+import { ComposeModal } from './ComposeModal';
 import { TemplateModal } from './TemplateModal';
 
 type Kind = 'all' | 'app' | 'database';
-type Creating = null | 'app' | 'database' | 'template';
+type Creating = null | 'app' | 'database' | 'template' | 'compose';
 
 // ProjectPage is one project: its services as cards, filters, and Create service.
 export function ProjectPage({ name }: { name: string }) {
@@ -62,11 +63,12 @@ export function ProjectPage({ name }: { name: string }) {
           {deletable(p) && (
             <button className="btn-icon" aria-label={`Delete project ${p.name}`} title="Delete project" onClick={() => setRemoving(true)}><Icon n="trash" /></button>
           )}
+          {p.apps.some(a => a.compose) && <button className="btn" onClick={() => setCreating('compose')}><Icon n="refresh" />Compose</button>}
           <button className="btn" onClick={() => setVariables(true)}><Icon n="settings" />Variables</button>
           <PopMenu label="Create service" open={menu} setOpen={setMenu} items={[
             { icon: 'apps', title: 'Application', text: 'From a Git repository or a Docker image.', onClick: () => setCreating('app') },
             { icon: 'database', title: 'Database', text: 'PostgreSQL, MySQL, MariaDB, MongoDB, Redis or Valkey.', onClick: () => setCreating('database') },
-            { icon: 'deploy', title: 'Compose', text: 'Coming later.', disabled: true },
+            { icon: 'deploy', title: 'Compose', text: 'A docker-compose.yml: each service becomes an app.', onClick: () => setCreating('compose'), disabled: p.name === 'default' },
             { icon: 'overview', title: 'Template', text: 'nginx, n8n, Grafana, Gitea… ready to run.', onClick: () => setCreating('template') },
           ]} />
         </>} />
@@ -101,6 +103,7 @@ export function ProjectPage({ name }: { name: string }) {
 
       {creating === 'app' && <NewAppModal project={project} onClose={() => setCreating(null)} onCreated={created('apps')} />}
       {creating === 'template' && <TemplateModal templates={templates} project={project} onClose={() => setCreating(null)} onCreated={created('apps')} />}
+      {creating === 'compose' && <ComposeModal project={p.name} onClose={() => setCreating(null)} onSynced={() => { setCreating(null); load(); }} />}
       {creating === 'database' && <NewDatabaseModal project={project} onClose={() => setCreating(null)} onCreated={created('databases')} />}
       {variables && <ProjectVariables p={p} onClose={() => setVariables(false)} />}
       {removing && <DeleteProject p={p} onClose={() => setRemoving(false)} onDeleted={() => { location.hash = '#/projects'; }} />}

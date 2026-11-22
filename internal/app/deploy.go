@@ -163,7 +163,7 @@ func (q *deployer) release(ctx context.Context, d Deployment) (agent.Release, er
 	}
 	log := func(line string) { q.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
-		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile, Static: a.Static, Health: a.Health, Command: a.Command, Context: a.Context,
+		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile, Static: a.Static, Health: a.Health, Command: a.Command, Context: a.Context, Alias: a.Compose,
 		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes, Network: agent.ProjectNetwork(a.Project),
 	}
 	if a.RepoURL != "" && d.Image == "" {

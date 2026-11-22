@@ -40,6 +40,7 @@ internal/agent/         the hub ↔ node contract: specs, results, validation, p
   agenttest/            helpers the agent's tests share
 internal/app/           apps: config, source, encrypted env (env.go), deployment queue and history (deploy.go), domains (ingress.go), templates
 internal/database/      database services (Postgres, MySQL, MariaDB, Redis, Valkey, MongoDB) and their backups
+internal/compose/       docker-compose.yml → a project's apps: parse, translate, plan and sync
 internal/project/       projects: groups of apps and databases sharing a podman network, shared variables, references; lookup/ resolves a name
 internal/workspace/     dev workspaces, stack detection, workspaces from scratch
 internal/settings/      the Cloudflare and GitHub tokens (sealed) and /api/settings; hands out clients

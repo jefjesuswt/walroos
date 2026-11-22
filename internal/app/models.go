@@ -35,8 +35,9 @@ type App struct {
 	ProjectID   string             `json:"project_id"`
 	Project     string             `json:"project"` // its name; the project's network is the app's
 	Description string             `json:"description"`
-	RepoURL     string             `json:"repo_url"` // RepoURL and Image both "": a draft, created before its source
-	Image       string             `json:"image"`    // a published image, instead of RepoURL: pulled on each deploy
+	Compose     string             `json:"compose,omitempty"` // the compose service it comes from (its alias on the network); "" if none
+	RepoURL     string             `json:"repo_url"`          // RepoURL and Image both "": a draft, created before its source
+	Image       string             `json:"image"`             // a published image, instead of RepoURL: pulled on each deploy
 	Branch      string             `json:"branch"`
 	Dockerfile  string             `json:"dockerfile"`
 	Static      *agent.StaticBuild `json:"static,omitempty"`  // a static site: built with Node or Bun, no Dockerfile
@@ -73,6 +74,7 @@ type CreateInput struct {
 	// Description is shown on the project's card. With no repo_url, image and port the app is a
 	// draft: SetSource gives it one later, like Dokploy's create-then-configure.
 	Description string `json:"description"`
+	Compose     string `json:"compose,omitempty"` // set by a compose sync: the service it comes from
 }
 
 // SourceInput is what to build or pull, and how to check it: Create's source fields.

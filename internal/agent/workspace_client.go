@@ -71,6 +71,13 @@ func (c *Client) Detect(ctx context.Context, address, tokenHash, repoURL, branch
 	return d, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/detect", body, &d)
 }
 
+// RepoFiles reads files from a repo on the node at address (a shallow clone it then forgets):
+// the paths that exist, by path.
+func (c *Client) RepoFiles(ctx context.Context, address, tokenHash string, in RepoFilesRequest) (map[string]string, error) {
+	var out struct{ Files map[string]string }
+	return out.Files, c.do(ctx, http.MethodPost, address, tokenHash, "/v1/repo/files", in, &out)
+}
+
 // Info calls GET /v1/info on the agent at address (a tailnet IP, or host:port in tests).
 func (c *Client) Info(ctx context.Context, address, tokenHash string) (Info, error) {
 	var info Info

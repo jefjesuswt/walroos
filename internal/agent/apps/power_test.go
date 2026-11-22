@@ -29,3 +29,10 @@ func TestExecLine(t *testing.T) {
 		t.Fatal("no command, but an Exec= line")
 	}
 }
+
+func TestAliasLine(t *testing.T) {
+	unit := appUnit(agent.AppSpec{Name: "shop-db", Alias: "db", Network: "walroos-p-shop"}, agent.Release{Container: "shop-db-1", Image: "img"}, "/env", "", "")
+	if !strings.Contains(unit, "\nNetwork=walroos-p-shop:alias=shop-db,alias=db\n") {
+		t.Fatalf("unit:\n%s", unit)
+	}
+}

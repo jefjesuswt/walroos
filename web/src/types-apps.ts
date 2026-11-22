@@ -60,6 +60,7 @@ export interface App {
   health?: Health; // how a release proves it's up; '' is http
   command?: string[]; // replaces the image's CMD
   context?: string; // the repo folder it builds from
+  compose?: string; // the compose service it comes from (its name on the project's network)
   port: number;
   health_path: string;
   domains: string[]; // public hostnames through the node's Cloudflare Tunnel

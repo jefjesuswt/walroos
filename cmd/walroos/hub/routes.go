@@ -13,6 +13,7 @@ import (
 	"github.com/jefjesuswt/walroos/config"
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/compose"
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/mcp"
@@ -35,6 +36,7 @@ type services struct {
 	app       *app.Service
 	database  *database.Service
 	project   *project.Service
+	compose   *compose.Service
 	hooks     *hooks.Handler
 }
 
@@ -48,6 +50,7 @@ func newServices(ctx context.Context, db *config.Database, box *secretbox.Box, n
 	s.database = database.NewService(database.NewStore(db), s.fleet, nw.agents, box, s.app)
 	s.project = project.NewService(db, s.app, s.database, box)
 	s.app.SetResolver(s.project.Vars) // ${{service.KEY}} in app variables
+	s.compose = compose.NewService(db, s.app, s.fleet, nw.agents, s.project.Vars, s.settings.CloneToken)
 	s.hooks = hooks.NewHandler(s.app)
 	go s.app.Run(ctx)
 	go s.database.Run(ctx)
@@ -73,6 +76,7 @@ func routes(s services, users *auth.Store, nw network) http.Handler {
 		app.NewHandler(s.app).Routes(r)
 		database.NewHandler(s.database).Routes(r)
 		project.NewHandler(s.project).Routes(r)
+		compose.NewHandler(s.compose).Routes(r)
 		s.hooks.UserRoutes(r)
 		mcpRoutes(r, s)
 	})
@@ -84,7 +88,7 @@ func routes(s services, users *auth.Store, nw network) http.Handler {
 }
 
 func mcpRoutes(r *whttp.Router, s services) {
-	h := mcp.Handler(s.fleet, s.workspace, s.app, s.database, s.project).ServeHTTP
+	h := mcp.Handler(mcp.Services{Nodes: s.fleet, Workspaces: s.workspace, Apps: s.app, Databases: s.database, Projects: s.project, Compose: s.compose}).ServeHTTP
 	r.Post("/mcp", h)
 	r.Get("/mcp", h) // 405 from the SDK (stateless), not the SPA's index.html
 	r.Delete("/mcp", h)

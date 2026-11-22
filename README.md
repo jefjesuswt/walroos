@@ -141,6 +141,18 @@ Tip: right-click a project, a service, a workspace or a node for its actions (op
 
 When a node has a problem walroos can't fix by itself, for example a kernel updated without a reboot (new releases can't start) or containers that lost their internet access, the **Nodes** page says what it breaks and how to fix it. Every other page shows a short warning pointing there.
 
+### Compose
+
+A project can come from a `docker-compose.yml`. In the project, choose **Create service → Compose**, then point it at a repo (and the file's path in it) or paste the file. **Preview** shows what it creates, updates and removes; **Sync and deploy** applies it and deploys every service in `depends_on` order. Each later sync reads the file again; the project's **Compose** button opens it.
+
+- Each service becomes an app named `<project>-<service>`. The others still reach it by its service name (`db:5432`, `http://api:3000`), as in compose.
+- Supported: `image` (short Docker Hub names too), `build` (`context`, `dockerfile`), `command`, `environment`, `env_file`, `ports` and `expose` (one TCP port each), named volumes, `depends_on`.
+- `${VAR}`, `${VAR:-default}` and `${VAR:?message}` come from the project's **Variables**, then from the repo's `.env`. A variable with no value is an error, not an empty string.
+- A service with a port is health-checked over TCP; one without, by staying up. Switch either to HTTP in the app's **General** tab.
+- Refused, with the reason: bind mounts (copy the files into the image, or use a named volume), build args, `entrypoint`, `privileged`, external volumes and the like. Ignored, with a warning: `restart`, `healthcheck`, `networks`, `container_name`.
+- A removed service's app is deleted, but its volumes stay. Variables added by hand in an app's **Environment** stay too; the compose file's win on each sync.
+- Databases from a compose file are plain apps: they don't get walroos database backups.
+
 ### Workers, databases and monorepos
 
 An app's **General** tab picks how a new release proves it's up before it takes over:

@@ -202,3 +202,22 @@ export interface Template {
   port: number;
   health_path: string;
 }
+
+// A project's compose file: from a repo (repo_url, branch, path) or pasted (text).
+export interface ComposeSource {
+  repo_url?: string;
+  branch?: string;
+  path?: string; // docker-compose.yml when empty
+  text?: string;
+}
+
+// What a compose sync does (POST .../compose/plan) or did (PUT .../compose).
+export interface ComposeDiff {
+  services: { service: string; app: string; source: { image?: string; repo_url?: string; context?: string; port: number; health?: string; command?: string[] };
+    env: string[]; volumes: { name?: string; target: string }[]; depends_on?: string[] }[];
+  create: string[];
+  update: string[];
+  remove: string[];
+  warnings: string[];
+  deployments?: { id: string }[];
+}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jefjesuswt/walroos/internal/app"
 	"github.com/jefjesuswt/walroos/internal/auth"
+	"github.com/jefjesuswt/walroos/internal/compose"
 	"github.com/jefjesuswt/walroos/internal/database"
 	"github.com/jefjesuswt/walroos/internal/fleet"
 	"github.com/jefjesuswt/walroos/internal/project"
@@ -18,28 +19,39 @@ import (
 
 // Handler serves /mcp. Mount it behind user auth: it trusts auth.FromContext for the owner.
 // Stateless: every request gets a server bound to the caller, no sessions to keep.
-func Handler(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, projects *project.Service) http.Handler {
+// Services are the domains MCP's tools call.
+type Services struct {
+	Nodes      *fleet.Service
+	Workspaces *workspace.Service
+	Apps       *app.Service
+	Databases  *database.Service
+	Projects   *project.Service
+	Compose    *compose.Service
+}
+
+func Handler(svc Services) http.Handler {
 	return sdk.NewStreamableHTTPHandler(func(r *http.Request) *sdk.Server {
 		u, _ := auth.FromContext(r.Context())
-		return newServer(nodes, ws, apps, dbs, projects, u)
+		return newServer(svc, u)
 	}, &sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
 }
 
 // newServer offers u only the tools u's role may use: a tool the model never sees is one it
 // can't be talked into calling. Calls that depend on what they touch check it themselves.
-func newServer(nodes *fleet.Service, ws *workspace.Service, apps *app.Service, dbs *database.Service, projects *project.Service, u auth.User) *sdk.Server {
+func newServer(svc Services, u auth.User) *sdk.Server {
 	s := sdk.NewServer(&sdk.Implementation{Name: "walroos", Version: version.Version}, nil)
-	addNodeTools(s, nodes)
-	addWorkspaceTools(s, ws)
-	addWorkspaceActions(s, ws, u)
-	addWorkspaceLifecycle(s, ws, u)
-	addProjectTools(s, projects, u.Can(auth.PermApps))
-	addAppTools(s, apps)
+	addNodeTools(s, svc.Nodes)
+	addWorkspaceTools(s, svc.Workspaces)
+	addWorkspaceActions(s, svc.Workspaces, u)
+	addWorkspaceLifecycle(s, svc.Workspaces, u)
+	addProjectTools(s, svc.Projects, u.Can(auth.PermApps))
+	addAppTools(s, svc.Apps)
 	if u.Can(auth.PermApps) { // reading apps and logs stays for everyone
-		addAppActions(s, apps)
+		addAppActions(s, svc.Apps)
+		addComposeTools(s, svc.Compose)
 	}
 	if u.Can(auth.PermDatabases) {
-		addDatabaseTools(s, dbs)
+		addDatabaseTools(s, svc.Databases)
 	}
 	return s
 }
