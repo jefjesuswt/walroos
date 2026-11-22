@@ -68,8 +68,9 @@ func TestGitClone(t *testing.T) {
 
 // The token reaches git as an auth header for github.com only, and never through the URL.
 func TestTokenEnv(t *testing.T) {
-	env := strings.Join(tokenEnv("https://github.com/", "ghp_x"), "\n")
-	if !strings.Contains(env, "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader") || !strings.Contains(env, "Basic eC1hY2Nlc3MtdG9rZW46Z2hwX3g=") {
+	env := strings.Join(tokenEnv("https://github.com/", "tok-x"), "\n")
+	header := "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:tok-x"))
+	if !strings.Contains(env, "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader") || !strings.Contains(env, header) {
 		t.Fatalf("env:\n%s", env)
 	}
 	for u, want := range map[string]bool{"https://github.com/me/app.git": true, "https://gitlab.com/me/app": false, "https://github.com.evil.test/x": false, "/srv/repo": false} {
@@ -79,7 +80,7 @@ func TestTokenEnv(t *testing.T) {
 	}
 	// A token with a repo that isn't on github.com is ignored: the local clone still works.
 	src := agenttest.GitRepo(t, map[string]string{"README.md": "x\n"})
-	if used, err := GitClone(context.Background(), []string{"clone"}, src, filepath.Join(t.TempDir(), "c"), "ghp_x"); err != nil || used != src {
+	if used, err := GitClone(context.Background(), []string{"clone"}, src, filepath.Join(t.TempDir(), "c"), "tok-x"); err != nil || used != src {
 		t.Fatalf("used %q, %v", used, err)
 	}
 }
@@ -94,7 +95,7 @@ func TestTokenClone(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:github_pat_test"))
+	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:tok-test"))
 	files := http.StripPrefix("/me/", http.FileServer(http.Dir(filepath.Dir(bare))))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != want {
@@ -112,13 +113,13 @@ func TestTokenClone(t *testing.T) {
 		t.Fatal("cloned a private repo without the token")
 	}
 	dir := filepath.Join(t.TempDir(), "yes")
-	if err := Run(ctx, append(env, tokenEnv(srv.URL+"/", "github_pat_test")...), "git", "clone", "-q", url, dir); err != nil {
+	if err := Run(ctx, append(env, tokenEnv(srv.URL+"/", "tok-test")...), "git", "clone", "-q", url, dir); err != nil {
 		t.Fatalf("with the token: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "index.html")); string(b) != "private\n" {
 		t.Fatalf("index.html = %q", b)
 	}
-	if cfg, _ := os.ReadFile(filepath.Join(dir, ".git", "config")); strings.Contains(string(cfg), "github_pat_test") || strings.Contains(string(cfg), "Authorization") {
+	if cfg, _ := os.ReadFile(filepath.Join(dir, ".git", "config")); strings.Contains(string(cfg), "tok-test") || strings.Contains(string(cfg), "Authorization") {
 		t.Fatalf("the token ended up in .git/config:\n%s", cfg)
 	}
 }

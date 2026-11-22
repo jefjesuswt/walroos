@@ -619,7 +619,7 @@ func TestAppCloneToken(t *testing.T) {
 	}))
 	defer gh.Close()
 	h.set.GitHubAPI = gh.URL
-	if _, err := h.set.SetGitHub(context.Background(), "github_pat_x"); err != nil {
+	if _, err := h.set.SetGitHub(context.Background(), "tok-hub"); err != nil {
 		t.Fatal(err)
 	}
 	for name, repo := range map[string]string{"private": "git@github.com:octo/private.git", "elsewhere": "https://gitlab.com/octo/app.git"} {
@@ -632,7 +632,7 @@ func TestAppCloneToken(t *testing.T) {
 	for _, s := range h.agent.specs {
 		got[s.Name] = s.GitToken
 	}
-	if got["private"] != "github_pat_x" || got["elsewhere"] != "" {
+	if got["private"] != "tok-hub" || got["elsewhere"] != "" {
 		t.Fatalf("tokens = %v", got)
 	}
 }
