@@ -22,7 +22,7 @@ A lightweight devops platform for indie developers: run your dev environments an
 walroos is one Go binary with an embedded web UI. It does two things:
 
 1. **Remote dev workspaces** (like Coder or DevPod). Spin up a container from a Git repo and its `devcontainer.json` on one of your machines. Connect over SSH from your laptop, VS Code or Claude Code: `ssh myproject.walroos`, and `bun`, compilers and `claude` all live in the container, not on your laptop.
-2. **Deploys** (like Dokploy or a self-hosted Vercel). Build a repo, run it as a Podman Quadlet, and put it behind a domain with TLS. It deploys on merge to your protected branch, or when your CI says the tests passed.
+2. **Deploys** (like Dokploy or a self-hosted Vercel). Build a repo (its `Dockerfile`, or a static site with Node or Bun, like Netlify), run it as a Podman Quadlet, and put it behind a domain with TLS. It deploys on merge to your protected branch, or when your CI says the tests passed.
 
 Everything sits behind an API, a web UI and an MCP server, so an agent can do anything you can.
 
@@ -31,7 +31,7 @@ Everything sits behind an API, a web UI and an MCP server, so an agent can do an
 - **Rootless Podman.** No Docker daemon, no root. systemd runs your apps.
 - **No open ports.** Machines talk over [Tailscale](https://tailscale.com) (or Headscale). Apps reach the internet through Cloudflare Tunnel, so it works behind CGNAT.
 - **Your identity is your tailnet login.** No passwords and no login page: the hub asks Tailscale who is calling and checks an allowlist.
-- **Standards, not new formats.** Workspaces use `devcontainer.json`, the same format as Codespaces, DevPod and Coder. Apps use a `Dockerfile`.
+- **Standards, not new formats.** Workspaces use `devcontainer.json`, the same format as Codespaces, DevPod and Coder. Apps use a `Dockerfile`, or none for a static site.
 - **Small.** One binary and SQLite, with no broker, no Kubernetes and no agent sidecars.
 
 ## How it works
@@ -131,7 +131,19 @@ claude mcp add --transport http walroos http://walroos-hub/mcp
 
 Tools cover nodes, workspaces (`detect_stack`, `create_workspace`, `create_workspace_from_scratch`, `workspace_ssh_info`…), projects, apps (`create_app`, `deploy_app`, `rollback_app`, `app_logs`…) and databases. Each user only gets the tools their role allows. Ask "create a workspace for github.com/you/app" and Claude detects the stack, creates it, waits until it's running and gives you the `ssh` line.
 
-**4. Deploy an app.** Give a node the `prod` role, open **Projects**, create a project and add an **Application** (a repo with a `Dockerfile`, or a published image), a **Database** or a **Template**. **Deploy** builds it on the node, starts it next to the running release, checks its health and switches over. **Domains** puts it on the internet with TLS through a Cloudflare Tunnel (add a Cloudflare API token in **Settings** first).
+**4. Deploy an app.** Give a node the `prod` role, open **Projects**, create a project and add an **Application** (a repo with a `Dockerfile`, a static site, or a published image), a **Database** or a **Template**. **Deploy** builds it on the node, starts it next to the running release, checks its health and switches over. **Domains** puts it on the internet with TLS through a Cloudflare Tunnel (add a Cloudflare API token in **Settings** first).
+
+### Static sites
+
+A repo with no `Dockerfile` (React, Vite, Angular, Vue, Astro, or plain HTML) deploys as a static site. In the app's **General** tab pick **Build → Static site**. Walroos installs the dependencies, builds the site and serves the output folder with its own static server, so the image has no nginx and runs as a non-root user. Every setting is optional:
+
+- **Runtime.** Auto uses Bun when the repo has a `bun.lock` or the app has a `BUN_VERSION` variable, else Node (npm, pnpm or yarn, by the lockfile). You can also choose Node or Bun.
+- **Version.** As on Netlify, the variables `NODE_VERSION` and `BUN_VERSION` pick it (`20`, `22.11`, `lts`, `latest`). Without them, Node reads the repo's `.nvmrc` or `.node-version`. The defaults are Node 24 and Bun 1.
+- **Install command** and **build command.** The defaults are the package manager's install (`npm ci`…) and the `build` script in `package.json`. A repo with no `package.json` is served as it is.
+- **Publish directory.** By default walroos picks the first of `dist/*/browser` (Angular), `dist`, `build`, `out` or `public` that has an `index.html`.
+- **Single-page app.** With it, paths with no file get `index.html`, for client-side routing. Without it, they get your `404.html`. Dotfiles (`.env`, `.git`) are never served.
+
+The app's **Environment** variables are there during the build, because Vite, Next.js and others put them in the bundle when they build (`VITE_API_URL`, `NEXT_PUBLIC_*`). A change to a variable applies on the next deploy. They reach the build as a secret, so they don't end up in the image. Keep in mind that the code runs in the browser: it can only call addresses the browser reaches, such as the API's public domain, not `http://api:3000` on the project's network.
 
 ### Connect services
 

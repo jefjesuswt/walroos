@@ -482,6 +482,51 @@ func TestAppDraftThenSource(t *testing.T) {
 	}
 }
 
+// A static site: no Dockerfile, its port is the static server's, and its build (on a build node
+// too) gets the app's env vars, which its bundle needs.
+func TestAppStaticSite(t *testing.T) {
+	h := newHub(t, "prod")
+	for _, bad := range []map[string]any{
+		{"image": "ghcr.io/me/web:1", "static": map[string]any{}},
+		{"repo_url": "https://github.com/me/web", "dockerfile": "Dockerfile", "static": map[string]any{}},
+		{"repo_url": "https://github.com/me/web", "static": map[string]any{"runtime": "deno"}},
+		{"repo_url": "https://github.com/me/web", "static": map[string]any{"publish": "../etc"}},
+		{"repo_url": "https://github.com/me/web", "static": map[string]any{"publish": "/srv"}},
+	} {
+		bad["name"] = "web"
+		if code := h.call(t, "POST", "/api/apps", bad, nil); code != 400 {
+			t.Errorf("create %v: %d, want 400", bad, code)
+		}
+	}
+	var a app.App
+	in := map[string]any{"name": "web", "repo_url": "https://github.com/me/web", "port": 3000,
+		"static": map[string]any{"runtime": "bun", "build": "bun run build", "publish": "dist", "spa": true}}
+	if code := h.call(t, "POST", "/api/apps", in, &a); code != 201 || a.Port != agent.StaticPort || a.Static == nil || a.Static.Runtime != "bun" || !a.Static.SPA {
+		t.Fatalf("create: %d %+v", code, a)
+	}
+	h.call(t, "PUT", "/api/apps/web/env", []map[string]any{{"key": "VITE_API_URL", "value": "https://api.example.com"}}, nil)
+
+	now := time.Now().UTC()
+	if _, err := h.db.Write.Exec(`INSERT INTO nodes (id, name, roles, token_hash, address, created_at, last_seen)
+		VALUES ('b1', 'builder', 'build', 'hb', '100.64.0.9', ?, ?)`, now, now); err != nil {
+		t.Fatal(err)
+	}
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/web/deploy", map[string]string{}, &d)
+	if got := h.wait(t, "web", d.ID); got.State != "succeeded" {
+		t.Fatalf("deploy: %+v", got)
+	}
+	if b := h.agent.builds[0]; b.Static == nil || b.Static.Publish != "dist" || len(b.Env) != 1 || b.Port != agent.StaticPort {
+		t.Errorf("build spec = %+v", b)
+	}
+
+	// Back to a Dockerfile: the static settings go.
+	var b app.App
+	if code := h.call(t, "PUT", "/api/apps/web/source", map[string]any{"repo_url": "https://github.com/me/web", "port": 3000}, &b); code != 200 || b.Static != nil || b.Port != 3000 {
+		t.Errorf("to a Dockerfile: %d %+v", code, b)
+	}
+}
+
 // A template fills in image, port, health path, volumes and generated secrets, then deploys.
 func TestAppFromTemplate(t *testing.T) {
 	h := newHub(t, "prod")

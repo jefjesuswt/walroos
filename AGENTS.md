@@ -24,7 +24,7 @@ Podman tests in WSL (Arch has podman): run with `PATH=/usr/local/bin:/usr/bin` (
 ## Layout
 
 ```
-cmd/walroos/            cobra root; hub/ (control plane, install, backup/restore), node/ (agent: join, run, install, telemetry), userservice/ (systemd --user units)
+cmd/walroos/            cobra root; hub/ (control plane, install, backup/restore), node/ (agent: join, run, install, telemetry), userservice/ (systemd --user units), staticserver/ (what static sites' images run)
 install.sh, scripts/    install from the latest release; build a release
 .github/workflows/      ci (tests on every PR), release (a v* tag publishes the binaries)
 config/                 sqlite (WAL, separate read/write pools) + embedded migrations/NNN_*.sql

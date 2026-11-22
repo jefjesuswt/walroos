@@ -59,6 +59,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--ac); width: 16px; 
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field > * { display: block; }
 .field > input, .field > select, .field > textarea { width: 100%; }
+.field > .seg { display: inline-flex; justify-self: start; } /* a Field group: the buttons keep their width */
 .field label, .label { font-size: var(--fs-sm); font-weight: 500; }
 .req { color: var(--bad); }
 .help { font-size: var(--fs-xs); color: var(--tx2); }

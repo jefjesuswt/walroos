@@ -302,6 +302,15 @@ Datos que sobreviven a deploys y rollbacks (la base de datos y las fotos de un I
 - Probado: test del hub (validación: `..`, rutas absolutas, `:`/`,`, la raíz, destinos repetidos o relativos; el deploy lleva los volúmenes; purge) y podman real (`TestAppVolumesPodman`: un archivo sobrevive al redeploy, bind de solo lectura, recreate con vuelta atrás, symlink a `/etc` rechazado, purge sí/no). UI en móvil oscuro, sin scroll horizontal.
 - Límites (`ponytail:`): la raíz de datos es fija (`~/walroos-data`); toda app con volúmenes tiene downtime en el deploy, aunque sean de solo lectura; sin relabel de SELinux (`:Z`).
 
+## Sitios estáticos, como Netlify (2026-11-21)
+
+- [x] Build **Static site** en la fuente de la app: repo sin Dockerfile. Runtime Node o Bun (auto por el lockfile), comandos de install y build, carpeta a publicar (auto: `dist/*/browser`, `dist`, `build`, `out`, `public`), SPA. Todo opcional.
+- [x] El agente genera el Dockerfile: etapa de build en `node:24-slim`, `oven/bun:1-slim` o `busybox` (HTML plano), con caché del gestor de paquetes. Imagen final `FROM scratch` con el propio binario (`walroos static-server`) y el sitio, como usuario 65534 en el puerto 8080.
+- [x] Las variables de la app llegan al build como secreto de podman (`VITE_*`, `NEXT_PUBLIC_*`), no quedan en las capas. Con nodo de build, también viajan a él (solo en sitios estáticos).
+- [x] El servidor no sirve dotfiles (`.env`, `.git`), no lista carpetas, y usa `404.html` o `index.html` (SPA).
+- [x] Versión como en Netlify: `NODE_VERSION` y `BUN_VERSION` (esta además elige Bun), luego `.nvmrc` o `.node-version`. Por defecto Node 24 y Bun 1.
+- ponytail: no lee `engines` de package.json ni `PNPM_VERSION`/`YARN_VERSION` (pnpm viene de corepack). Sin directorio base para monorepos. Sin gzip (Cloudflare comprime). Cada imagen trae el binario de walroos (~40 MB, capa compartida entre releases).
+
 ## Instalación y releases (2026-11-21)
 
 - `install.sh`: baja el binario de la última release para Linux/macOS (amd64, arm64), comprueba su SHA-256 y lo pone en `~/.local/bin` (`WALROOS_VERSION`, `WALROOS_INSTALL_DIR`).
@@ -447,6 +456,8 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
 
 ## Casos tristes que walroos no detecta
 
+- [x] **Una app en Bun nunca pasaba el health check** (encontrado 2026-11-22 desplegando la demo de notas). El relay hacía half-close del socket apenas mandaba la petición, y Bun descarta una petición si el cliente ya cerró su lado. Arreglo: el health check deja la escritura abierta hasta leer la respuesta y manda `Connection: close`.
+
 - [ ] **Kernel actualizado sin reiniciar: las apps no arrancan** (encontrado 2026-11-21 en el nodo Arch, probando M4).
   - Qué pasó: pacman actualizó el kernel (corre `7.3.4-zen2`, en `/usr/lib/modules` solo queda `7.3.5-zen1`) y el módulo `nft_reject_inet` ya no se puede cargar. El guard de egress (`ExecStartPost`, `reject with icmpx`) falla con "No such file or directory" y, como falla cerrado, mata el contenedor: todo deploy nuevo falla.
   - Qué vio walroos: el deploy falla con "systemctl --user: exit status 1"; el motivo real solo está en `journalctl` de la unidad. El nodo sigue `online`.
@@ -456,12 +467,20 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
   - Qué pasó: el proceso `pasta` del netns rootless murió (con 2 h de uptime; probablemente un cambio de red, como la VPN reconectando). El netns siguió existiendo sin interfaz de salida ni ruta por defecto. Todo contenedor en una red bridge se quedó sin internet ni DNS: el workspace (`go build` no bajaba módulos) y también un servicio ajeno a walroos.
   - Qué vio walroos: nada. El nodo seguía `online` con telemetría normal, el workspace `running` y el SSH funcionando. El primer síntoma fue un `lookup … i/o timeout` dentro del workspace.
   - Cómo se arregló: parar todos los contenedores del netns (podman lo destruye), arrancar uno (lo recrea con un `pasta` nuevo).
+  - Volvió a pasar el 2026-11-22, en el mismo nodo, después de un reinicio. El síntoma visible fue el túnel: `walroos-cloudflared` en bucle de reinicios (`lookup … on 10.89.6.1:53: no such host`) y Cloudflare devolvía 530/1033 en todos los dominios. Los deploys funcionaban, porque `podman build` sale por su propio `pasta`, así que nada en walroos avisaba. Mismo arreglo (parar los contenedores de redes bridge y arrancarlos). Señal más para el agente: el túnel reiniciándose.
   - Qué haría walroos: el agente comprueba en cada heartbeat que el netns rootless tiene ruta por defecto y que hay un `pasta` vivo para él (o un `getent hosts` desde `podman unshare --rootless-netns`), lo manda en la telemetría y la UI marca el nodo como degradado con el arreglo en una línea. Repararlo solo (parar y arrancar contenedores ajenos) no: puede cortar servicios del dueño.
 - [x] **Imágenes de devcontainer sin `sftp-server`** (encontrado 2026-11-19 con `devcontainers/go:1.27`; arreglado 2026-11-19). `scp`, `sftp` y las extensiones de Zed fallaban. Ahora, si la imagen no trae `sftp-server`, el gateway copia el binario del agente al contenedor una vez (`/usr/local/bin/.walroos-sftp-<hash>`; una versión nueva reemplaza la vieja) y corre `walroos sftp-server` (`pkg/sftp`) como el usuario del workspace. Sirve en workspaces ya creados, sin rebuild. Límite: un walroos con CGO necesita glibc; para imágenes musl (Alpine) compilar con `CGO_ENABLED=0`, y el subsistema lo explica si no puede correr.
 - [x] **Zed (y VS Code) abrían `$HOME`** en vez del repo (arreglado 2026-11-19): el hub devuelve `folder` (la carpeta real, viva desde el nodo) y la tarjeta Connect da `zed ssh://<ws>.walroos/workspaces/<repo>` y `code --remote ssh-remote+<ws>.walroos /workspaces/<repo>`. Para la UI de Zed (*Open Remote*), `walroos ssh-config --zed --write` escribe en su `settings.json` una entrada por workspace con su carpeta como proyecto (JSONC: comentarios y resto intactos, symlinks seguidos, duplicados fusionados, entradas de workspaces borrados quitadas, idempotente; un archivo inválido no se toca). La opción "Connect Dev Container" de Zed 1.29 es de Zed (Docker local), no de walroos.
 - [ ] **Terminal sin terminfo** (Ghostty manda `TERM=xterm-ghostty`; kitty, `xterm-kitty`): las imágenes no traen esas entradas y `nvim`, `clear` o `tput` fallan con "unknown terminal type". Arreglo por workspace, persistente en el volumen del home: `infocmp -x xterm-ghostty | ssh <ws>.walroos -- tic -x -`. Opciones: que `walroos ssh-config` lo documente o lo haga, `shell-integration-features = ssh-terminfo` en Ghostty, o instalar `ncurses-term` en la imagen base.
 - [ ] **Sin identidad de git en el workspace**: `git commit` falla hasta configurar `user.name` y `user.email`. Opción: que el hub los guarde por usuario y el agente los pase como `GIT_AUTHOR_*`/`GIT_COMMITTER_*` (o los escriba en `~/.gitconfig` del volumen del home al crear).
 - [ ] **Un intento de `ssh` por el proxy userspace falló** con `SOCKS server failure` justo después de reiniciar el workspace; el reintento funcionó. Ver si se repite antes de tocar nada.
+
+## Repos privados con token (pedido 2026-11-22)
+
+- [ ] Clonar repos privados por https con el token de GitHub que ya está en Settings (hoy solo crea repos de workspaces desde cero). Sirve para apps, sitios estáticos y workspaces, y evita tener que darle una llave SSH al nodo.
+  - El hub pasa el token al agente solo para esa clonación, por la tailnet, como hace con las variables. El agente lo usa con `git -c http.extraHeader` o un credential helper temporal, sin escribirlo en `.git/config` ni en el log (`redact` ya tapa las URLs).
+  - En la UI, al pegar un repo privado sin token: un aviso con el enlace a Settings → GitHub y los permisos mínimos (fine-grained, `Contents: read` en esos repos).
+  - Más adelante: Gitea/Forgejo y GitLab (un token por forge), y el webhook con `on_push` para repos privados ya funciona porque no clona con el webhook.
 
 ## Backlog chico
 

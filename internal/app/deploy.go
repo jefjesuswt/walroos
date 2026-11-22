@@ -162,8 +162,11 @@ func (q *deployer) release(ctx context.Context, d Deployment) (agent.Release, er
 	}
 	log := func(line string) { q.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
-		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile,
+		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile, Static: a.Static,
 		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes, Network: agent.ProjectNetwork(a.Project),
+	}
+	if a.Static != nil {
+		spec.Env = env // a static site's build reads them (VITE_*, NEXT_PUBLIC_*): send them to the build node too
 	}
 	if b, ok := q.builder(ctx, a.NodeID); ok && d.Image == "" && a.Image == "" {
 		if spec, err = q.buildOn(ctx, b, spec, log); err != nil {
@@ -182,7 +185,7 @@ func (q *deployer) buildOn(ctx context.Context, b fleet.Node, spec agent.AppSpec
 		return spec, err
 	}
 	log("building on " + b.Name)
-	rel, err := q.agents.BuildApp(ctx, baddr, bhash, spec, log) // no env: it's for the running app
+	rel, err := q.agents.BuildApp(ctx, baddr, bhash, spec, log) // env only for a static site: the rest is for the running app
 	if err != nil {
 		return spec, fmt.Errorf("build on %s: %w", b.Name, err)
 	}
