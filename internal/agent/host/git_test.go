@@ -123,3 +123,59 @@ func TestTokenClone(t *testing.T) {
 		t.Fatalf("the token ended up in .git/config:\n%s", cfg)
 	}
 }
+
+// Like GitHub: a token that's expired or revoked gets a 401 even on a public repo. Then the clone
+// goes on without it, so public repos keep deploying after the token dies; a private repo says
+// what the token needs.
+func TestTokenFallback(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"public", "private"} {
+		src := agenttest.GitRepo(t, map[string]string{"name": name + "\n"})
+		bare := filepath.Join(root, name+".git")
+		for _, args := range [][]string{{"clone", "--bare", "-q", src, bare}, {"-C", bare, "update-server-info"}} {
+			if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+				t.Fatalf("git %v: %v %s", args, err, out)
+			}
+		}
+	}
+	good := "Basic " + base64.StdEncoding.EncodeToString([]byte("x-access-token:tok-good"))
+	files := http.StripPrefix("/me/", http.FileServer(http.Dir(root)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "" && auth != good || auth == "" && strings.HasPrefix(r.URL.Path, "/me/private.git") {
+			w.Header().Set("WWW-Authenticate", `Basic realm="GitHub"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		files.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+	orig := gitHub
+	gitHub = srv.URL + "/"
+	t.Cleanup(func() { gitHub = orig })
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	ctx := context.Background()
+	clone := func(repo, token string) error {
+		_, err := GitClone(ctx, []string{"clone", "-q"}, srv.URL+"/me/"+repo+".git", filepath.Join(t.TempDir(), "c"), token)
+		return err
+	}
+
+	if err := clone("public", "tok-expired"); err != nil {
+		t.Errorf("a public repo with a dead token: %v", err)
+	}
+	if err := clone("private", "tok-good"); err != nil {
+		t.Errorf("a private repo with the token: %v", err)
+	}
+	branch := func(repo, token string) error {
+		_, err := GitClone(ctx, []string{"clone", "-q", "--branch", "nope"}, srv.URL+"/me/"+repo+".git", filepath.Join(t.TempDir(), "b"), token)
+		return err
+	}
+	for _, tok := range []string{"tok-good", ""} {
+		if err := branch("public", tok); err == nil || err.Error() != `the repo has no branch "nope": check the branch name, or leave it empty for the default branch` {
+			t.Errorf("a missing branch (token %q): %v", tok, err)
+		}
+	}
+	if err := clone("private", "tok-expired"); err == nil || !strings.Contains(err.Error(), "with the hub's GitHub token") || !strings.Contains(err.Error(), "Contents: read") {
+		t.Errorf("a private repo with a dead token: %v", err)
+	}
+}

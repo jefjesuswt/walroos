@@ -484,6 +484,7 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
   - El hub pasa el token al agente solo para esa clonación, por la tailnet, como hace con las variables. El agente lo usa con `git -c http.extraHeader` o un credential helper temporal, sin escribirlo en `.git/config` ni en el log (`redact` ya tapa las URLs).
   - En la UI, al pegar un repo privado sin token: un aviso con el enlace a Settings → GitHub y los permisos mínimos (fine-grained, `Contents: read` en esos repos).
   - Hecho (2026-11-22): `host.GitClone` usa el token con `GIT_CONFIG_*` (header `Authorization` solo para github.com), el hub lo manda en `AppSpec`/`WorkspaceSpec`/detect solo para repos de github.com (`settings.CloneToken`), el workspace guarda su `origin` original. Los textos de la UI lo explican.
+  - Casos tristes probados contra GitHub (2026-11-22): con un token vencido o revocado GitHub responde 401 incluso en repos **públicos**, así que el clone con token falla y walroos sigue sin él (llave SSH del nodo o https anónimo); un repo público sigue desplegando cuando el token muere. Una rama que no existe se dice tal cual, sin reintentos. Probado también: repo público con un token limitado a otro repo, URL SSH de un repo privado, detect y un workspace desde un repo privado (`origin` queda la URL dada, sin rastro del token).
   - Más adelante: Gitea/Forgejo y GitLab (un token por forge), y el webhook con `on_push` para repos privados ya funciona porque no clona con el webhook.
 
 ## Backlog chico

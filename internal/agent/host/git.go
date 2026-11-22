@@ -8,30 +8,52 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
-// gitClone clones url into dir (empty or missing) with the extra git args. With a GitHub token
-// and a github.com repo it clones over https with the token, which is how private repos clone
-// without a key on the node. Otherwise an SSH URL is tried first with the node user's own SSH
-// keys; if that fails it falls back to the https form, so public repos still clone on a node
-// without keys (GitHub wants a key even for public repos over SSH). It returns the URL that
+// GitClone clones url into dir (empty or missing) with the extra git args. With a GitHub token
+// and a github.com repo it clones over https with the token first, which is how private repos
+// clone without a key on the node. If that fails (the token expired, was revoked or doesn't
+// reach this repo: GitHub then refuses even public repos), it clones as if there were no token,
+// so public repos and repos the node's key reaches keep working. It returns the URL that
 // worked, never with the token in it.
-// ponytail: accept-new trusts a forge's host key the first time the node sees it.
 func GitClone(ctx context.Context, args []string, url, dir, token string) (string, error) {
 	env := []string{"GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=" + GitSSH}
-	if https := HTTPSURL(url); token != "" && isGitHub(https) {
-		err := Run(ctx, append(env, tokenEnv("https://github.com/", token)...), "git", append(append(append([]string{}, args...), "--"), https, dir)...)
-		if err != nil {
-			return url, fmt.Errorf("%v (with the hub's GitHub token: does it reach this repo? A fine-grained token needs Contents: read on it)", err)
-		}
+	https := HTTPSURL(url)
+	if token == "" || !isGitHub(https) {
+		return cloneWithout(ctx, env, args, url, dir)
+	}
+	err := Run(ctx, append(env, tokenEnv(gitHub, token)...), "git", append(append(append([]string{}, args...), "--"), https, dir)...)
+	if err == nil {
 		return https, nil
 	}
+	if b := missingBranch(err); b != nil { // the token got in: no other way will find the branch
+		return url, b
+	}
+	if err := emptyDir(dir); err != nil {
+		return url, err
+	}
+	used, err2 := cloneWithout(ctx, env, args, url, dir)
+	if err2 != nil {
+		return url, fmt.Errorf("with the hub's GitHub token: %v (expired, revoked, or it doesn't reach this repo: a fine-grained token needs Contents: read on it); without it: %v", err, err2)
+	}
+	return used, nil
+}
+
+// cloneWithout clones with the node's own git: an SSH URL first with the node user's SSH keys,
+// then its https form, so public repos still clone on a node without keys (GitHub wants a key
+// even for public repos over SSH).
+// ponytail: accept-new trusts a forge's host key the first time the node sees it.
+func cloneWithout(ctx context.Context, env, args []string, url, dir string) (string, error) {
 	clone := func(u string) error {
 		return Run(ctx, env, "git", append(append(append([]string{}, args...), "--"), u, dir)...)
 	}
 	err := clone(url)
 	https := HTTPSURL(url)
+	if b := missingBranch(err); b != nil {
+		return url, b
+	}
 	if err != nil && https == url && strings.Contains(url, "://") { // an https URL: no SSH to fall back from
 		return url, fmt.Errorf("%v (%s)", err, privateHint)
 	}
@@ -58,9 +80,27 @@ func tokenEnv(base, token string) []string {
 	return []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http." + base + ".extraheader", "GIT_CONFIG_VALUE_0=Authorization: Basic " + auth}
 }
 
+var branchRe = regexp.MustCompile(`Remote branch (\S+) not found`)
+
+// missingBranch is a clear error when git got into the repo but it has no such branch, nil for
+// any other error: then there's nothing to retry another way.
+func missingBranch(err error) error {
+	if err == nil {
+		return nil
+	}
+	if m := branchRe.FindStringSubmatch(err.Error()); m != nil {
+		return fmt.Errorf("the repo has no branch %q: check the branch name, or leave it empty for the default branch", m[1])
+	}
+	return nil
+}
+
+// gitHub is where the token goes; tests point it at a fake GitHub.
+var gitHub = "https://github.com/"
+
 func isGitHub(u string) bool {
 	p, err := url.Parse(u)
-	return err == nil && p.Scheme == "https" && p.Host == "github.com"
+	g, _ := url.Parse(gitHub)
+	return err == nil && p.Scheme == g.Scheme && p.Host == g.Host
 }
 
 // GitSSH never prompts (BatchMode: a key with a passphrase and no agent just fails) and accepts
