@@ -82,6 +82,7 @@ type testGateway struct {
 	addr      string
 	userKey   ssh.Signer
 	agentDir  string
+	home      string       // the workspace user's $HOME
 	wsErr     atomic.Value // string: the error looking up the workspace returns, "" for none
 	tailnet   atomic.Bool  // whether identify accepts the caller
 	authCalls atomic.Int32
@@ -97,6 +98,7 @@ func newTestGateway(t *testing.T) *testGateway {
 	tg.userKey = newSigner(t)
 	folder := t.TempDir()
 	emptyHome := t.TempDir()
+	tg.home = emptyHome
 	for _, f := range []string{".zshrc", ".zshenv", ".bash_profile", ".bashrc"} {
 		if err := os.WriteFile(filepath.Join(emptyHome, f), nil, 0o600); err != nil {
 			t.Fatal(err)
@@ -316,7 +318,8 @@ func TestSSHPty(t *testing.T) {
 	}
 	fmt.Fprintln(stdin, `stty size; echo "term=$TERM"; tty -s && echo "tty-$((1+1))"`)
 	waitFor(t, &out, "tty-2") // not in the echoed input
-	if !strings.Contains(out.String(), "40 100") || !strings.Contains(out.String(), "term=xterm-test") {
+	// No terminfo for xterm-test in the workspace: xterm-256color, which every image has.
+	if !strings.Contains(out.String(), "40 100") || !strings.Contains(out.String(), "term=xterm-256color") {
 		t.Fatalf("pty output %q", out.String())
 	}
 	if err := s.WindowChange(50, 120); err != nil {
@@ -329,6 +332,59 @@ func TestSSHPty(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "50 120") {
 		t.Errorf("after window-change: %q", out.String())
+	}
+}
+
+// A terminal whose terminfo the workspace has (installed with tic into ~/.terminfo) keeps it.
+func TestSSHPtyKnownTerm(t *testing.T) {
+	tg := newTestGateway(t)
+	entry := filepath.Join(tg.home, ".terminfo", "x", "xterm-test")
+	os.MkdirAll(filepath.Dir(entry), 0o755)
+	os.WriteFile(entry, []byte("compiled"), 0o644)
+	s, _ := tg.client(t).NewSession()
+	if err := s.RequestPty("xterm-test", 40, 100, ssh.TerminalModes{}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.CombinedOutput(`echo "term=$TERM"`)
+	if err != nil || !strings.Contains(string(out), "term=xterm-test") {
+		t.Fatalf("%v %q", err, out)
+	}
+}
+
+// The first session sets git's identity from the login, in the user's ~/.gitconfig; one the user
+// set is kept.
+func TestSSHGitIdentity(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	tg := newTestGateway(t)
+	run := func(cmd string) string {
+		s, _ := tg.client(t).NewSession()
+		out, err := s.CombinedOutput(cmd)
+		if err != nil {
+			t.Fatalf("%s: %v %s", cmd, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	if got := run("git config --global user.name; git config --global user.email; echo ${WALROOS_GIT_EMAIL:-unset}"); got != "owner\nowner@users.noreply.github.com\nunset" {
+		t.Fatalf("identity = %q", got)
+	}
+	run("git config --global user.email me@example.com")
+	if got := run("git config --global user.email"); got != "me@example.com" {
+		t.Fatalf("own email replaced: %q", got)
+	}
+}
+
+func TestGitIdentityOf(t *testing.T) {
+	for login, want := range map[string][2]string{
+		"octo@github":      {"octo", "octo@users.noreply.github.com"},
+		"ana@example.com":  {"ana", "ana@example.com"},
+		"nLaptop":          {"", ""},
+		"tagged@localhost": {"", ""},
+	} {
+		if n, e := gitIdentityOf(login); n != want[0] || e != want[1] {
+			t.Errorf("%s: %s %s", login, n, e)
+		}
 	}
 }
 

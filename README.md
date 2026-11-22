@@ -123,7 +123,9 @@ Clients on that machine then reach the tailnet through the proxy. `walroos ssh-c
 
 </details>
 
-**3. Use it from Claude Code (MCP).** The hub serves MCP at `/mcp`, behind the same Tailscale login as the UI (no token):
+In a workspace, the first SSH session sets git's `user.name` and `user.email` from your login, unless you already set them. A GitHub login gets GitHub's noreply address, so commits link to your account. A terminal whose terminfo the image lacks, such as Ghostty or kitty, gets `TERM=xterm-256color`, so `nvim` and `clear` work. To keep your terminal's own entry, install it once: `infocmp -x | ssh <ws>.walroos -- tic -x -`.
+
+**3. Use it from Claude Code (MCP). The hub serves MCP at `/mcp`, behind the same Tailscale login as the UI (no token):
 
 ```bash
 claude mcp add --transport http walroos http://walroos-hub/mcp
