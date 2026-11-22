@@ -32,6 +32,9 @@ func GitClone(ctx context.Context, args []string, url, dir, token string) (strin
 	}
 	err := clone(url)
 	https := HTTPSURL(url)
+	if err != nil && https == url && strings.Contains(url, "://") { // an https URL: no SSH to fall back from
+		return url, fmt.Errorf("%v (%s)", err, privateHint)
+	}
 	if err == nil || https == url {
 		return url, err
 	}
@@ -39,10 +42,12 @@ func GitClone(ctx context.Context, args []string, url, dir, token string) (strin
 		return url, err
 	}
 	if err2 := clone(https); err2 != nil {
-		return url, fmt.Errorf("over SSH: %v; over https: %v (a private repo: add a GitHub token in Settings, or give the node an SSH key with access to it)", err, err2)
+		return url, fmt.Errorf("over SSH: %v; over https: %v (%s)", err, err2, privateHint)
 	}
 	return https, nil
 }
+
+const privateHint = "a private repo: add a GitHub token in Settings, or give the node an SSH key with access to it"
 
 // tokenEnv authenticates git's https requests to github.com with token, through git's config
 // in the environment (GIT_CONFIG_*, git 2.31+): not in the URL, the clone's .git/config, the
