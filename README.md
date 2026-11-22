@@ -141,6 +141,16 @@ Tip: right-click a project, a service, a workspace or a node for its actions (op
 
 When a node has a problem walroos can't fix by itself, for example a kernel updated without a reboot (new releases can't start) or containers that lost their internet access, the **Nodes** page says what it breaks and how to fix it. Every other page shows a short warning pointing there.
 
+### Workers, databases and monorepos
+
+An app's **General** tab picks how a new release proves it's up before it takes over:
+
+- **HTTP** (the default): a GET on the health check path answers 2xx or 3xx.
+- **TCP**: the port accepts connections. For a database, a cache or anything that doesn't speak HTTP.
+- **Running**: it keeps running for 5 seconds without restarting. For a worker with no port. Such an app can't have a domain.
+
+Under **Command and build folder**, a command replaces the image's own (quote arguments with spaces: `sh -c "npm run worker"`), and a build folder builds one service of a monorepo, with the Dockerfile relative to that folder.
+
 ### Private repos
 
 Public repos clone as they are. To clone a private GitHub repo for an app, a static site or a workspace, add a GitHub token in **Settings → GitHub**. A classic token needs the `repo` scope. A fine-grained one needs **Contents: read** on the repos to clone, plus **Administration** and **Contents: write** if it should also create repos for new projects.

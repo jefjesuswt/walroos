@@ -36,7 +36,7 @@ func (q *deployer) Deploy(ctx context.Context, name, sha string) (Deployment, er
 	if a.RepoURL == "" && a.Image == "" {
 		return Deployment{}, ErrNoSource
 	}
-	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Source: a.Image, Port: a.Port, Sha: sha}).Valid() || a.Image != "" && sha != "" {
+	if !(agent.AppSpec{Name: a.Name, ID: "x", RepoURL: a.RepoURL, Source: a.Image, Port: a.Port, Health: a.Health, Sha: sha}).Valid() || a.Image != "" && sha != "" {
 		return Deployment{}, ErrInvalid
 	}
 	return q.enqueue(ctx, Deployment{AppID: a.ID, Sha: sha})
@@ -163,7 +163,7 @@ func (q *deployer) release(ctx context.Context, d Deployment) (agent.Release, er
 	}
 	log := func(line string) { q.store.appendLog(ctx, d.ID, line) }
 	spec := agent.AppSpec{
-		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile, Static: a.Static,
+		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile, Static: a.Static, Health: a.Health, Command: a.Command, Context: a.Context,
 		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes, Network: agent.ProjectNetwork(a.Project),
 	}
 	if a.RepoURL != "" && d.Image == "" {

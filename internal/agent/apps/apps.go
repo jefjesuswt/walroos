@@ -25,6 +25,7 @@ import (
 	"github.com/jefjesuswt/walroos/internal/agent"
 	"github.com/jefjesuswt/walroos/internal/agent/host"
 	"github.com/jefjesuswt/walroos/internal/agent/quadlet"
+	"github.com/jefjesuswt/walroos/shared/unitfile"
 )
 
 var (
@@ -124,7 +125,7 @@ func (a *Apps) bringUp(ctx context.Context, spec agent.AppSpec, rel agent.Releas
 		}
 		return "couldn't start " + rel.Container, err
 	}
-	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmp.Or(spec.HealthPath, "/"), log); err != nil {
+	if err := a.healthy(ctx, spec, rel.Container, log); err != nil {
 		fmt.Fprint(log, host.Journal(context.WithoutCancel(ctx), rel.Container, 20))
 		return rel.Container + " never got healthy", err
 	}
@@ -205,14 +206,34 @@ func build(ctx context.Context, spec agent.AppSpec, log io.Writer) (sha, image s
 	sha = strings.TrimSpace(string(out))
 	image = "localhost/walroos-app-" + spec.Name + ":" + sha[:12]
 	fmt.Fprintf(log, "building %s at %s\n", image, sha[:12])
-	if spec.Static != nil {
-		return sha, image, buildStatic(ctx, spec, dir, image, log)
+	src, err := buildDir(dir, spec.Context)
+	if err != nil {
+		return "", "", err
 	}
-	dockerfile, err := host.Inside(dir, filepath.Join(dir, cmp.Or(spec.Dockerfile, "Dockerfile")))
+	if spec.Static != nil {
+		return sha, image, buildStatic(ctx, spec, src, image, log)
+	}
+	dockerfile, err := host.Inside(src, filepath.Join(src, cmp.Or(spec.Dockerfile, "Dockerfile")))
 	if err != nil {
 		return "", "", fmt.Errorf("dockerfile: %w", err)
 	}
-	return sha, image, podmanBuild(ctx, spec.Name, log, "-t", image, "-f", dockerfile, dir)
+	return sha, image, podmanBuild(ctx, spec.Name, log, "-t", image, "-f", dockerfile, src)
+}
+
+// buildDir is the folder of the clone the build runs in: the repo, or its context folder,
+// which must be a folder inside it (a symlink can't take it out).
+func buildDir(repo, context string) (string, error) {
+	if context == "" {
+		return repo, nil
+	}
+	dir, err := host.Inside(repo, filepath.Join(repo, context))
+	if err != nil {
+		return "", fmt.Errorf("context %s: %w", context, err)
+	}
+	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("context %s: no such folder in the repo", context)
+	}
+	return dir, nil
 }
 
 // podmanBuild runs podman build with args, the image labeled as app's.
@@ -300,7 +321,7 @@ NoNewPrivileges=true
 # ponytail: same limits for every app; per-app limits when one needs more
 Memory=2g
 PidsLimit=2048
-%[10]s
+%[11]s%[10]s
 [Quadlet]
 # The default waits for network-online.target, which many hosts (WSL) never reach.
 DefaultDependencies=false
@@ -311,7 +332,15 @@ Restart=always
 
 [Install]
 WantedBy=default.target
-`, spec.Name, rel.Container, rel.Sha, rel.Image, cmp.Or(spec.Network, agent.AppNetwork), quadlet.LabelApp, quadlet.LabelSha, envFile, guard, mounts)
+`, spec.Name, rel.Container, rel.Sha, rel.Image, cmp.Or(spec.Network, agent.AppNetwork), quadlet.LabelApp, quadlet.LabelSha, envFile, guard, mounts, execLine(spec.Command))
+}
+
+// execLine replaces the image's CMD, or keeps it ("").
+func execLine(command []string) string {
+	if len(command) == 0 {
+		return ""
+	}
+	return "Exec=" + unitfile.Args(command) + "\n"
 }
 
 // mounts creates the app's volumes and returns their Quadlet Volume= lines. ponytail: no
@@ -365,6 +394,17 @@ func (a *Apps) bindDir(rel string) (string, error) {
 	return dir, nil
 }
 
+// healthy waits until the new release passes the app's kind of check.
+func (a *Apps) healthy(ctx context.Context, spec agent.AppSpec, container string, log io.Writer) error {
+	switch spec.Health {
+	case agent.HealthTCP:
+		return a.waitTCP(ctx, container, spec.Port, log)
+	case agent.HealthRunning:
+		return a.waitRunning(ctx, container, log)
+	}
+	return a.waitHealthy(ctx, container, spec.Port, cmp.Or(spec.HealthPath, "/"), log)
+}
+
 // waitHealthy GETs path on the container's port from inside its network namespace until it
 // answers 2xx/3xx. The app's image needs no curl: the relay is our own binary.
 func (a *Apps) waitHealthy(ctx context.Context, container string, port int, path string, log io.Writer) error {
@@ -394,26 +434,9 @@ func (a *Apps) waitHealthy(ctx context.Context, container string, port int, path
 }
 
 func (a *Apps) get(ctx context.Context, container, addr, path string) (int, error) {
-	pid, err := host.Podman(ctx, "inspect", "--format", "{{.State.Pid}}", container)
-	if err != nil || pid == "" || pid == "0" {
-		return 0, fmt.Errorf("%s is not running", container)
-	}
-	args := append([]string{"nsenter", "--net=/proc/" + pid + "/ns/net", "--"}, a.relay...)
-	args = append(args, "", addr) // no chroot: 127.0.0.1 needs no name lookup
-	if os.Geteuid() != 0 {
-		args = append([]string{"podman", "unshare"}, args...)
-	}
-	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-	stdin, err := cmd.StdinPipe()
+	cmd, stdin, stdout, err := a.relayTo(ctx, container, addr)
 	if err != nil {
 		return 0, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return 0, err
-	}
-	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("connect: %w", err)
 	}
 	out := ask(stdin, stdout, path)
 	stdout.Close() // the relay gets EPIPE and exits

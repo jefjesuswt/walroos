@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jefjesuswt/walroos/internal/agent"
+	"github.com/jefjesuswt/walroos/internal/agent/agenttest"
 	"github.com/jefjesuswt/walroos/internal/agent/quadlet"
 
 	"github.com/jefjesuswt/walroos/internal/agent/host"
@@ -491,5 +492,46 @@ func TestAppPowerPodman(t *testing.T) {
 	}
 	if err := a.Power(ctx, name, "pause"); err != ErrPower {
 		t.Fatalf("pause: %v", err)
+	}
+}
+
+// TestAppHealthKindsPodman: a TCP service (not HTTP) passes the TCP check; a worker with no port
+// passes the running check, its command replacing the image's; a crash-looping worker fails it;
+// and a build from a context folder of the repo works. Needs docker.io/library/busybox:stable.
+func TestAppHealthKindsPodman(t *testing.T) {
+	if os.Getenv("WALROOS_PODMAN_TEST") == "" {
+		t.Skip("set WALROOS_PODMAN_TEST=1")
+	}
+	ctx := context.Background()
+	t.Setenv("WALROOS_TEST_RELAY", "1")
+	healthTimeout, runningFor = 20*time.Second, 3*time.Second
+	a := New(quadlet.New())
+	a.relay = []string{os.Args[0]}
+	deploy := func(spec agent.AppSpec) (agent.Release, string, error) {
+		spec.Name, spec.ID = fmt.Sprintf("t%d", time.Now().UnixNano()%1e6), "h1"
+		t.Cleanup(func() { a.Delete(context.Background(), spec.Name, true) })
+		var log strings.Builder
+		rel, err := a.Deploy(ctx, spec, &log)
+		return rel, log.String(), err
+	}
+	busybox := "docker.io/library/busybox:stable"
+
+	if _, log, err := deploy(agent.AppSpec{Source: busybox, Port: 7000, Health: agent.HealthTCP,
+		Command: []string{"sh", "-c", "while true; do nc -l -p 7000 </dev/null; done"}}); err != nil || !strings.Contains(log, "health check: TCP") {
+		t.Fatalf("tcp: %v\n%s", err, log)
+	}
+	rel, log, err := deploy(agent.AppSpec{Source: busybox, Health: agent.HealthRunning, Command: []string{"sleep", "3600"}})
+	if err != nil || !strings.Contains(log, "health check: running") {
+		t.Fatalf("worker: %v\n%s", err, log)
+	}
+	if out, _ := exec.Command("podman", "inspect", "--format", "{{.Config.Cmd}}", rel.Container).Output(); !strings.Contains(string(out), "sleep 3600") {
+		t.Errorf("command = %s", out)
+	}
+	if _, log, err := deploy(agent.AppSpec{Source: busybox, Health: agent.HealthRunning, Command: []string{"sh", "-c", "sleep 1; exit 1"}}); err == nil {
+		t.Fatalf("a crash-looping worker passed:\n%s", log)
+	}
+	repo := agenttest.GitRepo(t, map[string]string{"README.md": "monorepo\n", "services/worker/Dockerfile": "FROM " + busybox + "\nCMD [\"sleep\", \"3600\"]\n"})
+	if _, log, err := deploy(agent.AppSpec{RepoURL: repo, Context: "services/worker", Health: agent.HealthRunning}); err != nil {
+		t.Fatalf("context: %v\n%s", err, log)
 	}
 }

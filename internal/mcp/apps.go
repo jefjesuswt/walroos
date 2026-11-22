@@ -31,6 +31,9 @@ type createAppIn struct {
 	Branch     string             `json:"branch,omitempty" jsonschema:"branch to build; default branch if empty"`
 	Dockerfile string             `json:"dockerfile,omitempty" jsonschema:"path of the Dockerfile in the repo; Dockerfile if empty"`
 	HealthPath string             `json:"health_path,omitempty" jsonschema:"URL path that must answer 2xx/3xx within 90 s; / if empty"`
+	Health     string             `json:"health,omitempty" jsonschema:"how a release proves it's up: http (default, GET health_path), tcp (the port accepts connections: databases, caches), running (stays up 5 s: a worker with no port, port 0)"`
+	Command    []string           `json:"command,omitempty" jsonschema:"replaces the image's CMD, as separate arguments"`
+	Context    string             `json:"context,omitempty" jsonschema:"repo folder to build from (a monorepo's service); dockerfile is relative to it"`
 	Static     *agent.StaticBuild `json:"static,omitempty" jsonschema:"set (even empty) for a repo with no Dockerfile: a static site (React, Vite, Angular, plain HTML) built with node or bun, which finds the install, the build and the output folder (NODE_VERSION, BUN_VERSION or .nvmrc in the app's env or repo pick the version); runtime, install, build, publish and spa override them. The app's env vars are there during the build"`
 	Node       string             `json:"node,omitempty" jsonschema:"node name or ID with the prod role; empty picks the first online one"`
 	Project    string             `json:"project,omitempty" jsonschema:"project the app goes in (see list_projects); empty is the default project"`
@@ -107,7 +110,7 @@ func addAppActions(s *sdk.Server, apps *app.Service) {
 	sdk.AddTool(s, &sdk.Tool{Name: "create_app",
 		Description: "Create an app from a git repo with a Dockerfile, a static site from a repo (static), or from a published image, on a node with the prod role. Nothing runs until deploy_app."},
 		func(ctx context.Context, _ *sdk.CallToolRequest, in createAppIn) (*sdk.CallToolResult, any, error) {
-			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static,
+			a, err := apps.Create(ctx, app.CreateInput{Name: in.Name, RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static, Health: in.Health, Command: in.Command, Context: in.Context,
 				Port: in.Port, HealthPath: in.HealthPath, Node: in.Node, Project: in.Project})
 			return nil, a, err
 		})

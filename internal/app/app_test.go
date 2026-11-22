@@ -636,3 +636,40 @@ func TestAppCloneToken(t *testing.T) {
 		t.Fatalf("tokens = %v", got)
 	}
 }
+
+// How an app runs: its health check, a command and the folder it builds from reach the node; a
+// worker has no port and so no domain.
+func TestAppHealthCommandContext(t *testing.T) {
+	h := newHub(t, "prod")
+	for _, bad := range []map[string]any{
+		{"name": "x", "repo_url": "https://github.com/me/x", "port": 0},                               // http needs a port
+		{"name": "x", "repo_url": "https://github.com/me/x", "port": 80, "health": "grpc"},            // no such check
+		{"name": "x", "image": "ghcr.io/me/x:1", "port": 80, "context": "api"},                        // context is for builds
+		{"name": "x", "repo_url": "https://github.com/me/x", "port": 80, "context": "../up"},          // outside the repo
+		{"name": "x", "repo_url": "https://github.com/me/x", "port": 80, "command": []string{"a\nb"}}, // a newline
+	} {
+		if code := h.call(t, "POST", "/api/apps", bad, nil); code != 400 {
+			t.Errorf("create %v: %d, want 400", bad, code)
+		}
+	}
+	var a app.App
+	in := map[string]any{"name": "jobs", "repo_url": "https://github.com/me/mono", "context": "services/jobs", "health": "running",
+		"command": []string{"node", "worker.js", "--queue", "mail"}}
+	if code := h.call(t, "POST", "/api/apps", in, &a); code != 201 || a.Port != 0 || a.Health != "running" || len(a.Command) != 4 || a.Context != "services/jobs" {
+		t.Fatalf("create a worker: %d %+v", code, a)
+	}
+	var d app.Deployment
+	h.call(t, "POST", "/api/apps/jobs/deploy", map[string]string{}, &d)
+	h.wait(t, "jobs", d.ID)
+	if s := h.agent.specs[0]; s.Health != "running" || s.Context != "services/jobs" || strings.Join(s.Command, " ") != "node worker.js --queue mail" {
+		t.Errorf("spec = %+v", s)
+	}
+	if code := h.call(t, "PUT", "/api/apps/jobs/domains", []string{"jobs.example.com"}, nil); code != 400 {
+		t.Errorf("a domain on a worker: %d, want 400", code)
+	}
+	var got app.App
+	h.call(t, "GET", "/api/apps/jobs", nil, &got)
+	if got.Health != "running" || len(got.Command) != 4 {
+		t.Errorf("read back: %+v", got)
+	}
+}
