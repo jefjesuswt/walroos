@@ -21,7 +21,7 @@ import (
 func GitClone(ctx context.Context, args []string, url, dir, token string) (string, error) {
 	env := []string{"GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=" + GitSSH}
 	if https := HTTPSURL(url); token != "" && isGitHub(https) {
-		err := Run(ctx, append(env, tokenEnv(token)...), "git", append(append(append([]string{}, args...), "--"), https, dir)...)
+		err := Run(ctx, append(env, tokenEnv("https://github.com/", token)...), "git", append(append(append([]string{}, args...), "--"), https, dir)...)
 		if err != nil {
 			return url, fmt.Errorf("%v (with the hub's GitHub token: does it reach this repo? A fine-grained token needs Contents: read on it)", err)
 		}
@@ -52,9 +52,10 @@ const privateHint = "a private repo: add a GitHub token in Settings, or give the
 // tokenEnv authenticates git's https requests to github.com with token, through git's config
 // in the environment (GIT_CONFIG_*, git 2.31+): not in the URL, the clone's .git/config, the
 // process list or an error.
-func tokenEnv(token string) []string {
+// base scopes it to one site: git sends it to no other.
+func tokenEnv(base, token string) []string {
 	auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
-	return []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader", "GIT_CONFIG_VALUE_0=Authorization: Basic " + auth}
+	return []string{"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http." + base + ".extraheader", "GIT_CONFIG_VALUE_0=Authorization: Basic " + auth}
 }
 
 func isGitHub(u string) bool {
