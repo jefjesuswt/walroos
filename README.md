@@ -119,7 +119,7 @@ Tailscale sends its own traffic around other VPNs, and some VPN firewalls (NordV
 FLAGS="--tun=userspace-networking --socks5-server=localhost:1055 --outbound-http-proxy-listen=localhost:1055"
 ```
 
-Clients on that machine then reach the tailnet through the proxy. `walroos ssh-config` finds it on `localhost:1055` by itself (`--proxy` for another address) and gives each Host block a `ProxyCommand` through it, which needs openbsd-netcat. A browser needs it too to open the panel: point it at the proxy for the tailnet's addresses, for example with a PAC file that sends `100.64.0.0/10` and your tailnet's `*.ts.net` names to `PROXY localhost:1055`.
+Clients on that machine then reach the tailnet through the proxy. `walroos ssh-config` finds it on `localhost:1055` by itself (`--proxy` for another address) and gives each Host block a `ProxyCommand` through it, which needs openbsd-netcat. A browser on that machine can't reach the tailnet either. To open the panel, run `walroos ui`: it serves the hub's panel on `http://127.0.0.1:7480` and opens it. It goes through the same proxy, so the hub still knows you by your tailnet identity, and only your browser on this machine can use it. Use `--hub` for another hub name and `--port` for another port.
 
 </details>
 

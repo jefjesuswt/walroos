@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jefjesuswt/walroos/cmd/walroos/hubconn"
 )
 
 // Like a real ~/.ssh/config after `walroos ssh-config >> ~/.ssh/config` ran twice: the user's own
@@ -198,12 +200,12 @@ func TestFetchFallsBackToProxy(t *testing.T) {
 	}))
 	t.Cleanup(proxySrv.Close)
 	proxyAddr := strings.TrimPrefix(proxySrv.URL, "http://")
-	saved := defaultProxy
-	t.Cleanup(func() { defaultProxy = saved })
+	saved := hubconn.DefaultProxy
+	t.Cleanup(func() { hubconn.DefaultProxy = saved })
 	ctx := context.Background()
 
 	// Direct fails, the proxy answers: the blocks go through it.
-	defaultProxy = proxyAddr
+	hubconn.DefaultProxy = proxyAddr
 	out, err := Generate(ctx, hubURL, "", 2222, ".walroos")
 	if err != nil || !strings.Contains(out, "  ProxyCommand nc -X 5 -x "+proxyAddr+" %h %p\n") {
 		t.Fatalf("fallback: %v\n%s", err, out)
@@ -222,7 +224,7 @@ func TestFetchFallsBackToProxy(t *testing.T) {
 	}
 
 	// No proxy listening either: the hint, not a hang.
-	defaultProxy = "127.0.0.1:1"
+	hubconn.DefaultProxy = "127.0.0.1:1"
 	if _, err := Generate(ctx, hubURL, "", 2222, ".walroos"); err == nil || !strings.Contains(err.Error(), "--proxy") {
 		t.Errorf("no proxy: %v", err)
 	}
@@ -234,7 +236,7 @@ func TestFetchFallsBackToProxy(t *testing.T) {
 
 	// A direct hub that answers never goes through the proxy, and gets no ProxyCommand.
 	status = http.StatusOK
-	defaultProxy = proxyAddr
+	hubconn.DefaultProxy = proxyAddr
 	direct := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]map[string]string{{"name": "app", "node_address": "100.64.0.2"}})
 	}))
