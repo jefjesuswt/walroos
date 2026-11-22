@@ -275,3 +275,15 @@ func TestProjectVariables(t *testing.T) {
 		t.Errorf("a reference across projects: %d %q", code, msg)
 	}
 }
+
+// A new project, with nothing shared yet and a draft app: every service's keys are a list, never
+// null (the UI read keys.length and went blank).
+func TestProjectRefsNeverNull(t *testing.T) {
+	h, _ := newHub(t)
+	call(t, h, "POST", "/api/projects", map[string]string{"name": "folio"}, nil)
+	call(t, h, "POST", "/api/apps", map[string]any{"name": "folio", "project": "folio"}, nil)
+	var raw json.RawMessage
+	if code, msg := call(t, h, "GET", "/api/projects/folio/refs", nil, &raw); code != 200 || strings.Contains(string(raw), "null") {
+		t.Fatalf("refs: %d %s %s", code, msg, raw)
+	}
+}

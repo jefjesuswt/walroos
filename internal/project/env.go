@@ -82,8 +82,13 @@ func (s *Service) Refs(ctx context.Context, name string) ([]Ref, error) {
 	refs := []Ref{}
 	for _, svc := range slices.Sorted(maps.Keys(vars)) {
 		if svc != shared {
-			refs = append(refs, Ref{svc, slices.Sorted(maps.Keys(vars[svc]))})
+			refs = append(refs, Ref{svc, keys(vars[svc])})
 		}
 	}
-	return append(refs, Ref{shared, slices.Sorted(maps.Keys(vars[shared]))}), nil
+	return append(refs, Ref{shared, keys(vars[shared])}), nil
+}
+
+// keys are m's keys, sorted; [] for none, never null: the UI reads keys.length.
+func keys(m map[string]string) []string {
+	return append([]string{}, slices.Sorted(maps.Keys(m))...)
 }
