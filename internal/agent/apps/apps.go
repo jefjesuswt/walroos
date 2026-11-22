@@ -118,6 +118,10 @@ func (a *Apps) image(ctx context.Context, spec agent.AppSpec, log io.Writer) (ag
 func (a *Apps) bringUp(ctx context.Context, spec agent.AppSpec, rel agent.Release, log io.Writer) (why string, err error) {
 	fmt.Fprintf(log, "starting %s\n", rel.Container)
 	if err := a.start(ctx, spec, rel); err != nil {
+		fmt.Fprint(log, host.Journal(context.WithoutCancel(ctx), rel.Container, 20))
+		if host.KernelUpdated() { // the usual cause: say it instead of "systemctl: exit status 1"
+			err = errors.New(agent.KernelUpdated.Title + ". " + agent.KernelUpdated.Fix)
+		}
 		return "couldn't start " + rel.Container, err
 	}
 	if err := a.waitHealthy(ctx, rel.Container, spec.Port, cmp.Or(spec.HealthPath, "/"), log); err != nil {

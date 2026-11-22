@@ -137,6 +137,8 @@ Once an app is live, its page shows **Redeploy** (a new release, with no downtim
 
 Tip: right-click a project, a service, a workspace or a node for its actions (open in a new tab, deploy, back up, delete…). On a phone, long-press it. Shift+right-click shows the browser's own menu.
 
+When a node has a problem walroos can't fix by itself, for example a kernel updated without a reboot (new releases can't start) or containers that lost their internet access, the **Nodes** page says what it breaks and how to fix it. Every other page shows a short warning pointing there.
+
 ### Static sites
 
 A repo with no `Dockerfile` (React, Vite, Angular, Vue, Astro, or plain HTML) deploys as a static site. In the app's **General** tab pick **Build → Static site**. Walroos installs the dependencies, builds the site and serves the output folder with its own static server, so the image has no nginx and runs as a non-root user. Every setting is optional:

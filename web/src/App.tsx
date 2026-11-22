@@ -5,6 +5,7 @@ import { DeploymentsPage } from './apps/DeploymentsPage';
 import { DatabasePage } from './databases/DatabasePage';
 import { ProjectPage } from './projects/ProjectPage';
 import { ProjectsPage } from './projects/ProjectsPage';
+import { NodeProblemsBanner } from './nodes/NodeProblems';
 import { NodesPage } from './nodes/NodesPage';
 import { SettingsPage } from './settings/SettingsPage';
 import { WorkspacesPage } from './workspaces/WorkspacesPage';
@@ -170,6 +171,7 @@ export function App() {
         </header>
         <main id="view" tabIndex={-1}>
           <div className="content">
+            {route !== 'nodes' && me && <NodeProblemsBanner />}
             {route === 'nodes' ? <NodesPage addOpen={addNode} setAddOpen={setAddNode} />
               : route === 'workspaces' ? <WorkspacesPage newOpen={newWorkspace} setNewOpen={setNewWorkspace} />
               : route === 'apps' && sub ? <AppPage key={sub} name={sub} />

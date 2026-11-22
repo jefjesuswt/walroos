@@ -37,6 +37,7 @@ func collectTelemetry(ctx context.Context) fleet.Telemetry {
 	}
 
 	t.Podman = podman.PodmanVersion(ctx)
+	t.Problems = podman.Problems(ctx)
 	if out, err := exec.CommandContext(ctx, "podman", "ps", "-aq").Output(); err == nil {
 		t.Containers = len(strings.Fields(string(out)))
 	}

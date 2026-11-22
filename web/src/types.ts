@@ -15,6 +15,14 @@ export interface Telemetry {
   podman: string;
   walroos: string;
   containers: number;
+  problems?: NodeProblem[]; // what the agent found wrong; the node still answers
+}
+
+// Something wrong on a node that walroos can't fix by itself, with the fix in words.
+export interface NodeProblem {
+  code: string;
+  title: string;
+  fix: string;
 }
 
 export interface Node {
