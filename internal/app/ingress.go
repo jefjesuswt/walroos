@@ -31,6 +31,9 @@ func (s *Service) SetDomains(ctx context.Context, name string, domains []string)
 	if err != nil {
 		return App{}, err
 	}
+	if a.Port == 0 && len(want) > 0 {
+		return App{}, ErrNoPort
+	}
 	cf, zones, err := s.zonesFor(ctx, want)
 	if err != nil {
 		return App{}, err

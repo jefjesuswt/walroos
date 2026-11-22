@@ -10,6 +10,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+
+	"github.com/jefjesuswt/walroos/shared/unitfile"
 )
 
 // Unit is one service: walroos with Args, restarted when it fails.
@@ -24,9 +26,9 @@ type Unit struct {
 
 // Text is the unit file for the walroos binary at exe.
 func (u Unit) Text(exe string) string {
-	args := []string{quote(exe)}
+	args := []string{unitfile.Quote(exe)}
 	for _, a := range u.Args {
-		args = append(args, quote(a))
+		args = append(args, unitfile.Quote(a))
 	}
 	kill := ""
 	if u.KillProcess {
@@ -45,12 +47,6 @@ RestartSec=10
 [Install]
 WantedBy=default.target
 `
-}
-
-// quote makes an argument safe in ExecStart: systemd splits on spaces and reads % and $.
-func quote(s string) string {
-	s = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%", "$", "$$").Replace(s)
-	return `"` + s + `"`
 }
 
 // Install writes the unit for this binary, enables and starts it. It returns the unit's path.

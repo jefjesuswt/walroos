@@ -27,7 +27,10 @@ type AppSpec struct {
 	Static     *StaticBuild `json:"static,omitempty"`    // set: no Dockerfile, build and serve it as a static site
 	GitToken   string       `json:"git_token,omitempty"` // the hub's GitHub token, for a private github.com repo; only used to clone
 	Port       int          `json:"port"`
-	HealthPath string       `json:"health_path"` // default /
+	HealthPath string       `json:"health_path"`       // default /
+	Health     string       `json:"health,omitempty"`  // HealthHTTP (""), HealthTCP or HealthRunning
+	Command    []string     `json:"command,omitempty"` // replaces the image's CMD
+	Context    string       `json:"context,omitempty"` // build from this folder of the repo; Dockerfile is relative to it
 	Image      string       `json:"image"`
 	Env        []string     `json:"env"`
 	Volumes    []Volume     `json:"volumes,omitempty"`    // with any, a deploy stops the old release before starting the new one
@@ -35,6 +38,13 @@ type AppSpec struct {
 	Pull       string       `json:"pull,omitempty"`       // build node's registry (tailnet host:port): pull Sha from it, don't build
 	PullToken  string       `json:"pull_token,omitempty"` // PullToken for this app on that node
 }
+
+// How a new release proves it's up before it takes over.
+const (
+	HealthHTTP    = "http"    // GET HealthPath on Port answers 2xx/3xx (the default)
+	HealthTCP     = "tcp"     // Port accepts connections: databases, caches, anything not HTTP
+	HealthRunning = "running" // it keeps running for a few seconds: workers with no port
+)
 
 // Volume is storage that outlives releases: a named podman volume (Name) or a directory
 // under the node's data root (HostPath, relative to it). Deleting the app keeps both unless
@@ -77,7 +87,8 @@ var (
 	healthPathRe = regexp.MustCompile(`^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,511}$`) // goes into the raw HTTP request line
 	tokenRe      = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	volNameRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
-	pathRe       = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,255}$`) // no ':' or ',': it goes into a Volume= line
+	pathRe       = regexp.MustCompile(`^[A-Za-z0-9._/-]{1,255}$`)              // no ':' or ',': it goes into a Volume= line
+	relPathRe    = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]{0,254}$`) // a folder in the repo
 	// A fully qualified image: a registry host with a dot (no short-name lookup, no localhost),
 	// then a lowercase repo path, an optional tag and an optional digest.
 	imageRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+)+(:[0-9]{1,5})?/[a-z0-9]+((\.|_|__|-+|/)[a-z0-9]+)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[0-9a-f]{64})?$`)
@@ -89,7 +100,7 @@ func (spec AppSpec) Valid() bool {
 	opt := func(re *regexp.Regexp, v string) bool { return v == "" || re.MatchString(v) }
 	ownImage := "localhost/walroos-app-" + spec.Name + ":"
 	tag, isOwn := strings.CutPrefix(spec.Image, ownImage)
-	return names.DNSLabel(spec.Name) && deployIDRe.MatchString(spec.ID) && spec.Port >= 1 && spec.Port <= 65535 &&
+	return names.DNSLabel(spec.Name) && deployIDRe.MatchString(spec.ID) && validPort(spec) && validCommand(spec.Command) && opt(relPathRe, spec.Context) && cleanRel(spec.Context) &&
 		(spec.RepoURL != "" || spec.Image != "" || spec.Source != "") && !strings.HasPrefix(spec.RepoURL, "-") &&
 		(spec.Source == "" || len(spec.Source) <= 255 && imageRe.MatchString(spec.Source) && spec.RepoURL == "" && spec.Pull == "") &&
 		opt(shaRe, spec.Sha) && opt(refRe, spec.Branch) && opt(refRe, spec.Dockerfile) && opt(healthPathRe, spec.HealthPath) &&
@@ -97,6 +108,35 @@ func (spec AppSpec) Valid() bool {
 		validVolumes(spec.Volumes) && ValidNetwork(spec.Network) &&
 		spec.Static.valid() && (spec.Static == nil || spec.Dockerfile == "" && spec.Source == "" && spec.Port == StaticPort) &&
 		(spec.Pull == "" || validHostPort(spec.Pull) && tokenRe.MatchString(spec.PullToken) && len(spec.Sha) >= 12 && spec.Image == "")
+}
+
+// validPort: 1-65535, or none for an app checked by HealthRunning.
+func validPort(spec AppSpec) bool {
+	switch spec.Health {
+	case "", HealthHTTP, HealthTCP:
+		return spec.Port >= 1 && spec.Port <= 65535
+	case HealthRunning:
+		return spec.Port >= 0 && spec.Port <= 65535
+	}
+	return false
+}
+
+// validCommand: a Quadlet's Exec= line can't take a newline, and systemd reads at most so much.
+func validCommand(args []string) bool {
+	if len(args) > 64 {
+		return false
+	}
+	for _, a := range args {
+		if len(a) > 4096 || strings.ContainsAny(a, "\x00\n\r") {
+			return false
+		}
+	}
+	return true
+}
+
+// cleanRel: "" or a relative path that stays inside (no .., no leading /).
+func cleanRel(p string) bool {
+	return p == "" || path.Clean(p) == p && !path.IsAbs(p) && p != ".." && !strings.HasPrefix(p, "../")
 }
 
 func validVolumes(vols []Volume) bool {

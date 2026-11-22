@@ -19,3 +19,13 @@ func TestSetWanted(t *testing.T) {
 		t.Fatal("setWanted isn't idempotent or doesn't restore the unit")
 	}
 }
+
+func TestExecLine(t *testing.T) {
+	unit := appUnit(agent.AppSpec{Name: "w", Command: []string{"worker", "--queue", "$jobs"}}, agent.Release{Container: "w-1", Image: "img"}, "/env", "", "")
+	if !strings.Contains(unit, "PidsLimit=2048\nExec=\"worker\" \"--queue\" \"$$jobs\"\n") {
+		t.Fatalf("unit:\n%s", unit)
+	}
+	if strings.Contains(appUnit(agent.AppSpec{Name: "w"}, agent.Release{Container: "w-1", Image: "img"}, "/env", "", ""), "Exec=") {
+		t.Fatal("no command, but an Exec= line")
+	}
+}

@@ -40,9 +40,9 @@ func NewService(store *Store, nodes *fleet.Service, agents *agent.Client, box *s
 }
 
 func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
-	src := withStaticPort(SourceInput{RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static, Port: in.Port, HealthPath: in.HealthPath})
+	src := withStaticPort(SourceInput{RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static, Port: in.Port, HealthPath: in.HealthPath, Health: in.Health, Command: in.Command, Context: in.Context})
 	in.Description = strings.TrimSpace(in.Description)
-	if !names.DNSLabel(in.Name) || in.Name == "from-template" || len(in.Description) > 500 || src != (SourceInput{}) && !validSource(in.Name, src) {
+	if !names.DNSLabel(in.Name) || in.Name == "from-template" || len(in.Description) > 500 || !src.empty() && !validSource(in.Name, src) {
 		return App{}, ErrInvalid
 	}
 	projectID, err := lookup.ID(ctx, s.store.db, in.Project)
@@ -55,7 +55,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (App, error) {
 	}
 	a := App{
 		ID: randomID(), Name: in.Name, NodeID: node.ID, NodeName: node.Name, ProjectID: projectID, Project: cmp.Or(in.Project, "default"), RepoURL: in.RepoURL, Image: in.Image, Branch: in.Branch,
-		Dockerfile: in.Dockerfile, Static: src.Static, Port: src.Port, HealthPath: in.HealthPath, Description: in.Description, CreatedAt: s.now().UTC(),
+		Dockerfile: in.Dockerfile, Static: src.Static, Port: src.Port, HealthPath: in.HealthPath, Health: in.Health, Command: in.Command, Context: in.Context, Description: in.Description, CreatedAt: s.now().UTC(),
 	}
 	return a, s.store.Insert(ctx, a)
 }
@@ -68,11 +68,17 @@ func (s *Service) cloneToken(ctx context.Context, repoURL string) string {
 	return s.settings.CloneToken(ctx, repoURL)
 }
 
+// empty: nothing of the source was sent, so the app is a draft.
+func (in SourceInput) empty() bool {
+	return in.RepoURL == "" && in.Image == "" && in.Branch == "" && in.Dockerfile == "" && in.Static == nil && in.Port == 0 &&
+		in.HealthPath == "" && in.Health == "" && len(in.Command) == 0 && in.Context == ""
+}
+
 // validSource: a remote repo or a fully qualified image (not both), and what the agent accepts.
 func validSource(name string, in SourceInput) bool {
-	spec := agent.AppSpec{Name: name, ID: "x", RepoURL: in.RepoURL, Source: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static, Port: in.Port, HealthPath: in.HealthPath}
+	spec := agent.AppSpec{Name: name, ID: "x", RepoURL: in.RepoURL, Source: in.Image, Branch: in.Branch, Dockerfile: in.Dockerfile, Static: in.Static, Port: in.Port, HealthPath: in.HealthPath, Health: in.Health, Command: in.Command, Context: in.Context}
 	fromRepo := in.Image == "" && workspace.RemoteRepo(in.RepoURL)
-	fromImage := in.Image != "" && in.RepoURL == "" && in.Branch == "" && in.Dockerfile == ""
+	fromImage := in.Image != "" && in.RepoURL == "" && in.Branch == "" && in.Dockerfile == "" && in.Context == ""
 	return (fromRepo || fromImage) && spec.Valid()
 }
 
@@ -95,6 +101,7 @@ func (s *Service) SetSource(ctx context.Context, name string, in SourceInput) (A
 		return App{}, ErrInvalid
 	}
 	a.RepoURL, a.Image, a.Branch, a.Dockerfile, a.Static, a.Port, a.HealthPath = in.RepoURL, in.Image, in.Branch, in.Dockerfile, in.Static, in.Port, in.HealthPath
+	a.Health, a.Command, a.Context = in.Health, in.Command, in.Context
 	if err := s.store.setSource(ctx, a.ID, a); err != nil {
 		return App{}, err
 	}

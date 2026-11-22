@@ -22,6 +22,7 @@ var (
 	ErrBusy           = whttp.Conflict("a deploy of this app is running on its node; try again when it ends")
 	ErrNoSource       = whttp.Invalid("the app has no source yet: set a repository or an image in its General tab")
 	ErrPower          = whttp.Invalid("action must be stop, start or restart")
+	ErrNoPort         = whttp.Invalid("the app has no port (it's checked by running): a domain needs a port it serves on")
 	ErrNotDeployed    = whttp.Conflict("the app has no release on its node yet: deploy it first")
 )
 
@@ -38,7 +39,10 @@ type App struct {
 	Image       string             `json:"image"`    // a published image, instead of RepoURL: pulled on each deploy
 	Branch      string             `json:"branch"`
 	Dockerfile  string             `json:"dockerfile"`
-	Static      *agent.StaticBuild `json:"static,omitempty"` // a static site: built with Node or Bun, no Dockerfile
+	Static      *agent.StaticBuild `json:"static,omitempty"`  // a static site: built with Node or Bun, no Dockerfile
+	Health      string             `json:"health,omitempty"`  // http (""), tcp or running: agent.Health*
+	Command     []string           `json:"command,omitempty"` // replaces the image's CMD
+	Context     string             `json:"context,omitempty"` // the repo folder to build from; the Dockerfile is relative to it
 	Port        int                `json:"port"`
 	HealthPath  string             `json:"health_path"`
 	Domains     []string           `json:"domains"`      // public hostnames, through the node's Cloudflare Tunnel
@@ -58,7 +62,10 @@ type CreateInput struct {
 	Image      string             `json:"image"` // or a published image; then no branch, dockerfile or build
 	Branch     string             `json:"branch"`
 	Dockerfile string             `json:"dockerfile"`
-	Static     *agent.StaticBuild `json:"static,omitempty"` // a repo with no Dockerfile: build it as a static site; port is then agent.StaticPort
+	Static     *agent.StaticBuild `json:"static,omitempty"`  // a repo with no Dockerfile: build it as a static site; port is then agent.StaticPort
+	Health     string             `json:"health,omitempty"`  // http (""), tcp or running: agent.Health*
+	Command    []string           `json:"command,omitempty"` // replaces the image's CMD
+	Context    string             `json:"context,omitempty"` // the repo folder to build from; the Dockerfile is relative to it
 	Port       int                `json:"port"`
 	HealthPath string             `json:"health_path"`
 	Node       string             `json:"node"`
@@ -75,6 +82,9 @@ type SourceInput struct {
 	Branch     string             `json:"branch"`
 	Dockerfile string             `json:"dockerfile"`
 	Static     *agent.StaticBuild `json:"static,omitempty"`
+	Health     string             `json:"health,omitempty"`  // http (""), tcp or running: agent.Health*
+	Command    []string           `json:"command,omitempty"` // replaces the image's CMD
+	Context    string             `json:"context,omitempty"` // the repo folder to build from; the Dockerfile is relative to it
 	Port       int                `json:"port"`
 	HealthPath string             `json:"health_path"`
 }
