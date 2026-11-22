@@ -15,7 +15,7 @@ import (
 // TestDetectClone clones for real (a local repo) and reports the default branch.
 func TestDetectClone(t *testing.T) {
 	repo := agenttest.GitRepo(t, map[string]string{"go.mod": "module x\n\ngo 1.26\n"})
-	d, err := Detect(context.Background(), repo, "")
+	d, err := Detect(context.Background(), repo, "", "")
 	if err != nil || d.Stack != "go" || d.Branch != "main" {
 		t.Fatalf("detect = %+v, %v", d, err)
 	}
@@ -23,10 +23,10 @@ func TestDetectClone(t *testing.T) {
 	if json.Unmarshal(d.Devcontainer, &dc) != nil || dc["image"] != "mcr.microsoft.com/devcontainers/go:1.26" {
 		t.Errorf("devcontainer = %s", d.Devcontainer)
 	}
-	if _, err := Detect(context.Background(), filepath.Join(t.TempDir(), "missing"), ""); !errors.Is(err, ErrDetectClone) {
+	if _, err := Detect(context.Background(), filepath.Join(t.TempDir(), "missing"), "", ""); !errors.Is(err, ErrDetectClone) {
 		t.Errorf("missing repo: %v, want ErrDetectClone", err)
 	}
-	if _, err := Detect(context.Background(), repo, "no-such-branch"); !errors.Is(err, ErrDetectClone) {
+	if _, err := Detect(context.Background(), repo, "no-such-branch", ""); !errors.Is(err, ErrDetectClone) {
 		t.Errorf("missing branch: %v, want ErrDetectClone", err)
 	}
 }

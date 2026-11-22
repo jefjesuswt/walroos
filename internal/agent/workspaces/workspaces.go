@@ -145,7 +145,7 @@ func checkout(ctx context.Context, spec agent.WorkspaceSpec, src string) (string
 	if spec.Branch != "" {
 		args = append(args, "--branch", spec.Branch)
 	}
-	url, err := host.GitClone(ctx, args, spec.RepoURL, repo)
+	url, err := host.GitClone(ctx, args, spec.RepoURL, repo, spec.GitToken)
 	if err != nil {
 		return "", fmt.Errorf("clone %s: %w", spec.RepoURL, err)
 	}

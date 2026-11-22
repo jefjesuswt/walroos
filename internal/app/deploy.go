@@ -21,6 +21,7 @@ type deployer struct {
 	nodes  *fleet.Service
 	agents *agent.Client
 	env    func(ctx context.Context, appID string) ([]string, error) // KEY=VALUE for the container
+	token  func(ctx context.Context, repoURL string) string          // the GitHub token to clone a private repo with; "" if none
 	kick   chan struct{}
 	now    func() time.Time
 }
@@ -164,6 +165,9 @@ func (q *deployer) release(ctx context.Context, d Deployment) (agent.Release, er
 	spec := agent.AppSpec{
 		Name: a.Name, ID: d.ID, RepoURL: a.RepoURL, Source: a.Image, Branch: a.Branch, Sha: d.Sha, Dockerfile: a.Dockerfile, Static: a.Static,
 		Port: a.Port, HealthPath: a.HealthPath, Image: d.Image, Volumes: a.Volumes, Network: agent.ProjectNetwork(a.Project),
+	}
+	if a.RepoURL != "" && d.Image == "" {
+		spec.GitToken = q.token(ctx, a.RepoURL) // only the clone uses it, on whichever node builds
 	}
 	if a.Static != nil {
 		spec.Env = env // a static site's build reads them (VITE_*, NEXT_PUBLIC_*): send them to the build node too

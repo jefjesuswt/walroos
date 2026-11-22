@@ -22,9 +22,10 @@ type AppSpec struct {
 	RepoURL    string       `json:"repo_url"`
 	Source     string       `json:"source,omitempty"` // a published image (registry/repo:tag), instead of RepoURL
 	Branch     string       `json:"branch"`
-	Sha        string       `json:"sha"`              // "" deploys the branch head
-	Dockerfile string       `json:"dockerfile"`       // relative to the repo; default Dockerfile
-	Static     *StaticBuild `json:"static,omitempty"` // set: no Dockerfile, build and serve it as a static site
+	Sha        string       `json:"sha"`                 // "" deploys the branch head
+	Dockerfile string       `json:"dockerfile"`          // relative to the repo; default Dockerfile
+	Static     *StaticBuild `json:"static,omitempty"`    // set: no Dockerfile, build and serve it as a static site
+	GitToken   string       `json:"git_token,omitempty"` // the hub's GitHub token, for a private github.com repo; only used to clone
 	Port       int          `json:"port"`
 	HealthPath string       `json:"health_path"` // default /
 	Image      string       `json:"image"`

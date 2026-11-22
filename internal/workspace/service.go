@@ -32,6 +32,14 @@ type Service struct {
 // placement: workspaces run on dev nodes, a new one on the least busy.
 var placement = fleet.Placement{Role: "dev", NoNode: ErrNoNode, WrongRole: ErrNodeRole}
 
+// cloneToken is the GitHub token the node clones a private github.com repo with; "" if none.
+func (s *Service) cloneToken(ctx context.Context, repoURL string) string {
+	if s.settings == nil {
+		return ""
+	}
+	return s.settings.CloneToken(ctx, repoURL)
+}
+
 // pickNode places a workspace: the node asked for, else the online dev node with the fewest.
 func (s *Service) pickNode(ctx context.Context, want string) (fleet.Node, error) {
 	if want != "" {
@@ -89,6 +97,7 @@ func (s *Service) create(ctx context.Context, owner string, in CreateInput, init
 
 	ws, err := s.agents.CreateWorkspace(ctx, address, tokenHash, agent.WorkspaceSpec{
 		Name: in.Name, RepoURL: in.RepoURL, Branch: in.Branch, DevcontainerPath: in.DevcontainerPath, Devcontainer: in.Devcontainer, Init: init,
+		GitToken: s.cloneToken(ctx, in.RepoURL),
 	}, nil)
 	if err != nil {
 		return Workspace{}, agentErr(err, "create")
@@ -126,7 +135,7 @@ func (s *Service) Detect(ctx context.Context, in DetectInput) (json.RawMessage, 
 	if err != nil {
 		return nil, err
 	}
-	d, err := s.agents.Detect(ctx, address, tokenHash, in.RepoURL, in.Branch)
+	d, err := s.agents.Detect(ctx, address, tokenHash, in.RepoURL, in.Branch, s.cloneToken(ctx, in.RepoURL))
 	var ae *agent.AgentError
 	if errors.As(err, &ae) && ae.Status == 422 {
 		return nil, fmt.Errorf("%w: %s", ErrRepo, ae.Msg)

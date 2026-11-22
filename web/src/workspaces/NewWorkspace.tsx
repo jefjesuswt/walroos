@@ -73,7 +73,7 @@ function FromRepo({ c }: { c: Common }) {
   return (
     <Shell c={c} error={error} busy={busy} ready={!!repo && !dcError} onSubmit={submit}
       sub="Cloned from a Git repo and run on a node with the dev role. A devcontainer.json is used when present, else the walroos base image.">
-    <Field label="Repository" hint="The node clones with its own git: public repos, or ones its SSH agent can read. Detect proposes a devcontainer for the stack.">
+    <Field label="Repository" hint={<>Public repos clone as they are; a private GitHub repo, with the token in <a href="#/settings">Settings → GitHub</a> (pushes use your own key). Detect proposes a devcontainer for the stack.</>}>
       <div className="input-btn">
         <input className="input mono" value={repo} onChange={e => { setRepo(e.target.value); setFound(null); }} placeholder="git@github.com:me/app.git" autoFocus />
         <button type="button" className="btn btn-tonal" disabled={!repo || detecting} onClick={detect}>
