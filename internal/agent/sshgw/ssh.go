@@ -285,7 +285,37 @@ func (s *session) run(req *ssh.Request) bool {
 // userShell finds the user's login shell in the container's passwd, like sshd would, and sets
 // the variables sshd sets. /bin/sh if there's none.
 const userShell = `s=$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f7); [ -x "$s" ] || s=/bin/sh; ` +
-	`u=$(id -un 2>/dev/null) && export USER="$u" LOGNAME="$u"; export SHELL="$s"; `
+	`u=$(id -un 2>/dev/null) && export USER="$u" LOGNAME="$u"; export SHELL="$s"; ` + knownTerm + gitIdentity
+
+// gitIdentity sets git's user.name and user.email from the caller's login (WALROOS_GIT_*,
+// sessionEnv) when the workspace has none, so `git commit` works the first time. It goes in
+// ~/.gitconfig, on the home volume: set your own and it's kept.
+const gitIdentity = `if [ -n "$WALROOS_GIT_EMAIL" ] && command -v git >/dev/null 2>&1; then ` +
+	`git config --global user.email >/dev/null 2>&1 || git config --global user.email "$WALROOS_GIT_EMAIL"; ` +
+	`git config --global user.name >/dev/null 2>&1 || git config --global user.name "$WALROOS_GIT_NAME"; fi 2>/dev/null; ` +
+	`unset WALROOS_GIT_NAME WALROOS_GIT_EMAIL; `
+
+// gitIdentityOf is the git name and email for a hub login: a GitHub login (you@github) gets
+// GitHub's noreply address, which links commits to the account; an email login is its own.
+func gitIdentityOf(login string) (name, email string) {
+	local, domain, ok := strings.Cut(login, "@")
+	switch {
+	case !ok || local == "":
+		return "", ""
+	case domain == "github":
+		return local, local + "@users.noreply.github.com"
+	case strings.Contains(domain, "."):
+		return local, login
+	}
+	return "", ""
+}
+
+// knownTerm keeps the client's TERM when the workspace has its terminfo, else uses
+// xterm-256color: images don't ship newer terminals' entries (Ghostty's xterm-ghostty, kitty's
+// xterm-kitty), and nvim, clear or tput then fail with "unknown terminal type". An entry
+// installed in the workspace (infocmp -x | tic -x -, into ~/.terminfo) wins.
+const knownTerm = `case "$TERM" in ""|dumb) ;; *) k=; for d in "$HOME/.terminfo" /etc/terminfo /lib/terminfo /usr/share/terminfo /usr/lib/terminfo; do ` +
+	`[ -e "$d/$(printf %.1s "$TERM")/$TERM" ] && k=1; done; [ -n "$k" ] || export TERM=xterm-256color;; esac; `
 
 // sessionArgv is what runs for a shell, exec or subsystem request.
 func sessionArgv(req *ssh.Request) ([]string, bool) {
@@ -333,6 +363,9 @@ func (c *sshConn) sessionEnv(ws agent.Workspace, tty *ptyRequest, env []string, 
 	}
 	if tty != nil {
 		env = append(env, "TERM="+tty.Term)
+	}
+	if name, email := gitIdentityOf(c.sc.Permissions.Extensions["login"]); email != "" {
+		env = append(env, "WALROOS_GIT_NAME="+name, "WALROOS_GIT_EMAIL="+email)
 	}
 	if forwardAgent {
 		if sock := c.agentSocket(ws); sock != "" {
