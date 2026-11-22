@@ -467,6 +467,13 @@ Hub en la laptop, nodo `dev` en una PC (Arch, Podman 6.2, con otra VPN en las do
 - [ ] **Sin identidad de git en el workspace**: `git commit` falla hasta configurar `user.name` y `user.email`. Opción: que el hub los guarde por usuario y el agente los pase como `GIT_AUTHOR_*`/`GIT_COMMITTER_*` (o los escriba en `~/.gitconfig` del volumen del home al crear).
 - [ ] **Un intento de `ssh` por el proxy userspace falló** con `SOCKS server failure` justo después de reiniciar el workspace; el reintento funcionó. Ver si se repite antes de tocar nada.
 
+## Repos privados con token (pedido 2026-11-22)
+
+- [ ] Clonar repos privados por https con el token de GitHub que ya está en Settings (hoy solo crea repos de workspaces desde cero). Sirve para apps, sitios estáticos y workspaces, y evita tener que darle una llave SSH al nodo.
+  - El hub pasa el token al agente solo para esa clonación, por la tailnet, como hace con las variables. El agente lo usa con `git -c http.extraHeader` o un credential helper temporal, sin escribirlo en `.git/config` ni en el log (`redact` ya tapa las URLs).
+  - En la UI, al pegar un repo privado sin token: un aviso con el enlace a Settings → GitHub y los permisos mínimos (fine-grained, `Contents: read` en esos repos).
+  - Más adelante: Gitea/Forgejo y GitLab (un token por forge), y el webhook con `on_push` para repos privados ya funciona porque no clona con el webhook.
+
 ## Backlog chico
 
 - Self-host de las fuentes (hoy Google Fonts; offline cae a fuentes del sistema).
